@@ -1,0 +1,358 @@
+{
+  "output_format": "mp4",
+  "width": 720,
+  "height": 1280,
+  "duration": 30,
+  "elements": [
+    {
+      "id": "d4f49ff1-f960-4923-b2e4-bd27b8bf7d45",
+      "name": "Composition-X3J",
+      "type": "composition",
+      "track": 1,
+      "time": 24.183,
+      "elements": [
+        {
+          "id": "70ddcc04-1204-4383-9b23-32e8cf0567f3",
+          "name": "audio5",
+          "type": "audio",
+          "track": 1,
+          "time": 0,
+          "duration": null,
+          "source": "https://v3.fal.media/files/elephant/IbV-1-LBMXFLLf5qmLOn9_output.mp3",
+          "dynamic": true
+        },
+        {
+          "id": "63061b54-de04-4e9a-a68b-9470345c2474",
+          "name": "image5",
+          "type": "image",
+          "track": 2,
+          "time": 0,
+          "source": "https://postfiles.pstatic.net/MjAyNTAxMTBfNjYg/MDAxNzM2NTAyNzUwMjM4.iX-zYJjzGbBsObZ6BS4GCuhsspd7Bw-TxdYmeitmpsEg.qPq0yspwHIs-ozsZeUqrG7Wwo7cpid4Ud_idgYrmHVkg.JPEG/IMG_9597.JPG",
+          "dynamic": true
+        },
+        {
+          "id": "36a466bc-a0cd-4c9f-a2e0-928c1ba9ad75",
+          "name": "text5",
+          "type": "text",
+          "track": 3,
+          "time": 0,
+          "y": "33%",
+          "width": "88%",
+          "height": "40%",
+          "x_alignment": "50%",
+          "y_alignment": "50%",
+          "text": "서울 3대 스테이크로 손꼽히는 인생 스테이크! 다음 방문도 기대됩니다.",
+          "font_family": "Montserrat",
+          "font_weight": "600",
+          "font_size": "6.2 vmin",
+          "line_height": "100%",
+          "fill_color": "#ffffff",
+          "stroke_color": "#000000",
+          "stroke_width": "1.05 vmin",
+          "dynamic": true,
+          "animations": [
+            {
+              "time": 0,
+              "duration": 1.5,
+              "easing": "quadratic-out",
+              "type": "text-slide",
+              "scope": "split-clip",
+              "split": "line",
+              "distance": "100%",
+              "direction": "up",
+              "background_effect": "disabled"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2da79822-223e-48d2-b749-574659f2eaae",
+      "name": "Composition-WMS",
+      "type": "composition",
+      "track": 2,
+      "time": 18.183,
+      "duration": 6,
+      "elements": [
+        {
+          "id": "ee36696a-5862-49f1-bdfc-b5281d25a753",
+          "name": "audio4",
+          "type": "audio",
+          "track": 1,
+          "time": 0,
+          "duration": 6,
+          "source": "https://v3.fal.media/files/elephant/GQ8mEmCVKk_-_zD_3AsQC_output.mp3",
+          "dynamic": true
+        },
+        {
+          "id": "0fc2f936-f4af-4126-afeb-744b03b0f987",
+          "name": "image4",
+          "type": "image",
+          "track": 2,
+          "time": 0,
+          "duration": 6,
+          "source": "https://postfiles.pstatic.net/MjAyNTAxMTBfNDgg/MDAxNzM2NTAyNjIzMDY0.p918dlYlcXHxS3M2-MYvom5mMgZRBEvAhK11vFof1Jkg.eXtQPjOSi5dQenA5jx1eH8AbM3lQjgA1BwP5I5x-AqUg.JPEG/IMG_9582.JPG",
+          "dynamic": true
+        },
+        {
+          "id": "59a428d9-851b-479f-ad5f-8198ae08add9",
+          "name": "text4",
+          "type": "text",
+          "track": 3,
+          "time": 0,
+          "y": "33%",
+          "width": "88%",
+          "height": "40%",
+          "x_alignment": "50%",
+          "y_alignment": "50%",
+          "text": "티본스테이크 800g, 미디엄 레어로 주문! 최고의 맛을 경험하세요.",
+          "font_family": "Montserrat",
+          "font_weight": "600",
+          "font_size": "6.2 vmin",
+          "line_height": "100%",
+          "fill_color": "#ffffff",
+          "stroke_color": "#000000",
+          "stroke_width": "1.05 vmin",
+          "dynamic": true,
+          "animations": [
+            {
+              "time": 0,
+              "duration": 1.5,
+              "easing": "quadratic-out",
+              "type": "text-slide",
+              "scope": "split-clip",
+              "split": "line",
+              "distance": "100%",
+              "direction": "up",
+              "background_effect": "disabled"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "81ce0e15-f52e-407e-81eb-c35722670438",
+      "name": "Composition-KB6",
+      "type": "composition",
+      "track": 3,
+      "time": 12.183,
+      "duration": 6,
+      "elements": [
+        {
+          "id": "86f09261-4154-401d-b747-66f68e358f70",
+          "name": "audio3",
+          "type": "audio",
+          "track": 1,
+          "time": 0,
+          "duration": 6,
+          "source": "https://v3.fal.media/files/monkey/JwSMrn9pdocpUhCeNHqYb_output.mp3",
+          "dynamic": true
+        },
+        {
+          "id": "e0b480a7-f054-4e81-b3c5-5761a16e8dfc",
+          "name": "image3",
+          "type": "image",
+          "track": 2,
+          "time": 0,
+          "duration": 6,
+          "source": "https://postfiles.pstatic.net/MjAyNTAxMTBfMzQg/MDAxNzM2NTAyNjY5NTY3.JBAsoQLVCZWcyCOhSUGjNY1zx7XULdFqOVntca4oaN0g.1iTuRWZPpULNZnYt66yQhu646VCIvHf6_bLVr4iMggcg.JPEG/IMG_9584.JPG",
+          "dynamic": true
+        },
+        {
+          "id": "17f33d41-2c86-4c21-92a6-d99d0a1a38b7",
+          "name": "text3",
+          "type": "text",
+          "track": 3,
+          "time": 0,
+          "y": "33%",
+          "width": "88%",
+          "height": "40%",
+          "x_alignment": "50%",
+          "y_alignment": "50%",
+          "text": "그릴에 구운 야채, 필수 주문 메뉴! 고기와의 궁합이 완벽해요.",
+          "font_family": "Montserrat",
+          "font_weight": "600",
+          "font_size": "6.2 vmin",
+          "line_height": "100%",
+          "fill_color": "#ffffff",
+          "stroke_color": "#000000",
+          "stroke_width": "1.05 vmin",
+          "dynamic": true,
+          "animations": [
+            {
+              "time": 0,
+              "duration": 1.5,
+              "easing": "quadratic-out",
+              "type": "text-slide",
+              "scope": "split-clip",
+              "split": "line",
+              "distance": "100%",
+              "direction": "up",
+              "background_effect": "disabled"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "e35b45e7-b0b4-48e8-ba12-42fff50ebb8b",
+      "name": "Composition-VCK",
+      "type": "composition",
+      "track": 4,
+      "time": 6,
+      "duration": 6,
+      "elements": [
+        {
+          "id": "af589652-b466-4d8d-a7f4-595fadae1360",
+          "name": "audio2",
+          "type": "audio",
+          "track": 1,
+          "time": 0,
+          "duration": 6,
+          "source": "https://v3.fal.media/files/koala/6vqja3rzUuNNntemFPkvJ_output.mp3",
+          "dynamic": true
+        },
+        {
+          "id": "d5dca436-cfc0-41bb-92cc-d1d6ff5e5e88",
+          "name": "image2",
+          "type": "image",
+          "track": 2,
+          "time": 0,
+          "duration": 6,
+          "source": "https://postfiles.pstatic.net/MjAyNTAxMTBfMjMg/MDAxNzM2NTAyODcwMTIw.zYX0hocn8JpruOldoLsf04KxEo1L0vZb5DqgG19keYIg.a_xqS77oq-0GfE81uY9lSb95AfbWtnoELwSjZPF9Z0wg.JPEG/IMG_9606.JPG",
+          "dynamic": true
+        },
+        {
+          "id": "ea0b50a9-4243-4bdc-a974-1e7a081bbd75",
+          "name": "text2",
+          "type": "text",
+          "track": 3,
+          "time": 0,
+          "x": "51.2152%",
+          "y": "83.2289%",
+          "width": "88%",
+          "height": "40%",
+          "x_alignment": "50%",
+          "y_alignment": "50%",
+          "text": "콜키지 프리! 400g 이상 주문 시 콜키지 프리 혜택을 누릴 수 있어요.",
+          "font_family": "Montserrat",
+          "font_weight": "600",
+          "font_size": "6.2 vmin",
+          "line_height": "100%",
+          "fill_color": "#ffffff",
+          "stroke_color": "#000000",
+          "stroke_width": "1.05 vmin",
+          "dynamic": true,
+          "animations": [
+            {
+              "time": 0,
+              "duration": 1.5,
+              "easing": "quadratic-out",
+              "type": "text-slide",
+              "scope": "split-clip",
+              "split": "line",
+              "distance": "100%",
+              "direction": "up",
+              "background_effect": "disabled"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "424c1112-74ae-477c-9489-bfc9f37fb41e",
+      "name": "Composition-VF9",
+      "type": "composition",
+      "track": 5,
+      "time": 0,
+      "duration": 6,
+      "elements": [
+        {
+          "id": "51ebb71b-8ce7-4b1a-bbf5-d0c8cc9a82a1",
+          "name": "audio1",
+          "type": "audio",
+          "track": 1,
+          "time": 0,
+          "duration": 6,
+          "source": "https://v3.fal.media/files/monkey/JxA1AGNEpZZVSyZ7h1lF-_output.mp3",
+          "dynamic": true
+        },
+        {
+          "id": "779c745e-145a-4f37-9634-05385474875c",
+          "name": "image1",
+          "type": "image",
+          "track": 2,
+          "time": 0,
+          "duration": 6,
+          "y": "49.2116%",
+          "height": "60.781%",
+          "source": "https://postfiles.pstatic.net/MjAyNTAxMTBfMjA4/MDAxNzM2NTAyNjIzNzA5.wWRbpPliih0I7FPDvOmftYG-iD19mrnVezcCbiZYocYg.EWhdu_7YaQwr5XmMc3cQYvMFKhs7OKCwmoCIO792dh4g.JPEG/IMG_9579.JPG",
+          "fit": "contain",
+          "dynamic": true
+        },
+        {
+          "id": "4c132a40-3e3d-4099-9734-27ef6f02c033",
+          "name": "text1",
+          "type": "text",
+          "track": 3,
+          "time": 0,
+          "y": "68.2398%",
+          "width": "88%",
+          "height": "40%",
+          "x_alignment": "50%",
+          "y_alignment": "50%",
+          "text": "저스트 스테이크, 서울 3대 스테이크 맛집! 예약 필수인 인기 맛집이에요",
+          "font_family": "Montserrat",
+          "font_weight": "600",
+          "font_size": "6.2 vmin",
+          "line_height": "100%",
+          "fill_color": "#ffffff",
+          "stroke_color": "#000000",
+          "stroke_width": "1.05 vmin",
+          "dynamic": true,
+          "animations": [
+            {
+              "time": 0,
+              "duration": 1.5,
+              "easing": "quadratic-out",
+              "type": "text-slide",
+              "scope": "split-clip",
+              "split": "line",
+              "distance": "100%",
+              "direction": "up",
+              "background_effect": "disabled"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "4edf051c-a597-41ca-8bc9-2fc0ed400654",
+      "name": "Text-S88",
+      "type": "text",
+      "track": 6,
+      "time": 0,
+      "x": "19.2016%",
+      "y": "84.4856%",
+      "x_anchor": "0%",
+      "y_anchor": "0%",
+      "x_alignment": "50%",
+      "text": "먹방영혼 맛집 블로그",
+      "font_family": "Noto Sans",
+      "font_size": "7 vmin",
+      "fill_color": "rgba(255,255,255,1)"
+    },
+    {
+      "id": "2a2d790d-e46e-47de-b7d6-b24dab77213f",
+      "name": "Text-MM4",
+      "type": "text",
+      "track": 7,
+      "time": 0,
+      "y": "10.0418%",
+      "text": "압구정 맛집",
+      "font_size_maximum": "99.5 vmin",
+      "fill_color": "rgba(255,255,255,1)",
+      "dynamic": true
+    }
+  ]
+}
