@@ -16,7 +16,7 @@ os.makedirs(AUDIO_SAVE_DIR, exist_ok=True)
 def get_next_seq_filename(seq):
     return os.path.join(AUDIO_SAVE_DIR, f"shorts_script_{seq}.wav")
 
-def tts_with_fal(text, output_path=None, voice="Bill", stability=0.5, similarity_boost=0.5, speed=1, style=0.5):
+def tts_with_fal(text, output_path=None, voice="Bill", stability=0.5, similarity_boost=0.5, speed=1.15, style=0.5):
     def on_queue_update(update):
         if isinstance(update, fal_client.InProgress):
             for log in update.logs:
@@ -46,19 +46,20 @@ def tts_with_fal(text, output_path=None, voice="Bill", stability=0.5, similarity
         with open(output_path, "wb") as f:
             f.write(audio_data)
         print("음성 파일 저장 완료:", output_path)
-        return audio_url  # url 반환
+        return output_path, audio_url  # (로컬 경로, 웹 URL) 반환
     else:
         print("TTS 요청 실패:", result)
-        return None
+        return None, None
 
 def tts_with_fal_multi(
     scripts,
     voice="Rachel",
     stability=0.5,
     similarity_boost=0.5,
-    speed=1,
+    speed=1.15,
     style=0.5
 ):
+    audio_local_paths = []
     audio_urls = []
     for idx, item in enumerate(scripts, 1):
         text = item["script"]
@@ -69,7 +70,7 @@ def tts_with_fal_multi(
                 menu = menu_and_price.split(":")[0].strip()
                 text = f"{menu}\n{desc.strip()}"
         output_path = get_next_seq_filename(idx)
-        url = tts_with_fal(
+        local_path, url = tts_with_fal(
             text,
             output_path=output_path,
             voice=voice,
@@ -78,18 +79,22 @@ def tts_with_fal_multi(
             speed=speed,
             style=style
         )
+        audio_local_paths.append(local_path)
         audio_urls.append(url)
-    return audio_urls
+    return audio_local_paths, audio_urls
 
 def select_images_by_url(image_urls):
     print("이미지 목록:")
     for idx, url in enumerate(image_urls, 1):
         print(f"{idx}. {url}")
-    selected_urls = input("원하는 이미지 URL을 직접 입력하세요(쉼표로 구분): ")
-    selected_urls = [url.strip() for url in selected_urls.split(",")]
-    # 입력된 URL이 실제 리스트에 있는지 검증
-    valid_selected_urls = [url for url in selected_urls if url in image_urls]
+    selected_indices = input("원하는 이미지 번호를 입력하세요(쉼표로 구분): ")
+    try:
+        indices = [int(idx.strip()) for idx in selected_indices.split(",")]
+        valid_selected_urls = [image_urls[idx-1] for idx in indices if 1 <= idx <= len(image_urls)]
+    except Exception:
+        print("입력이 올바르지 않습니다. 다시 시도하세요.")
+        return []
     if not valid_selected_urls:
-        print("입력한 URL이 목록에 없습니다. 다시 시도하세요.")
+        print("입력한 번호가 목록에 없습니다. 다시 시도하세요.")
         return []
     return valid_selected_urls 

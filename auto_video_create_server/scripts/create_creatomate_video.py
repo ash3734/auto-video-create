@@ -9,7 +9,7 @@ load_dotenv()
 CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
 CREATOMATE_TEMPLATE_ID = "14457245-7822-48a6-a711-62d15b739b85"  # 새 템플릿 ID로 변경
 
-def create_creatomate_video(image_urls, audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None):
+def create_creatomate_video(image_urls, audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, **kwargs):
     variables = {
         "image1.source": image_urls[0],
         "image2.source": image_urls[1],
@@ -30,6 +30,8 @@ def create_creatomate_video(image_urls, audio_paths, scripts, title=None, output
         variables["video5.source"] = video5
     if title:
         variables["title.text"] = title
+    # 추가 변수(duration_1~5, time_1~5 등) 반영
+    variables.update(kwargs)
     payload = {
         "template_id": CREATOMATE_TEMPLATE_ID,
         "modifications": variables
