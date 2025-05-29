@@ -7,7 +7,7 @@ def extract_blog_content(url):
     """
     네이버 블로그 글에서 본문 텍스트와 이미지 링크(이미지 URL)만 추출
     :param url: 네이버 블로그 글 URL
-    :return: (본문 텍스트, 이미지 URL 리스트)
+    :return: (본문 텍스트, 이미지 URL 리스트, video5_url)
     """
     resp = requests.get(url)
     resp.raise_for_status()
@@ -42,6 +42,47 @@ def extract_blog_content(url):
         src = img.get('src')
         if src:
             # 절대경로로 변환
-            images.append(urljoin(url, src))
+            full_url = urljoin(url, src)
+            # 썸네일 파라미터를 w966으로 변환
+            if '?type=' in full_url:
+                full_url = full_url.split('?type=')[0] + '?type=w966'
+            images.append(full_url)
 
-    return text, images 
+    # 비디오 링크 추출
+    videos = []
+    for video in main_area.find_all('video'):
+        src = video.get('src')
+        if src:
+            videos.append(urljoin(url, src))
+        # <source src="..."> 구조도 지원
+        for source in video.find_all('source'):
+            src = source.get('src')
+            if src:
+                videos.append(urljoin(url, src))
+
+    # 추출된 영상 링크 출력 및 선택
+    selected_videos = []
+    if videos:
+        print("[추출된 영상 링크]")
+        for v in videos:
+            print(v)
+        selected_videos = select_videos_by_url(videos)
+        print("[최종 선택된 영상]")
+        for v in selected_videos:
+            print(v)
+
+    video5 = selected_videos[0] if selected_videos else None
+    return text, images, video5
+
+def select_videos_by_url(video_urls):
+    print("영상 목록:")
+    for idx, url in enumerate(video_urls, 1):
+        print(f"{idx}. {url}")
+    selected_urls = input("원하는 영상 URL을 직접 입력하세요(쉼표로 구분): ")
+    selected_urls = [url.strip() for url in selected_urls.split(",")]
+    # 입력된 URL이 실제 리스트에 있는지 검증
+    valid_selected_urls = [url for url in selected_urls if url in video_urls]
+    if not valid_selected_urls:
+        print("입력한 URL이 목록에 없습니다. 다시 시도하세요.")
+        return []
+    return valid_selected_urls 

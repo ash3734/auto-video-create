@@ -7,15 +7,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
-CREATOMATE_TEMPLATE_ID = "a0b0ef80-6c6a-404c-a995-7d0eb7d80f74"  # 상수로 직접 할당
+CREATOMATE_TEMPLATE_ID = "14457245-7822-48a6-a711-62d15b739b85"  # 새 템플릿 ID로 변경
 
-def create_creatomate_video(image_urls, audio_paths, scripts, output_path="creatomate_result.mp4"):
+def create_creatomate_video(image_urls, audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None):
     variables = {
         "image1.source": image_urls[0],
         "image2.source": image_urls[1],
         "image3.source": image_urls[2],
         "image4.source": image_urls[3],
-        "image5.source": image_urls[4],
         "audio1.source": audio_paths[0],
         "audio2.source": audio_paths[1],
         "audio3.source": audio_paths[2],
@@ -27,6 +26,10 @@ def create_creatomate_video(image_urls, audio_paths, scripts, output_path="creat
         "text4.text": scripts[3],
         "text5.text": scripts[4],
     }
+    if video5:
+        variables["video5.source"] = video5
+    if title:
+        variables["title.text"] = title
     payload = {
         "template_id": CREATOMATE_TEMPLATE_ID,
         "modifications": variables
