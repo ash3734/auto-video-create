@@ -2,30 +2,11 @@ import os
 import openai
 from dotenv import load_dotenv
 import json
-import re
 
 load_dotenv()
 
-def extract_title_and_scripts(content):
-    # JSON 객체에서 title과 scripts 추출
-    try:
-        obj = json.loads(content)
-        title = obj.get("title", "")
-        scripts = obj.get("scripts", [])
-        return title, scripts
-    except Exception as e:
-        raise ValueError(f"OpenAI 응답에서 title/scripts 추출 실패: {content}")
-
 def summarize_for_shorts_sets(text, title, first_script):
-    """
-    블로그 본문을 유튜브 쇼츠 영상 스크립트로 요약
-    :param text: 블로그 본문 텍스트
-    :param title: 영상 제목(사용자 입력)
-    :param first_script: 첫 번째 스크립트(사용자 입력)
-    :return: 쇼츠용 요약 스크립트 (문자열)
-    """
     client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-
     prompt = f"""
 아래 블로그 글을 바탕으로, 유튜브 쇼츠 영상(30초 분량)에 어울리는 제목과 스크립트를 자동으로 만들어줘.
 
@@ -72,7 +53,6 @@ def summarize_for_shorts_sets(text, title, first_script):
 블로그 글:
 {text}
 """
-
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
@@ -83,21 +63,16 @@ def summarize_for_shorts_sets(text, title, first_script):
         temperature=0.7,
     )
     content = response.choices[0].message.content.strip()
-    print("OpenAI 응답:", content)  # 응답 확인용
-
     try:
         obj = json.loads(content)
         scripts = obj.get("scripts", [])
     except Exception:
-        # 줄바꿈을 \\n으로 치환 후 재시도
         fixed_content = content.replace('\n', '\\n')
         try:
             obj = json.loads(fixed_content)
             scripts = obj.get("scripts", [])
         except Exception as e:
             raise ValueError(f"OpenAI 응답에서 scripts 추출 실패: {content}")
-
-    # title, first_script는 사용자가 입력한 값 사용
     return obj.get("title", ""), obj.get("first_script", ""), scripts
 
 if __name__ == "__main__":

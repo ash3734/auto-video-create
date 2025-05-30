@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
-CREATOMATE_TEMPLATE_ID = "14457245-7822-48a6-a711-62d15b739b85"  # 새 템플릿 ID로 변경
+CREATOMATE_TEMPLATE_ID = "14457245-7822-48a6-a711-62d15b739b85"
 
 def create_creatomate_video(image_urls, audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, **kwargs):
     variables = {
@@ -30,7 +30,6 @@ def create_creatomate_video(image_urls, audio_paths, scripts, title=None, output
         variables["video5.source"] = video5
     if title:
         variables["title.text"] = title
-    # 추가 변수(duration_1~5, time_1~5 등) 반영
     variables.update(kwargs)
     payload = {
         "template_id": CREATOMATE_TEMPLATE_ID,
@@ -44,13 +43,11 @@ def create_creatomate_video(image_urls, audio_paths, scripts, title=None, output
         },
         data=json.dumps(payload)
     )
-
     if response.status_code in (200, 201, 202):
         result = response.json()[0] if isinstance(response.json(), list) else response.json()
         render_id = result["id"]
         video_url = result["url"]
         print("영상 렌더링 시작! 상태:", result["status"])
-        # 폴링: status가 succeeded가 될 때까지 대기
         while True:
             poll = requests.get(
                 f"https://api.creatomate.com/v1/renders/{render_id}",

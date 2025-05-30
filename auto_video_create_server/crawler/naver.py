@@ -64,8 +64,6 @@ def extract_blog_content(url):
     selected_videos = []
     if videos:
         print("[추출된 영상 링크]")
-        ##for v in videos:
-        #    print(v)
         selected_videos = select_videos_by_url(videos)
         print("[최종 선택된 영상]")
         for v in selected_videos:
