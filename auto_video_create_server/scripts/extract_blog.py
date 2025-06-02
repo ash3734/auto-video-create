@@ -29,50 +29,15 @@ if __name__ == "__main__":
         print("[쇼츠용 5세트 스크립트]", scripts)
 
         filtered_images = [img for img in images if img.startswith("https://postfiles.pstatic.net")]
-
-        # 이미지 다운로드 및 PIL 변환
-        pil_images = []
-        for url in filtered_images:
-            try:
-                response = requests.get(url)
-                img = Image.open(BytesIO(response.content)).convert("RGB")
-                pil_images.append(img)
-            except Exception as e:
-                print(f"이미지 다운로드 실패: {url}, {e}")
-                pil_images.append(None)
-
-        # 메뉴명 추출 (2~4번 스크립트)
-        menu_names = []
-        for s in scripts[1:4]:
-            try:
-                menu = s["script"].split(":")[0].strip()
-                menu_names.append(menu)
-            except Exception:
-                menu_names.append("")
-
-        # KoCLIP-PT 임베딩 및 매칭
-        processor = AutoProcessor.from_pretrained("koclip/koclip-base-pt")
-        model = AutoModel.from_pretrained("koclip/koclip-base-pt")
-        valid_pil_images = [img for img in pil_images if img is not None]
-        image_inputs = processor(images=valid_pil_images, return_tensors="pt")
-        with torch.no_grad():
-            image_features = model.get_image_features(pixel_values=image_inputs["pixel_values"])
-        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-        text_inputs = processor(text=menu_names, return_tensors="pt", padding=True)
-        with torch.no_grad():
-            text_features = model.get_text_features(
-                input_ids=text_inputs["input_ids"],
-                attention_mask=text_inputs["attention_mask"]
-            )
-        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-        similarity = text_features @ image_features.T
-        best_matches = similarity.argmax(dim=1).cpu().numpy()
-        valid_urls = [url for url, img in zip(filtered_images, pil_images) if img is not None]
-        matched_images = [valid_urls[idx] for idx in best_matches]
-        print("\n[KoCLIP 자동 매칭 이미지]")
-        for i, (menu, img_url) in enumerate(zip(menu_names, matched_images)):
-            print(f"스크립트 {i+2} ({menu}) → 이미지: {img_url}")
-        image_urls = [matched_images[0], matched_images[1], matched_images[2], video5]
+        print("이미지 목록:")
+        for idx, url in enumerate(filtered_images, 1):
+            print(f"{idx}. {url}")
+        selected_indices = input("사용할 이미지 번호를 4개 입력하세요(쉼표로 구분): ")
+        indices = [int(idx.strip()) for idx in selected_indices.split(",") if idx.strip().isdigit() and 1 <= int(idx.strip()) <= len(filtered_images)]
+        if len(indices) < 4:
+            print("4개 미만 선택됨, 부족한 부분은 첫 번째 이미지로 채웁니다.")
+            indices += [1] * (4 - len(indices))
+        image_urls = [filtered_images[i-1] for i in indices[:4]]
 
         # 음성 변환
         audio_local_paths, audio_urls = tts_with_fal_multi(
