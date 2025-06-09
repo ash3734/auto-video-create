@@ -1,2 +1,2 @@
 .env
-auto_video_create_server/.env 
+auto_video_create_server/.env .terraform/
