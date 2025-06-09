@@ -41,7 +41,6 @@ def tts_with_fal(text, output_path=None, voice="Bill", stability=0.5, similarity
     audio = result.get("audio")
     if audio and isinstance(audio, dict) and "url" in audio:
         audio_url = audio["url"]
-        # 필요시 로컬 저장
         audio_data = requests.get(audio_url).content
         with open(output_path, "wb") as f:
             f.write(audio_data)
@@ -97,4 +96,4 @@ def select_images_by_url(image_urls):
     if not valid_selected_urls:
         print("입력한 번호가 목록에 없습니다. 다시 시도하세요.")
         return []
-    return valid_selected_urls 
+    return valid_selected_urls

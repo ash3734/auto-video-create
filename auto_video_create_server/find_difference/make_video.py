@@ -1,36 +1,40 @@
+"""
+틀린그림 찾기 영상 생성 파이프라인 템플릿
+"""
 import os
+import random
 import requests
-import json
-import time
-from dotenv import load_dotenv
+from .generate_pairs import generate_difference_image
+# from .tts import tts_for_difference
+# from .utils import ...
 
-load_dotenv()
+CREATOMATE_API_KEY = os.environ.get("CREATOMATE_API_KEY")
+CREATOMATE_TEMPLATE_ID = "94e09efb-2899-42c7-bd4c-0600b6a030e3"
 
-CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
-CREATOMATE_TEMPLATE_ID = "14457245-7822-48a6-a711-62d15b739b85"
+DIFFICULTY_MAP = {1: "하", 2: "중", 3: "상"}
 
-def create_creatomate_video(image_urls, audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, **kwargs):
+
+def make_find_difference_video(prompt, output_path="find_difference_result.mp4"):
+    """
+    prompt: 생성할 이미지 주제(예: '카페 내부')
+    output_path: 결과 영상 파일 경로
+    """
+    # 1. 난이도 랜덤 선택
+    diff_level = random.choice([1, 2, 3])
+    diff_label = DIFFICULTY_MAP[diff_level]
+    diff_count = {1: 3, 2: 5, 3: 7}[diff_level]
+    print(f"[오늘의 난이도] {diff_label} (level={diff_level})")
+    print(f"[틀린그림 개수] {diff_count}개")
+
+    # 2. AI로 틀린그림 한 장짜리 이미지 생성
+    img_url = generate_difference_image(prompt, diff_level=diff_level)
+
+    # 3. Creatomate API로 영상 생성 (image1만 사용)
     variables = {
-        "image1.source": image_urls[0],
-        "image2.source": image_urls[1],
-        "image3.source": image_urls[2],
-        "image4.source": image_urls[3],
-        "audio1.source": audio_paths[0],
-        "audio2.source": audio_paths[1],
-        "audio3.source": audio_paths[2],
-        "audio4.source": audio_paths[3],
-        "audio5.source": audio_paths[4],
-        "text1.text": scripts[0],
-        "text2.text": scripts[1],
-        "text3.text": scripts[2],
-        "text4.text": scripts[3],
-        "text5.text": scripts[4],
+        "image1.source": img_url,
+        "difficulty.text": diff_label,
+        # 필요시 추가 변수
     }
-    if video5:
-        variables["video5.source"] = video5
-    if title:
-        variables["title.text"] = title
-    variables.update(kwargs)
     payload = {
         "template_id": CREATOMATE_TEMPLATE_ID,
         "modifications": variables
@@ -41,13 +45,14 @@ def create_creatomate_video(image_urls, audio_paths, scripts, title=None, output
             "Authorization": f"Bearer {CREATOMATE_API_KEY}",
             "Content-Type": "application/json"
         },
-        data=json.dumps(payload)
+        json=payload
     )
     if response.status_code in (200, 201, 202):
         result = response.json()[0] if isinstance(response.json(), list) else response.json()
         render_id = result["id"]
         video_url = result["url"]
         print("영상 렌더링 시작! 상태:", result["status"])
+        # 렌더링 완료까지 폴링
         while True:
             poll = requests.get(
                 f"https://api.creatomate.com/v1/renders/{render_id}",
@@ -67,6 +72,7 @@ def create_creatomate_video(image_urls, audio_paths, scripts, title=None, output
                 break
             else:
                 print("렌더링 중... (상태:", poll_result["status"], ")")
-                time.sleep(3)
+                import time; time.sleep(3)
     else:
         print("Creatomate API 오류:", response.status_code, response.text)
+    return output_path 
