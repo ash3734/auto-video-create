@@ -6,6 +6,10 @@ on:
       - main
   pull_request:
 
+permissions:
+  pull-requests: write
+  contents: read
+
 jobs:
   terraform:
     runs-on: ubuntu-latest
