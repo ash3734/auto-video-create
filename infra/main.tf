@@ -5,6 +5,11 @@ terraform {
       version = "~> 5.0"  # 최신 안정 버전
     }
   }
+  backend "s3" {
+    bucket = "ash3734-terraform-state-bucket"
+    key    = "state/terraform.tfstate"
+    region = "ap-northeast-2"
+  }
 }
 
 provider "aws" {
@@ -54,6 +59,11 @@ resource "aws_s3_bucket_policy" "public_read" {
       }
     ]
   })
+}
+
+resource "aws_s3_bucket" "test" {
+  bucket = "ash3734-terraform-action-test-bucket"
+  force_destroy = true
 }
 
 data "aws_caller_identity" "current" {}
