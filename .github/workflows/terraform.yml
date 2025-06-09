@@ -6,30 +6,58 @@ on:
       - main
   pull_request:
 
+permissions:
+  pull-requests: write
+  contents: read
+
 jobs:
   terraform:
     runs-on: ubuntu-latest
-
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ap-northeast-2
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
+      - name: Check AWS env
+        run: |
+          echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
+          echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+          echo "AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION"
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Init
-        run: terraform init
+        run: terraform init -input=false
+        working-directory: infra
 
       - name: Terraform Format Check
         run: terraform fmt -check
+        working-directory: infra
 
       - name: Terraform Validate
         run: terraform validate
+        working-directory: infra
 
       - name: Terraform Plan
-        run: terraform plan
+        id: plan
+        run: terraform plan -no-color
+        working-directory: infra
 
-      # 실제 배포는 main 브랜치에 push될 때만!
+      - name: Add Plan Comment
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          message: |
+            ### Terraform Plan
+            ```
+            ${{ steps.plan.outputs.stdout }}
+            ```
+
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -auto-approve 
+        run: terraform apply -auto-approve
+        working-directory: infra 

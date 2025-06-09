@@ -2,8 +2,13 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"  # 최신 안정 버전
+      version = "~> 5.0" # 최신 안정 버전
     }
+  }
+  backend "s3" {
+    bucket = "ash3734-terraform-state-bucket"
+    key    = "state/terraform.tfstate"
+    region = "ap-northeast-2"
   }
 }
 
@@ -12,16 +17,16 @@ provider "aws" {
 }
 
 resource "aws_s3_bucket" "my_bucket" {
-  bucket = "auto-video-tts-files" # 실제 AWS에 생성된 버킷 이름과 일치시킴
-  force_destroy = true # 버킷 비우고 삭제 허용(테스트/개발용)
+  bucket        = "auto-video-tts-files" # 실제 AWS에 생성된 버킷 이름과 일치시킴
+  force_destroy = true                   # 버킷 비우고 삭제 허용(테스트/개발용)
 }
 
 resource "aws_s3_bucket_public_access_block" "public_access" {
   bucket = aws_s3_bucket.my_bucket.id
 
-  block_public_acls   = false
-  block_public_policy = false
-  ignore_public_acls  = false
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
   restrict_public_buckets = false
 }
 
@@ -31,10 +36,10 @@ resource "aws_s3_bucket_policy" "public_read" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
+        Effect    = "Allow"
         Principal = "*"
-        Action = "s3:GetObject"
-        Resource = "${aws_s3_bucket.my_bucket.arn}/*"
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.my_bucket.arn}/*"
       },
       {
         Effect = "Allow"
@@ -54,6 +59,11 @@ resource "aws_s3_bucket_policy" "public_read" {
       }
     ]
   })
+}
+
+resource "aws_s3_bucket" "test" {
+  bucket        = "ash3734-terraform-action-test-bucket"
+  force_destroy = true
 }
 
 data "aws_caller_identity" "current" {}
