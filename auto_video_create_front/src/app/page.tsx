@@ -1,6 +1,7 @@
 "use client";
 import { Box, Button, Container, TextField, Typography, CircularProgress, Checkbox, FormControlLabel, FormGroup } from "@mui/material";
 import { useState } from "react";
+import Image from "next/image";
 
 interface MediaList {
   images: string[];
@@ -76,16 +77,66 @@ export default function Home() {
       {media && (
         <Box sx={{ width: "100%", mb: 4 }}>
           <Typography variant="h6" gutterBottom>이미지 선택</Typography>
-          <FormGroup>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: 2,
+              mb: 2,
+            }}
+          >
             {media.images.length === 0 && <Typography color="text.secondary">이미지가 없습니다.</Typography>}
-            {media.images.map((url, idx) => (
-              <FormControlLabel
-                key={url}
-                control={<Checkbox checked={selectedImages.includes(url)} onChange={() => handleImageToggle(url)} />}
-                label={<img src={url} alt={`img${idx}`} style={{ maxWidth: 120, maxHeight: 80, objectFit: "cover", marginRight: 8 }} />}
-              />
-            ))}
-          </FormGroup>
+            {media.images.map((url, idx) => {
+              const selected = selectedImages.includes(url);
+              return (
+                <Box
+                  key={url}
+                  sx={{
+                    position: "relative",
+                    cursor: "pointer",
+                    borderRadius: 2,
+                    overflow: "hidden",
+                    border: selected ? "2px solid #1976d2" : "2px solid transparent",
+                    boxShadow: selected ? "0 0 0 2px #1976d2" : "none",
+                  }}
+                  onClick={() => handleImageToggle(url)}
+                >
+                  <img
+                    src={`/api/image-proxy?url=${encodeURIComponent(url)}`}
+                    alt={`img${idx}`}
+                    style={{
+                      width: "100%",
+                      height: 80,
+                      objectFit: "cover",
+                      display: "block",
+                      filter: selected ? "brightness(0.6)" : "none",
+                      transition: "filter 0.2s, box-shadow 0.2s",
+                    }}
+                  />
+                  {selected && (
+                    <Box
+                      sx={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
+                        bgcolor: "rgba(25, 118, 210, 0.3)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        pointerEvents: "none",
+                      }}
+                    >
+                      <Typography variant="h5" color="#fff" fontWeight={700}>
+                        선택됨
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              );
+            })}
+          </Box>
           <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>영상 선택</Typography>
           <FormGroup>
             {media.videos.length === 0 && <Typography color="text.secondary">영상이 없습니다.</Typography>}
