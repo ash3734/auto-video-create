@@ -5,9 +5,9 @@ from urllib.parse import urljoin
 
 def extract_blog_content(url):
     """
-    네이버 블로그 글에서 본문 텍스트와 이미지 링크(이미지 URL)만 추출
+    네이버 블로그 글에서 본문 텍스트, 이미지 URL 리스트, 비디오 URL 리스트를 추출
     :param url: 네이버 블로그 글 URL
-    :return: (본문 텍스트, 이미지 URL 리스트, video5_url)
+    :return: (본문 텍스트, 이미지 URL 리스트, 비디오 URL 리스트)
     """
     resp = requests.get(url)
     resp.raise_for_status()
@@ -41,12 +41,12 @@ def extract_blog_content(url):
     for img in main_area.find_all('img'):
         src = img.get('src')
         if src:
-            # 절대경로로 변환
             full_url = urljoin(url, src)
-            # 썸네일 파라미터를 w966으로 변환
             if '?type=' in full_url:
                 full_url = full_url.split('?type=')[0] + '?type=w966'
-            images.append(full_url)
+            # 도메인 필터링: postfiles.pstatic.net만 허용
+            if 'postfiles.pstatic.net' in full_url:
+                images.append(full_url)
 
     # 비디오 링크 추출
     videos = []
@@ -60,18 +60,9 @@ def extract_blog_content(url):
             if src:
                 videos.append(urljoin(url, src))
 
-    # 추출된 영상 링크 출력 및 선택
-    selected_videos = []
-    if videos:
-        print("[추출된 영상 링크]")
-        selected_videos = select_videos_by_url(videos)
-        print("[최종 선택된 영상]")
-        for v in selected_videos:
-            print(v)
+    return text, images, videos
 
-    video5 = selected_videos[0] if selected_videos else None
-    return text, images, video5
-
+# 콘솔에서만 사용할 선택 함수 (API에서는 사용하지 않음)
 def select_videos_by_url(video_urls):
     print("영상 목록:")
     for idx, url in enumerate(video_urls, 1):
