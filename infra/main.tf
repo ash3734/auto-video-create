@@ -16,6 +16,11 @@ provider "aws" {
   region = "ap-northeast-2"
 }
 
+resource "aws_s3_bucket" "my_bucket" {
+  bucket        = "auto-video-tts-files" # 실제 AWS에 생성된 버킷 이름과 일치시킴
+  force_destroy = true                   # 버킷 비우고 삭제 허용(테스트/개발용)
+}
+
 resource "aws_s3_bucket_public_access_block" "public_access" {
   bucket = aws_s3_bucket.my_bucket.id
 
