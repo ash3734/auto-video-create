@@ -3,15 +3,17 @@ frontend:
   phases:
     preBuild:
       commands:
+        - cd auto_video_create_front
         - nvm use 18
         - npm ci
     build:
       commands:
+        - cd auto_video_create_front
         - npm run build
   artifacts:
-    baseDirectory: .next
+    baseDirectory: auto_video_create_front/.next
     files:
       - '**/*'
   cache:
     paths:
-      - node_modules/**/* 
+      - auto_video_create_front/node_modules/**/* 
