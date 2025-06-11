@@ -1,5 +1,5 @@
 "use client";
-import { Box, Button, Container, TextField, Typography, CircularProgress, Checkbox, FormControlLabel, FormGroup } from "@mui/material";
+import { Box, Button, Container, TextField, Typography, CircularProgress, Checkbox, FormControlLabel, FormGroup, LinearProgress } from "@mui/material";
 import { useState } from "react";
 import Image from "next/image";
 
@@ -18,6 +18,9 @@ export default function Home() {
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState<string>("");
+  const [step, setStep] = useState<'input' | 'select' | 'generating' | 'done'>('input');
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,8 +31,11 @@ export default function Home() {
     setSelectedVideo(null);
     setScripts([]);
     setTitle("");
+    setStep('input');
+    setVideoUrl(null);
+    setGenerateError(null);
     try {
-      const res = await fetch("/api/extract-media", {
+      const res = await fetch("/api/blog/extract-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ blog_url: blogUrl }),
@@ -39,8 +45,9 @@ export default function Home() {
         setMedia({ images: data.images, videos: data.videos, scripts: data.scripts, title: data.title });
         setScripts((data.scripts || []).map((s: any) => typeof s === 'string' ? s : s.script));
         setTitle(data.title || "");
+        setStep('select');
       } else {
-        setError(data.message || "이미지/영상 추출에 실패했습니다.");
+        setError(data.message || "이미지/영상/스크립트 추출에 실패했습니다.");
       }
     } catch (err) {
       setError("서버 요청 중 오류가 발생했습니다.");
@@ -75,6 +82,49 @@ export default function Home() {
     setSelectedVideo(prev => prev === url ? null : url);
   };
 
+  const handleGenerateVideo = async () => {
+    setStep('generating');
+    setGenerateError(null);
+    setVideoUrl(null);
+    try {
+      const res = await fetch("/api/blog/generate-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          scripts,
+          images: selectedImages,
+          video: selectedVideo,
+        }),
+      });
+      const data = await res.json();
+      if (data.status === "success" && data.video_url) {
+        setVideoUrl(data.video_url);
+        setStep('done');
+      } else {
+        setGenerateError(data.message || "영상 생성에 실패했습니다.");
+        setStep('select');
+      }
+    } catch (err) {
+      setGenerateError("서버 요청 중 오류가 발생했습니다.");
+      setStep('select');
+    }
+  };
+
+  const handleReset = () => {
+    setBlogUrl("");
+    setLoading(false);
+    setError(null);
+    setMedia(null);
+    setSelectedImages([]);
+    setSelectedVideo(null);
+    setScripts([]);
+    setTitle("");
+    setStep('input');
+    setVideoUrl(null);
+    setGenerateError(null);
+  };
+
   return (
     <Container maxWidth="sm" sx={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", p: 2 }}>
       <Box sx={{ width: "100%", textAlign: "center", mb: 4 }}>
@@ -105,7 +155,7 @@ export default function Home() {
         </Button>
       </Box>
       {error && <Typography color="error" sx={{ mb: 2 }}>{error}</Typography>}
-      {media && scripts.length > 0 && (
+      {step === 'select' && media && scripts.length > 0 && (
         <Box sx={{ width: "100%", mb: 4 }}>
           <Typography variant="h6" gutterBottom>생성된 스크립트</Typography>
           {scripts.map((script, idx) => (
@@ -178,40 +228,78 @@ export default function Home() {
               );
             })}
           </Box>
+          {media && media.videos && media.videos.length > 0 && (
+            <Box sx={{ width: "100%", mb: 4 }}>
+              <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>영상 선택</Typography>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: 3,
+                  justifyItems: 'center',
+                  alignItems: 'center',
+                  mb: 2,
+                }}
+              >
+                {media.videos.map((url, idx) => (
+                  <Box key={url} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 220 }}>
+                    <video
+                      src={url}
+                      style={{ width: 200, height: 140, borderRadius: 8, border: selectedVideo === url ? '3px solid #1976d2' : '2px solid #eee', marginBottom: 8, background: '#000' }}
+                      controls
+                    />
+                    <Button
+                      variant={selectedVideo === url ? 'contained' : 'outlined'}
+                      color={selectedVideo === url ? 'primary' : 'inherit'}
+                      size="small"
+                      onClick={() => handleVideoSelect(url)}
+                      sx={{ width: 180 }}
+                    >
+                      {selectedVideo === url ? '선택됨' : '이 영상 선택'}
+                    </Button>
+                  </Box>
+                ))}
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                영상을 1개만 선택할 수 있습니다. 선택을 취소하려면 다시 클릭하세요.
+              </Typography>
+            </Box>
+          )}
+          <Button
+            variant="contained"
+            color="primary"
+            fullWidth
+            size="large"
+            sx={{ mt: 3, mb: 2 }}
+            disabled={selectedImages.length !== 4 || !selectedVideo}
+            onClick={handleGenerateVideo}
+          >
+            최종 영상 생성하기
+          </Button>
+          {generateError && <Typography color="error" sx={{ mb: 2 }}>{generateError}</Typography>}
         </Box>
       )}
-      {media && media.videos && media.videos.length > 0 && (
-        <Box sx={{ width: "100%", mb: 4 }}>
-          <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>영상 선택</Typography>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
-              gap: 3,
-              justifyItems: 'center',
-              alignItems: 'center',
-              mb: 2,
-            }}
-          >
-            {media.videos.map((url, idx) => (
-              <Box key={url} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 220 }}>
-                <video
-                  src={url}
-                  style={{ width: 200, height: 140, borderRadius: 8, border: selectedVideo === url ? '3px solid #1976d2' : '2px solid #eee', marginBottom: 8, background: '#000' }}
-                  controls
-                />
-                <Button
-                  variant={selectedVideo === url ? 'contained' : 'outlined'}
-                  color={selectedVideo === url ? 'primary' : 'inherit'}
-                  size="small"
-                  onClick={() => handleVideoSelect(url)}
-                  sx={{ width: 180 }}
-                >
-                  {selectedVideo === url ? '선택됨' : '이 영상 선택'}
-                </Button>
-              </Box>
-            ))}
+      {step === 'generating' && (
+        <Box sx={{ width: "100%", textAlign: "center", mt: 8 }}>
+          <Typography variant="h6" gutterBottom>최종 영상을 생성 중입니다...</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            최대 1분 정도 소요될 수 있습니다. 잠시만 기다려 주세요.
+          </Typography>
+          <Box sx={{ width: '100%', mt: 4 }}>
+            <LinearProgress />
           </Box>
+        </Box>
+      )}
+      {step === 'done' && videoUrl && (
+        <Box sx={{ width: "100%", textAlign: "center", mt: 8 }}>
+          <Typography variant="h6" gutterBottom>최종 영상이 생성되었습니다!</Typography>
+          <video src={videoUrl} controls style={{ width: '100%', maxHeight: 400, borderRadius: 8, margin: '24px 0' }} />
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            다시하기를 누르면 이 영상은 더 이상 다운로드할 수 없습니다.
+          </Typography>
+          <Button variant="outlined" color="primary" onClick={handleReset} sx={{ mt: 2 }}>
+            다시하기
+          </Button>
         </Box>
       )}
     </Container>
