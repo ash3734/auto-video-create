@@ -3,6 +3,7 @@ import openai
 from dotenv import load_dotenv
 import json
 import re
+import ast
 
 load_dotenv()
 
@@ -11,6 +12,22 @@ def extract_json_from_codeblock(content):
     if match:
         return match.group(1)
     return content
+
+# robust json/dict 파서
+def safe_json_parse(s):
+    try:
+        return json.loads(s)
+    except Exception:
+        # 속성명에 쌍따옴표가 없는 경우 보정
+        try:
+            fixed = re.sub(r'([{{,]\s*)(\w+)(\s*:)', r'\1"\2"\3', s)
+            return json.loads(fixed)
+        except Exception:
+            # 마지막으로, Python dict 스타일도 eval 시도(보안상 위험, 내부에서만 사용)
+            try:
+                return ast.literal_eval(s)
+            except Exception:
+                return None
 
 def summarize_for_shorts_sets(text):
     client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
@@ -21,13 +38,13 @@ def summarize_for_shorts_sets(text):
 - 첫 번째 스크립트는 반드시 '무슨무슨역 맛집 상호명 방문후기 입니다.', '무슨무슨동 맛집 상호명 방문후기 입니다.' 형식으로 생성해줘. (예: '교대역 맛집 스키당 방문후기 입니다.')
 - title과 첫 번째 스크립트는 블로그 본문에서 역/동/상호명을 추출해서 만들어줘. 만약 역/동 정보가 없으면 상호명만 사용해줘.
 
-그리고, 쇼츠용 스크립트 4줄을 아래와 같이 만들어줘:
-1번째 줄: 대표 메뉴 한 가지를 임팩트 있게 소개 (20자 내외, 아래 형식)
-2번째 줄: 또 다른 메뉴를 임팩트 있게 소개 (20자 내외, 아래 형식)
+그리고, 두번째 스크립트 부터는 쇼츠용 스크립트 4줄을 아래와 같이 만들어줘:
+2번째 줄: 대표 메뉴 한 가지를 임팩트 있게 소개 (20자 내외, 아래 형식)
 3번째 줄: 또 다른 메뉴를 임팩트 있게 소개 (20자 내외, 아래 형식)
-4번째 줄: 가게 정보를 보여주며 추천 멘트로 마무리
+4번째 줄: 또 다른 메뉴를 임팩트 있게 소개 (20자 내외, 아래 형식)
+5번째 줄: 가게 정보를 보여주며 추천 멘트로 마무리
 
-2~3번째 줄(메뉴 설명)은 반드시 아래와 같은 형식으로 작성해줘:
+2~4번째 줄(메뉴 설명)은 반드시 아래와 같은 형식으로 작성해줘:
 메뉴명 : 가격\\n설명
 (예시: 불고기덮밥 : 9,000원\\n달콤짭짤한 소스에 밥이 쏙쏙 들어가요!)
 
@@ -44,8 +61,8 @@ def summarize_for_shorts_sets(text):
 
 {{
   "title": "교대역 스키당",
-  "first_script": "교대역 맛집 스키당 방문후기 입니다.",
   "scripts": [
+    {{"script": "교대역 맛집 스키당 방문후기 입니다."}},
     {{"script": "불고기덮밥 : 9,000원\\n달콤짭짤한 소스에 밥이 쏙쏙 들어가요!"}},
     {{"script": "제육볶음 : 8,500원\\n매콤한 맛에 밥 한 그릇 뚝딱입니다!"}},
     {{"script": "돈까스 : 8,000원\\n겉은 바삭, 속은 촉촉해서 정말 맛있어요!"}},
@@ -53,7 +70,7 @@ def summarize_for_shorts_sets(text):
   ]
 }}
 
-반드시 위 형식의 JSON으로 title, first_script, scripts(4개)를 반환해 주세요. 4개 미만이면 빈 문자열로 채워주세요.
+반드시 위 형식의 JSON으로 title, scripts(5개)를 반환해 주세요. 5개 미만이면 빈 문자열로 채워주세요.
 
 블로그 글:
 {text}
@@ -83,16 +100,16 @@ def summarize_for_shorts_sets(text):
         scripts = []
         return title, scripts
     try:
-        obj = json.loads(content)
-        title = obj.get("title", "")
-        scripts = obj.get("scripts", [])
+        obj = safe_json_parse(content)
+        title = obj.get("title", "") if obj else ""
+        scripts = obj.get("scripts", []) if obj else []
     except Exception:
         try:
             json_str = extract_json_from_codeblock(content)
-            fixed_content = json_str.replace('\n', '\\n')
-            obj = json.loads(fixed_content)
-            title = obj.get("title", "")
-            scripts = obj.get("scripts", [])
+            fixed_content = json_str.replace('\\n', '\\\\n')
+            obj = safe_json_parse(fixed_content)
+            title = obj.get("title", "") if obj else ""
+            scripts = obj.get("scripts", []) if obj else []
         except Exception as e:
             print(f"OpenAI 응답 파싱 실패: {e}")
             title = ""
