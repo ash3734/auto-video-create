@@ -142,7 +142,7 @@ export default function Home() {
       </Box>
       <Box component="form" onSubmit={handleSubmit} sx={{ width: "100%", mb: 4 }}>
         <TextField
-          label="네이버 블로그 주소"
+          label="네이버 블로그 주소!!!"
           variant="outlined"
           fullWidth
           value={blogUrl}
