@@ -67,3 +67,29 @@ def get_creatomate_vars(durations):
     creatomate_vars["composition_logo.duration"] = total_duration
     creatomate_vars["duration"] = total_duration
     return creatomate_vars
+
+def poll_creatomate_video_url(render_id, api_key=None, max_poll=150, poll_interval=2):
+    """
+    Creatomate render_id를 받아 최종 영상 URL을 폴링해서 반환한다.
+    성공 시 URL(str), 실패 시 None 반환
+    """
+    import requests
+    import os
+    api_key = api_key or os.environ.get('CREATOMATE_API_KEY')
+    video_url = None
+    for i in range(max_poll):
+        poll_resp = requests.get(
+            f"https://api.creatomate.com/v1/renders/{render_id}",
+            headers={"Authorization": f"Bearer {api_key}"}
+        )
+        poll_json = poll_resp.json()
+        status = poll_json.get('status')
+        url_in_result = poll_json.get('result', {}).get('url') if poll_json.get('result') else None
+        url_top_level = poll_json.get('url')
+        if (status in ['completed', 'succeeded']) and (url_in_result or url_top_level):
+            video_url = url_in_result or url_top_level
+            break
+        elif status == 'failed':
+            return None
+        time.sleep(poll_interval)
+    return video_url
