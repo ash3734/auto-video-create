@@ -6,15 +6,18 @@ import Image from "next/image";
 interface MediaList {
   images: string[];
   videos: string[];
+  scripts?: { script: string }[] | string[];
 }
 
 export default function Home() {
   const [blogUrl, setBlogUrl] = useState("");
   const [loading, setLoading] = useState(false);
-  const [media, setMedia] = useState<MediaList | null>(null);
+  const [media, setMedia] = useState<MediaList & { scripts?: string[], title?: string } | null>(null);
+  const [scripts, setScripts] = useState<string[]>([]);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
-  const [selectedVideos, setSelectedVideos] = useState<string[]>([]);
+  const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [title, setTitle] = useState<string>("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +25,9 @@ export default function Home() {
     setError(null);
     setMedia(null);
     setSelectedImages([]);
-    setSelectedVideos([]);
+    setSelectedVideo(null);
+    setScripts([]);
+    setTitle("");
     try {
       const res = await fetch("/api/extract-media", {
         method: "POST",
@@ -31,7 +36,9 @@ export default function Home() {
       });
       const data = await res.json();
       if (data.status === "success") {
-        setMedia({ images: data.images, videos: data.videos });
+        setMedia({ images: data.images, videos: data.videos, scripts: data.scripts, title: data.title });
+        setScripts((data.scripts || []).map((s: any) => typeof s === 'string' ? s : s.script));
+        setTitle(data.title || "");
       } else {
         setError(data.message || "이미지/영상 추출에 실패했습니다.");
       }
@@ -42,11 +49,30 @@ export default function Home() {
     }
   };
 
-  const handleImageToggle = (url: string) => {
-    setSelectedImages(prev => prev.includes(url) ? prev.filter(u => u !== url) : [...prev, url]);
+  const handleImageClick = (url: string) => {
+    setSelectedImages(prev => {
+      const idx = prev.indexOf(url);
+      if (idx === -1) {
+        if (prev.length < 4) {
+          return [...prev, url];
+        } else {
+          return prev;
+        }
+      } else if (idx === prev.length - 1) {
+        return prev.slice(0, -1);
+      } else {
+        return prev;
+      }
+    });
   };
-  const handleVideoToggle = (url: string) => {
-    setSelectedVideos(prev => prev.includes(url) ? prev.filter(u => u !== url) : [...prev, url]);
+
+  const getImageOrder = (url: string) => {
+    const idx = selectedImages.indexOf(url);
+    return idx !== -1 ? idx + 1 : null;
+  };
+
+  const handleVideoSelect = (url: string) => {
+    setSelectedVideo(prev => prev === url ? null : url);
   };
 
   return (
@@ -58,6 +84,11 @@ export default function Home() {
         <Typography variant="body1" color="text.secondary">
           네이버 블로그 주소를 입력하면 자동으로 쇼츠 영상을 만들어줍니다.
         </Typography>
+        {title && (
+          <Typography variant="h5" color="primary" fontWeight={700} sx={{ mt: 2, mb: 2 }}>
+            영상 제목: {title}
+          </Typography>
+        )}
       </Box>
       <Box component="form" onSubmit={handleSubmit} sx={{ width: "100%", mb: 4 }}>
         <TextField
@@ -74,46 +105,56 @@ export default function Home() {
         </Button>
       </Box>
       {error && <Typography color="error" sx={{ mb: 2 }}>{error}</Typography>}
-      {media && (
+      {media && scripts.length > 0 && (
         <Box sx={{ width: "100%", mb: 4 }}>
-          <Typography variant="h6" gutterBottom>이미지 선택</Typography>
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
-              gap: 2,
-              mb: 2,
-            }}
-          >
+          <Typography variant="h6" gutterBottom>생성된 스크립트</Typography>
+          {scripts.map((script, idx) => (
+            <Box key={idx} sx={{ mb: 1, p: 1, border: '1px solid #eee', borderRadius: 2 }}>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.5 }}>스크립트 {idx + 1}</Typography>
+              <Typography variant="body1">{script}</Typography>
+              {idx === scripts.length - 1 && (
+                <Typography variant="body2" color="secondary" sx={{ mt: 1 }}>
+                  이 스크립트에는 영상을 선택해 주세요.
+                </Typography>
+              )}
+            </Box>
+          ))}
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 2 }}>
+            이미지를 클릭하면 선택 순서대로 각 스크립트에 할당됩니다.<br />
+            선택을 취소하려면 마지막에 선택한 이미지를 다시 클릭하세요.<br />
+            (최대 4개까지 선택할 수 있습니다)
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', mb: 2 }}>
             {media.images.length === 0 && <Typography color="text.secondary">이미지가 없습니다.</Typography>}
             {media.images.map((url, idx) => {
-              const selected = selectedImages.includes(url);
+              const order = getImageOrder(url);
               return (
                 <Box
                   key={url}
                   sx={{
                     position: "relative",
-                    cursor: "pointer",
+                    cursor: order === null && selectedImages.length < 4 ? "pointer" : order !== null ? "pointer" : "not-allowed",
                     borderRadius: 2,
                     overflow: "hidden",
-                    border: selected ? "2px solid #1976d2" : "2px solid transparent",
-                    boxShadow: selected ? "0 0 0 2px #1976d2" : "none",
+                    border: order !== null ? "2px solid #1976d2" : "2px solid transparent",
+                    boxShadow: order !== null ? "0 0 0 2px #1976d2" : "none",
+                    opacity: order === null && selectedImages.length >= 4 ? 0.5 : 1,
                   }}
-                  onClick={() => handleImageToggle(url)}
+                  onClick={() => handleImageClick(url)}
                 >
                   <img
                     src={`/api/image-proxy?url=${encodeURIComponent(url)}`}
                     alt={`img${idx}`}
                     style={{
-                      width: "100%",
+                      width: 80,
                       height: 80,
                       objectFit: "cover",
                       display: "block",
-                      filter: selected ? "brightness(0.6)" : "none",
+                      filter: order !== null ? "brightness(0.6)" : "none",
                       transition: "filter 0.2s, box-shadow 0.2s",
                     }}
                   />
-                  {selected && (
+                  {order !== null && (
                     <Box
                       sx={{
                         position: "absolute",
@@ -128,8 +169,8 @@ export default function Home() {
                         pointerEvents: "none",
                       }}
                     >
-                      <Typography variant="h5" color="#fff" fontWeight={700}>
-                        선택됨
+                      <Typography variant="h6" color="#fff" fontWeight={700}>
+                        {order}번 선택됨
                       </Typography>
                     </Box>
                   )}
@@ -137,16 +178,40 @@ export default function Home() {
               );
             })}
           </Box>
+        </Box>
+      )}
+      {media && media.videos && media.videos.length > 0 && (
+        <Box sx={{ width: "100%", mb: 4 }}>
           <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>영상 선택</Typography>
-          <FormGroup>
-            {media.videos.length === 0 && <Typography color="text.secondary">영상이 없습니다.</Typography>}
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: 3,
+              justifyItems: 'center',
+              alignItems: 'center',
+              mb: 2,
+            }}
+          >
             {media.videos.map((url, idx) => (
-              <FormControlLabel
-                key={url}
-                control={<Checkbox checked={selectedVideos.includes(url)} onChange={() => handleVideoToggle(url)} />}
-                label={<video src={url} style={{ maxWidth: 120, maxHeight: 80, marginRight: 8 }} controls />} />
+              <Box key={url} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 220 }}>
+                <video
+                  src={url}
+                  style={{ width: 200, height: 140, borderRadius: 8, border: selectedVideo === url ? '3px solid #1976d2' : '2px solid #eee', marginBottom: 8, background: '#000' }}
+                  controls
+                />
+                <Button
+                  variant={selectedVideo === url ? 'contained' : 'outlined'}
+                  color={selectedVideo === url ? 'primary' : 'inherit'}
+                  size="small"
+                  onClick={() => handleVideoSelect(url)}
+                  sx={{ width: 180 }}
+                >
+                  {selectedVideo === url ? '선택됨' : '이 영상 선택'}
+                </Button>
+              </Box>
             ))}
-          </FormGroup>
+          </Box>
         </Box>
       )}
     </Container>
