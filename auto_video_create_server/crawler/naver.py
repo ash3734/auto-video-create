@@ -38,6 +38,7 @@ def extract_blog_content(url):
 
     # 이미지 링크 추출
     images = []
+    img_count = 0
     for img in main_area.find_all('img'):
         src = img.get('src')
         if src:
@@ -47,26 +48,30 @@ def extract_blog_content(url):
             # 도메인 필터링: postfiles.pstatic.net만 허용
             if 'postfiles.pstatic.net' in full_url:
                 images.append(full_url)
+                img_count += 1
+                print(f"[이미지 {img_count}] {full_url}")
 
     # 비디오 링크 추출
     videos = []
+    video_count = 0
     for video in main_area.find_all('video'):
         src = video.get('src')
         if src:
             videos.append(urljoin(url, src))
+            video_count += 1
+            print(f"[비디오 {video_count}] {urljoin(url, src)}")
         # <source src="..."> 구조도 지원
         for source in video.find_all('source'):
             src = source.get('src')
             if src:
                 videos.append(urljoin(url, src))
+                video_count += 1
+                print(f"[비디오 {video_count}] {urljoin(url, src)}")
 
     return text, images, videos
 
 # 콘솔에서만 사용할 선택 함수 (API에서는 사용하지 않음)
 def select_videos_by_url(video_urls):
-    print("영상 목록:")
-    for idx, url in enumerate(video_urls, 1):
-        print(f"{idx}. {url}")
     selected_indices = input("원하는 영상 번호를 입력하세요(쉼표로 구분): ")
     try:
         indices = [int(idx.strip()) for idx in selected_indices.split(",")]
