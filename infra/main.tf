@@ -16,11 +16,6 @@ provider "aws" {
   region = "ap-northeast-2"
 }
 
-resource "aws_s3_bucket" "my_bucket" {
-  bucket        = "auto-video-tts-files" # 실제 AWS에 생성된 버킷 이름과 일치시킴
-  force_destroy = true                   # 버킷 비우고 삭제 허용(테스트/개발용)
-}
-
 resource "aws_s3_bucket_public_access_block" "public_access" {
   bucket = aws_s3_bucket.my_bucket.id
 
@@ -68,4 +63,28 @@ resource "aws_s3_bucket" "test" {
 
 data "aws_caller_identity" "current" {}
 
-# 업로드/삭제는 AWS IAM 인증 사용자만 가능 (별도 정책 필요 없음) 
+# 업로드/삭제는 AWS IAM 인증 사용자만 가능 (별도 정책 필요 없음)
+
+variable "github_token" {
+  description = "GitHub Personal Access Token for Amplify"
+  type        = string
+}
+
+resource "aws_amplify_app" "frontend" {
+  name        = "auto-video-frontend"
+  repository  = "https://github.com/ash3734/auto-video-create"
+  oauth_token = var.github_token
+  platform    = "WEB"
+  build_spec  = file("${path.module}/amplify.yml")
+
+  environment_variables = {
+    NEXT_PUBLIC_API_URL = "https://your-backend-api-url" # 필요시 수정
+  }
+}
+
+resource "aws_amplify_branch" "main" {
+  app_id            = aws_amplify_app.frontend.id
+  branch_name       = "main"
+  stage             = "PRODUCTION"
+  enable_auto_build = true
+} 
