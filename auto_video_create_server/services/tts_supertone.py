@@ -34,6 +34,7 @@ def tts_with_supertone(text, output_path, api_key, voice_id, speed=1.2):
     return output_path, None
 
 def tts_with_supertone_multi(scripts, api_key, voice_id, speed=1.2, output_dir="tts_outputs"):
+    print("tts_with_supertone_multi 호출")
     os.makedirs(output_dir, exist_ok=True)
     audio_local_paths = []
     audio_urls = []

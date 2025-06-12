@@ -54,6 +54,7 @@ class GenerateVideoResponse(BaseModel):
 
 @router.post("/generate-video", response_model=GenerateVideoResponse)
 def generate_video(req: GenerateVideoRequest):
+    print("generate_video 호출")
     try:
         # 1. TTS 변환 (scripts → mp3 url)
         SUPERTONE_API_KEY = os.environ.get("SUPERTONE_API_KEY")
