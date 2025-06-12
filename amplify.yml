@@ -6,7 +6,7 @@ frontend:
         - cd auto_video_create_front && nvm use 18  &&  npm ci
     build:
       commands:
-        - cd auto_video_create_front && NEXTJS_IGNORE_ESLINT_ERRORS=true npm run build
+        - NEXTJS_IGNORE_ESLINT_ERRORS=true npm run build
   artifacts:
     baseDirectory: auto_video_create_front/.next
     files:
