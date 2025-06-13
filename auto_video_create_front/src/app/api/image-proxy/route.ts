@@ -17,6 +17,6 @@ export async function GET(req: NextRequest) {
       headers: { 'Content-Type': contentType }
     });
   } catch (e) {
-    return new Response('Error fetching image', { status: 500 });
+    return new Response('Error fetching image'+e, { status: 500 });
   }
 } 
