@@ -15,4 +15,3 @@ applications:
     cache:
       paths:
         - auto_video_create_front/node_modules/**/* 
-    appRoot : auto_video_create_front
