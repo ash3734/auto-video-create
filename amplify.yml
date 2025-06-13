@@ -1,18 +1,19 @@
 version: 1
 applications:
  - frontend:
+    buildPath: '/'  # run install and build from monorepo project root
     phases:
       preBuild:
         commands:
-          - cd auto_video_create_front && nvm use 18  &&  npm ci
+          - nvm use 18  &&  npm ci
       build:
         commands:
-          - cd auto_video_create_front && npm run build
+          - npm run build
     artifacts:
       baseDirectory: auto_video_create_front/.next
       files:
         - '**/*'
     cache:
       paths:
-        - auto_video_create_front/node_modules/**/* 
+        - node_modules/**/* 
     appRoot: auto_video_create_front
