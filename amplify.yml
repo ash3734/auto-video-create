@@ -16,4 +16,4 @@ applications:
     cache:
       paths:
         - node_modules/**/* 
-    appRoot: auto_video_create_front
+   appRoot: auto_video_create_front
