@@ -24,6 +24,10 @@ class ExtractMediaResponse(BaseModel):
     videos: list[str]
     message: str = None
 
+@router.get("/hello")
+def hello():
+    return {"message": "Hello, World!!!!!"}
+
 @router.post("/extract-media", response_model=ExtractMediaResponse)
 def extract_media(req: ExtractMediaRequest):
     try:
