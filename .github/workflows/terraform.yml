@@ -4,7 +4,13 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'infra/**'
+      - '.github/workflows/terraform.yml'
   pull_request:
+    paths:
+      - 'infra/**'
+      - '.github/workflows/terraform.yml'
 
 permissions:
   pull-requests: write

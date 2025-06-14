@@ -5,7 +5,9 @@ on:
     branches:
       - main
       - backend-setup
-      # 필요시 feature/* 등 추가
+    paths:
+      - 'auto_video_create_server/**'
+      - '.github/workflows/deploy-lambda.yml'
 
 jobs:
   deploy:
@@ -14,6 +16,7 @@ jobs:
     env:
       AWS_REGION: ap-northeast-2
       LAMBDA_ZIP: lambda.zip
+      LAMBDA_FUNCTION_NAME: my-fastapi-backend
 
     steps:
       - name: Checkout code
@@ -40,19 +43,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Move lambda.zip to infra
-        run: mv lambda.zip infra/
-
-      - name: Terraform Init
-        working-directory: infra
-        run: terraform init
-
-      - name: Terraform Apply
-        working-directory: infra
-        run: terraform apply -auto-approve
-        env:
-          TF_VAR_env: ${{ github.ref_name }} # 예: main, backend-setup 등 브랜치명 환경변수로 전달 가능
-
-      - name: Show API Gateway endpoint
-        working-directory: infra
-        run: terraform output api_endpoint 
+      - name: Update Lambda function code
+        run: |
+          aws lambda update-function-code \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --zip-file fileb://$LAMBDA_ZIP \
+            --region $AWS_REGION 
