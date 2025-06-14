@@ -90,11 +90,11 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
 }
 
 resource "aws_lambda_function" "fastapi" {
-  function_name = "my-fastapi-backend"
-  role          = aws_iam_role.lambda_exec.arn
-  handler       = "main.handler"
-  runtime       = "python3.11"
-  filename      = "${path.module}/../lambda.zip"
+  function_name    = "my-fastapi-backend"
+  role             = aws_iam_role.lambda_exec.arn
+  handler          = "main.handler"
+  runtime          = "python3.11"
+  filename         = "${path.module}/../lambda.zip"
   source_code_hash = filebase64sha256("${path.module}/../lambda.zip")
 
   environment {
@@ -103,7 +103,7 @@ resource "aws_lambda_function" "fastapi" {
       # 필요한 환경변수 추가
     }
   }
-  timeout = 30
+  timeout     = 30
   memory_size = 512
 }
 
@@ -113,10 +113,10 @@ resource "aws_apigatewayv2_api" "api" {
 }
 
 resource "aws_apigatewayv2_integration" "lambda" {
-  api_id           = aws_apigatewayv2_api.api.id
-  integration_type = "AWS_PROXY"
-  integration_uri  = aws_lambda_function.fastapi.invoke_arn
-  integration_method = "POST"
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.fastapi.invoke_arn
+  integration_method     = "POST"
   payload_format_version = "2.0"
 }
 
