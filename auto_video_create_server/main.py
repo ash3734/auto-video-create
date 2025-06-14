@@ -12,6 +12,14 @@ print("=== main.py: FastAPI 인스턴스 생성 완료 ===")
 app.include_router(blog_router, prefix="/api/blog")
 print("=== main.py: blog_router 등록 완료 ===")
 
+import json
+def print_event(event, context):
+  print("=== Lambda event ===")
+  print(json.dumps(event))
+  print("=== Lambda context ===")
+  print(context)
+  return handler(event, context)
+
 handler = Mangum(app)
 print("=== main.py: Mangum 핸들러 생성 완료 ===")
 
