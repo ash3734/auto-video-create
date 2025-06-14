@@ -28,3 +28,7 @@ def hello():
 @app.get("/hello2")
 def hello():
     return {"message": "Hello, World!!!!!"}
+
+@app.get("/hello3")
+def hello3():
+    return {"message": "Hello, World! (hello3)"}
