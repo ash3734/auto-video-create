@@ -94,8 +94,8 @@ resource "aws_lambda_function" "fastapi" {
   role             = aws_iam_role.lambda_exec.arn
   handler          = "main.handler"
   runtime          = "python3.11"
-  filename         = "${path.module}/../lambda.zip"
-  source_code_hash = filebase64sha256("${path.module}/../lambda.zip")
+  filename         = "${path.module}/../auto_video_create_server/lambda.zip"
+  source_code_hash = filebase64sha256("${path.module}/../auto_video_create_server/lambda.zip")
 
   environment {
     variables = {
@@ -154,7 +154,7 @@ resource "aws_amplify_app" "frontend" {
   repository  = "https://github.com/ash3734/auto-video-create"
   oauth_token = var.github_token
   platform    = "WEB"
-  build_spec  = file("${path.module}/amplify.yml")
+  build_spec  = file("../amplify.yml")
 
   environment_variables = {
     NEXT_PUBLIC_API_URL = "https://your-backend-api-url" # 필요시 수정
