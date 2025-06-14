@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-mangum
+mangum>=1.0.0
 requests
 boto3
 python-dotenv
