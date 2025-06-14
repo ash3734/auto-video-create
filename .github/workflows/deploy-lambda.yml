@@ -33,7 +33,6 @@ jobs:
           pip install -r auto_video_create_server/requirements.txt -t python
           cp -r \
             auto_video_create_server/main.py \
-            auto_video_create_server/__init__.py \
             auto_video_create_server/api \
             auto_video_create_server/services \
             auto_video_create_server/crawler \
