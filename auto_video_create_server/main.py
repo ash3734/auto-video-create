@@ -23,4 +23,4 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.get("/hello")
 def hello():
-    return {"message": "Hello, World!"}
+    return {"message": "Hello, World!!!"}
