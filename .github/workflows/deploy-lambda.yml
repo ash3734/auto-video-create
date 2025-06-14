@@ -31,7 +31,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r auto_video_create_server/requirements.txt -t python
-          cp -r auto_video_create_server/main.py auto_video_create_server/api auto_video_create_server/services python/
+          cp -r \
+            auto_video_create_server/main.py \
+            auto_video_create_server/__init__.py \
+            auto_video_create_server/api \
+            auto_video_create_server/services \
+            auto_video_create_server/crawler \
+            auto_video_create_server/scripts \
+            auto_video_create_server/find_difference \
+            auto_video_create_server/data \
+            auto_video_create_server/templates \
+            python/
           cd python
           zip -r ../${LAMBDA_ZIP} .
           cd ..
