@@ -20,3 +20,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"status": "error", "message": str(exc)},
     )
+
+@app.get("/hello")
+def hello():
+    return {"message": "Hello, World!"}
