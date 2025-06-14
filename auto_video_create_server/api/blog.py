@@ -54,6 +54,7 @@ class GenerateVideoResponse(BaseModel):
 
 @router.post("/generate-video", response_model=GenerateVideoResponse)
 def generate_video(req: GenerateVideoRequest):
+    print("generate_video 호출")
     try:
         # 1. TTS 변환 (scripts → mp3 url)
         SUPERTONE_API_KEY = os.environ.get("SUPERTONE_API_KEY")
@@ -101,4 +102,5 @@ def generate_video(req: GenerateVideoRequest):
             return {"status": "error", "message": "Creatomate 렌더링이 제한 시간 내에 완료되지 않았습니다."}
         return {"status": "success", "video_url": video_url}
     except Exception as e:
+        print("[generate_video 에러]", e)
         return {"status": "error", "message": str(e)} 

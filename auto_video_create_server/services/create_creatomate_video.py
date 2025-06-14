@@ -7,12 +7,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
-CREATOMATE_TEMPLATE_ID = "e78f211a-9e4c-4f5c-a871-36b9d680ee11"
+CREATOMATE_TEMPLATE_ID = "14457245-7822-48a6-a711-62d15b739b85"
 
 ## 네이버 "e78f211a-9e4c-4f5c-a871-36b9d680ee11"
 ## 유튜브 "14457245-7822-48a6-a711-62d15b739b85"
 
 def create_creatomate_video(image_urls, audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, **kwargs):
+    print("create_creatomate_video 호출")
     variables = {
         "image1.source": image_urls[0],
         "image2.source": image_urls[1],
@@ -49,6 +50,7 @@ def create_creatomate_video(image_urls, audio_paths, scripts, title=None, output
     return response.json()
 
 def get_creatomate_vars(durations):
+    print("get_creatomate_vars 호출")
     creatomate_vars = {}
     for i in range(5):
         creatomate_vars[f"composition_{i+1}.duration"] = durations[i] if i < len(durations) and durations[i] is not None else 0
@@ -69,6 +71,7 @@ def get_creatomate_vars(durations):
     return creatomate_vars
 
 def poll_creatomate_video_url(render_id, api_key=None, max_poll=150, poll_interval=2):
+    print("poll_creatomate_video_url 호출")
     """
     Creatomate render_id를 받아 최종 영상 URL을 폴링해서 반환한다.
     성공 시 URL(str), 실패 시 None 반환

@@ -142,4 +142,28 @@ resource "aws_lambda_permission" "apigw" {
 
 output "api_endpoint" {
   value = aws_apigatewayv2_stage.default.invoke_url
+}
+
+variable "github_token" {
+  description = "GitHub Personal Access Token for Amplify"
+  type        = string
+}
+
+resource "aws_amplify_app" "frontend" {
+  name        = "auto-video-frontend"
+  repository  = "https://github.com/ash3734/auto-video-create"
+  oauth_token = var.github_token
+  platform    = "WEB"
+  build_spec  = file("${path.module}/amplify.yml")
+
+  environment_variables = {
+    NEXT_PUBLIC_API_URL = "https://your-backend-api-url" # 필요시 수정
+  }
+}
+
+resource "aws_amplify_branch" "main" {
+  app_id            = aws_amplify_app.frontend.id
+  branch_name       = "main"
+  stage             = "PRODUCTION"
+  enable_auto_build = true
 } 

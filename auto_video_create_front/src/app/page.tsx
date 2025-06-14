@@ -1,5 +1,5 @@
 "use client";
-import { Box, Button, Container, TextField, Typography, CircularProgress, Checkbox, FormControlLabel, FormGroup, LinearProgress } from "@mui/material";
+import { Box, Button, Container, TextField, Typography, CircularProgress, LinearProgress } from "@mui/material";
 import { useState } from "react";
 import Image from "next/image";
 
@@ -43,13 +43,13 @@ export default function Home() {
       const data = await res.json();
       if (data.status === "success") {
         setMedia({ images: data.images, videos: data.videos, scripts: data.scripts, title: data.title });
-        setScripts((data.scripts || []).map((s: any) => typeof s === 'string' ? s : s.script));
+        setScripts((data.scripts || []).map((s: { script: string } | string) => typeof s === 'string' ? s : s.script));
         setTitle(data.title || "");
         setStep('select');
       } else {
         setError(data.message || "이미지/영상/스크립트 추출에 실패했습니다.");
       }
-    } catch (err) {
+    } catch {
       setError("서버 요청 중 오류가 발생했습니다.");
     } finally {
       setLoading(false);
@@ -105,7 +105,7 @@ export default function Home() {
         setGenerateError(data.message || "영상 생성에 실패했습니다.");
         setStep('select');
       }
-    } catch (err) {
+    } catch {
       setGenerateError("서버 요청 중 오류가 발생했습니다.");
       setStep('select');
     }
@@ -142,7 +142,7 @@ export default function Home() {
       </Box>
       <Box component="form" onSubmit={handleSubmit} sx={{ width: "100%", mb: 4 }}>
         <TextField
-          label="네이버 블로그 주소"
+          label="네이버 블로그 주소!!!"
           variant="outlined"
           fullWidth
           value={blogUrl}
@@ -192,17 +192,18 @@ export default function Home() {
                   }}
                   onClick={() => handleImageClick(url)}
                 >
-                  <img
+                  <Image
                     src={`/api/image-proxy?url=${encodeURIComponent(url)}`}
                     alt={`img${idx}`}
+                    width={80}
+                    height={80}
                     style={{
-                      width: 80,
-                      height: 80,
                       objectFit: "cover",
                       display: "block",
                       filter: order !== null ? "brightness(0.6)" : "none",
                       transition: "filter 0.2s, box-shadow 0.2s",
                     }}
+                    unoptimized
                   />
                   {order !== null && (
                     <Box
@@ -241,7 +242,7 @@ export default function Home() {
                   mb: 2,
                 }}
               >
-                {media.videos.map((url, idx) => (
+                {media.videos.map((url) => (
                   <Box key={url} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 220 }}>
                     <video
                       src={url}

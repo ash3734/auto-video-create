@@ -1,0 +1,18 @@
+version: 1
+applications:
+  - appRoot: auto_video_create_front
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - nvm use 18 && npm ci
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
