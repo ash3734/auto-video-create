@@ -1,0 +1,51 @@
+name: Deploy FastAPI to AWS Lambda
+
+on:
+  push:
+    branches:
+      - main
+      - backend-setup
+    paths:
+      - 'auto_video_create_server/**'
+      - '.github/workflows/deploy-lambda.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: ap-northeast-2
+      LAMBDA_ZIP: lambda.zip
+      LAMBDA_FUNCTION_NAME: my-fastapi-backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r auto_video_create_server/requirements.txt -t python
+          cp auto_video_create_server/main.py python/
+          cd python
+          zip -r ../${LAMBDA_ZIP} .
+          cd ..
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update Lambda function code
+        run: |
+          aws lambda update-function-code \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --zip-file fileb://$LAMBDA_ZIP \
+            --region $AWS_REGION 

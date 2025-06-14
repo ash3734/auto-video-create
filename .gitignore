@@ -1,2 +1,9 @@
 .env
 auto_video_create_server/.env .terraform/
+
+# Python bytecode
+*.pyc
+__pycache__/
+
+# Audio files
+*.mp3
