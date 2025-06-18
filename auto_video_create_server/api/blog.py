@@ -6,6 +6,7 @@ from services.tts_supertone import tts_with_supertone_multi
 from services.create_creatomate_video import create_creatomate_video, get_creatomate_vars, poll_creatomate_video_url
 import os
 from typing import List, Optional
+import requests
 
 # 필요시 아래 함수들도 services. 경로로 import
 # from services.summarize import ...
@@ -56,7 +57,7 @@ class GenerateVideoResponse(BaseModel):
     video_url: Optional[str] = None
     message: Optional[str] = None
 
-@router.post("/generate-video", response_model=GenerateVideoResponse)
+@router.post("/generate-video")
 def generate_video(req: GenerateVideoRequest):
     print("generate_video 호출")
     try:
@@ -100,11 +101,16 @@ def generate_video(req: GenerateVideoRequest):
         if not render_id:
             return {"status": "error", "message": "Creatomate 응답에 렌더링 ID가 없습니다."}
 
-        # 4. Creatomate 폴링 → 최종 영상 URL
-        video_url = poll_creatomate_video_url(render_id)
-        if not video_url:
-            return {"status": "error", "message": "Creatomate 렌더링이 제한 시간 내에 완료되지 않았습니다."}
-        return {"status": "success", "video_url": video_url}
+        poll_url = f"https://api.creatomate.com/v1/renders/{render_id}"
+        return {"status": "started", "render_id": render_id, "poll_url": poll_url}
     except Exception as e:
         print("[generate_video 에러]", e)
-        return {"status": "error", "message": str(e)} 
+        return {"status": "error", "message": str(e)}
+
+@router.get("/poll-video")
+def poll_video(render_id: str):
+    CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
+    url = f"https://api.creatomate.com/v1/renders/{render_id}"
+    headers = {"Authorization": f"Bearer {CREATOMATE_API_KEY}"}
+    resp = requests.get(url, headers=headers)
+    return resp.json() 

@@ -100,9 +100,31 @@ export default function Home() {
         }),
       });
       const data = await res.json();
-      if (data.status === "success" && data.video_url) {
-        setVideoUrl(data.video_url);
-        setStep('done');
+      if (data.status === "started" && data.render_id) {
+        // Creatomate polling via backend proxy
+        let pollCount = 0;
+        let videoUrl = null;
+        while (pollCount < 60) { // 최대 3분(3초 * 60)
+          const pollRes = await fetch(`${API_BASE_URL}/api/blog/poll-video?render_id=${data.render_id}`);
+          const pollData = await pollRes.json();
+          if (pollData.status === "succeeded" && pollData.url) {
+            videoUrl = pollData.url;
+            break;
+          } else if (pollData.status === "failed") {
+            setGenerateError("영상 생성에 실패했습니다.");
+            setStep('select');
+            return;
+          }
+          await new Promise(r => setTimeout(r, 3000)); // 3초 대기
+          pollCount++;
+        }
+        if (videoUrl) {
+          setVideoUrl(videoUrl);
+          setStep('done');
+        } else {
+          setGenerateError("영상 생성이 제한 시간 내에 완료되지 않았습니다.");
+          setStep('select');
+        }
       } else {
         setGenerateError(data.message || "영상 생성에 실패했습니다.");
         setStep('select');
@@ -286,7 +308,7 @@ export default function Home() {
         <Box sx={{ width: "100%", textAlign: "center", mt: 8 }}>
           <Typography variant="h6" gutterBottom>최종 영상을 생성 중입니다...</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            최대 1분 정도 소요될 수 있습니다. 잠시만 기다려 주세요.
+            최대 5분 정도 소요될 수 있습니다. 잠시만 기다려 주세요.
           </Typography>
           <Box sx={{ width: '100%', mt: 4 }}>
             <LinearProgress />
