@@ -9,6 +9,8 @@ interface MediaList {
   scripts?: { script: string }[] | string[];
 }
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+
 export default function Home() {
   const [blogUrl, setBlogUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -35,7 +37,7 @@ export default function Home() {
     setVideoUrl(null);
     setGenerateError(null);
     try {
-      const res = await fetch("/api/blog/extract-all", {
+      const res = await fetch(`${API_BASE_URL}/api/blog/extract-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ blog_url: blogUrl }),
@@ -87,7 +89,7 @@ export default function Home() {
     setGenerateError(null);
     setVideoUrl(null);
     try {
-      const res = await fetch("/api/blog/generate-video", {
+      const res = await fetch(`${API_BASE_URL}/api/blog/generate-video`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -129,7 +131,7 @@ export default function Home() {
     <Container maxWidth="sm" sx={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", p: 2 }}>
       <Box sx={{ width: "100%", textAlign: "center", mb: 4 }}>
         <Typography variant="h4" fontWeight={700} gutterBottom>
-          블로그 주소로 쇼츠 만들기
+          블로그 주소로 쇼츠 만들기 ~
         </Typography>
         <Typography variant="body1" color="text.secondary">
           네이버 블로그 주소를 입력하면 자동으로 쇼츠 영상을 만들어줍니다.

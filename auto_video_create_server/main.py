@@ -25,23 +25,15 @@ app.add_middleware(
 
 app.include_router(blog_router, prefix="/api/blog")
 
+@app.get("/test")
+async def health_check():
+    print("health_check")
+    return {"code": 200, "message": "success", "data": None}
+
 handler = Mangum(app)
 
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    print("=== [FastAPI Unhandled Exception] ===")
-    print("Request:", request.url)
-    print("Exception:", exc)
-    traceback.print_exc()
-    return JSONResponse(
-        status_code=500,
-        content={"status": "error", "message": str(exc)},
-    )
 
-@app.get("/hello")
-def hello():
-    return {"message": "Hello, World!!!!!"}
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
-@app.get("/hello2")
-def hello():
-    return {"message": "Hello, World!!!!!"}
