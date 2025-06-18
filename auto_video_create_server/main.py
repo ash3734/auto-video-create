@@ -7,11 +7,18 @@ import traceback
 
 app = FastAPI()
 
-handler = Mangum(app)
-
 app.include_router(blog_router, prefix="/api/blog")
+
+
+@app.get("/test")
+async def health_check():
+    return {"code": 200, "message": "success", "data": None}
+
+handler = Mangum(app)
 
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
