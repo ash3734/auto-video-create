@@ -9,6 +9,8 @@ interface MediaList {
   scripts?: { script: string }[] | string[];
 }
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+
 export default function Home() {
   const [blogUrl, setBlogUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -35,7 +37,7 @@ export default function Home() {
     setVideoUrl(null);
     setGenerateError(null);
     try {
-      const res = await fetch("/api/blog/extract-all", {
+      const res = await fetch(`${API_BASE_URL}/api/blog/extract-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ blog_url: blogUrl }),
@@ -87,7 +89,7 @@ export default function Home() {
     setGenerateError(null);
     setVideoUrl(null);
     try {
-      const res = await fetch("/api/blog/generate-video", {
+      const res = await fetch(`${API_BASE_URL}/api/blog/generate-video`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -53,7 +53,7 @@ if __name__ == "__main__":
 
     # TTS 변환 (Supertone)
     print("\n[TTS 변환 진행 중...")
-    SUPERTONE_API_KEY = "e18c81dbf99dc1fabb8084caebb971d2"
+    SUPERTONE_API_KEY = os.environ.get("SUPERTONE_API_KEY")
     SUPERTONE_VOICE_ID = "42b52760fe9ecf701f8ed3"
     SUPERTONE_SPEED = 1.4
     audio_local_paths, audio_urls = tts_with_supertone_multi(
