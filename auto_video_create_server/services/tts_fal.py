@@ -8,7 +8,7 @@ load_dotenv()
 FAL_KEY = os.environ["FAL_KEY"]
 fal_client.api_key = FAL_KEY
 
-AUDIO_SAVE_DIR = "tts_outputs"
+AUDIO_SAVE_DIR = "/tmp/tts_outputs"
 
 # 폴더가 없으면 생성
 os.makedirs(AUDIO_SAVE_DIR, exist_ok=True)
