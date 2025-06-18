@@ -131,7 +131,7 @@ export default function Home() {
     <Container maxWidth="sm" sx={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", p: 2 }}>
       <Box sx={{ width: "100%", textAlign: "center", mb: 4 }}>
         <Typography variant="h4" fontWeight={700} gutterBottom>
-          블로그 주소로 쇼츠 만들기
+          블로그 주소로 쇼츠 만들기 ~
         </Typography>
         <Typography variant="body1" color="text.secondary">
           네이버 블로그 주소를 입력하면 자동으로 쇼츠 영상을 만들어줍니다.
