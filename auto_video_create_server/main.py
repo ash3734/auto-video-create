@@ -9,9 +9,9 @@ app = FastAPI()
 
 app.include_router(blog_router, prefix="/api/blog")
 
-
 @app.get("/test")
 async def health_check():
+    print("health_check")
     return {"code": 200, "message": "success", "data": None}
 
 handler = Mangum(app)
