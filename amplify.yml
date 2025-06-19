@@ -8,6 +8,7 @@ applications:
             - nvm use 18 && npm ci
         build:
           commands:
+            - npm run lint:src
             - npm run build
       artifacts:
         baseDirectory: .next
