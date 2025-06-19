@@ -8,20 +8,33 @@ alwaysApply: false
 - 백엔드 FastAPI 서버의 메인 엔트리포인트는 [main.py](mdc:auto_video_create_server/main.py)입니다.
 - API 라우터는 [api/blog.py](mdc:auto_video_create_server/api/blog.py) 등 `api/` 폴더에 분리되어 있습니다.
 - 크롤러, TTS, 영상합성 등 비즈니스 로직은 [services/](mdc:auto_video_create_server/services) 폴더에 위치합니다.
-- 크롤러 관련 코드는 [crawler/naver.py](mdc:auto_video_create_server/crawler/naver.py)에 있습니다.
+- 크롤러 관련 코드는 [crawler/naver.py](mdc:auto_video_create_server/crawler/naver.py) 및 [crawler/](mdc:auto_video_create_server/crawler) 내에 있습니다.
 - TTS 변환은 [services/tts_supertone.py](mdc:auto_video_create_server/services/tts_supertone.py)에서 Supertone API를 사용합니다.
 - Creatomate 영상 합성 및 관련 변수 계산 함수는 [services/create_creatomate_video.py](mdc:auto_video_create_server/services/create_creatomate_video.py)에 있습니다.
-- 파이프라인 전체 실행(콘솔 진입점)은 [scripts/pipeline_blog_to_shorts.py](mdc:auto_video_create_server/scripts/pipeline_blog_to_shorts.py)에서 수행합니다.
+- 파이프라인 전체 실행(콘솔 진입점)은 [scripts/pipeline_blog_to_shorts.py](mdc:auto_video_create_server/scripts/pipeline_blog_to_shorts.py) 및 [scripts/pipeline_coupang_today_special.py](mdc:auto_video_create_server/scripts/pipeline_coupang_today_special.py)에서 수행합니다.
 - TTS로 변환된 mp3 파일은 S3 버킷(`auto-video-tts-files`)에 업로드되며, Creatomate에는 S3 public URL이 전달됩니다.
 - composition별 duration, time, 전체 영상 길이 등 Creatomate 템플릿 변수는 서비스 함수([get_creatomate_vars](mdc:auto_video_create_server/services/create_creatomate_video.py))로 계산해 전달합니다.
 
 # 주요 연동 흐름
+
+## 블로그 → 쇼츠 파이프라인
 
 1. [pipeline_blog_to_shorts.py](mdc:auto_video_create_server/scripts/pipeline_blog_to_shorts.py)에서 블로그 주소 입력 → 본문/이미지/영상 추출
 2. GPT로 쇼츠 스크립트 생성([services/summarize.py](mdc:auto_video_create_server/services/summarize.py))
 3. Supertone TTS로 mp3 생성 및 S3 업로드([services/tts_supertone.py](mdc:auto_video_create_server/services/tts_supertone.py))
 4. mp3 길이로 composition별 duration/time 계산([get_creatomate_vars](mdc:auto_video_create_server/services/create_creatomate_video.py))
 5. Creatomate API로 영상 합성([services/create_creatomate_video.py](mdc:auto_video_create_server/services/create_creatomate_video.py)), 결과 mp4는 [scripts/output/](mdc:auto_video_create_server/scripts/output)에 저장
+
+## 쿠팡 오늘특가 추천 파이프라인
+
+1. [pipeline_coupang_today_special.py](mdc:auto_video_create_server/scripts/pipeline_coupang_today_special.py)에서 파이프라인 실행(향후 job화 예정)
+2. 쿠팡 파트너스 API로 오늘의 특가 리스트 수집([services/coupang_api.py] 등, 미구현)
+3. 오늘의 특가 상품을 쿠팡 사이트에서 크롤링, 리뷰 및 평점 기준 top5 선정([crawler/coupang.py] 등, 미구현)
+4. 각 상품 상세페이지 크롤링(이미지, 리뷰, 설명, 평점 등 추출)
+5. ChatGPT로 각 상품 설명/리뷰를 1~2줄 요약([services/summarize.py] 등 활용)
+6. TTS로 각 상품 설명을 음성 변환([services/tts_supertone.py])
+7. Creatomate로 이미지+음성으로 영상 생성([services/create_creatomate_video.py])
+8. 결과 mp4는 [scripts/output/](mdc:auto_video_create_server/scripts/output)에 저장
 
 # 기타
 
