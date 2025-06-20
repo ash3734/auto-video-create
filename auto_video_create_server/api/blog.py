@@ -1,18 +1,18 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from ..services.blog_shorts import extract_blog_content, get_blog_media_and_scripts
-from ..services.summarize import summarize_for_shorts_sets
-from ..services.tts_supertone import tts_with_supertone_multi
-from ..services.create_creatomate_video import create_creatomate_video, get_creatomate_vars, poll_creatomate_video_url
+from services.blog_shorts import extract_blog_content, get_blog_media_and_scripts
+from services.summarize import summarize_for_shorts_sets
+from services.tts_supertone import tts_with_supertone_multi
+from services.create_creatomate_video import create_creatomate_video, get_creatomate_vars, poll_creatomate_video_url
 import os
 from typing import List, Optional, Literal
 import requests
 
 # 필요시 아래 함수들도 services. 경로로 import
-# from ..services.summarize import ...
-# from ..services.tts_fal import ...
-# from ..services.create_creatomate_video import ...
-# from ..services.extract_blog import ...
+# from services.summarize import ...
+# from services.tts_fal import ...
+# from services.create_creatomate_video import ...
+# from services.extract_blog import ...
 
 router = APIRouter()
 

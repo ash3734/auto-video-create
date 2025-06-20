@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from .api.blog import router as blog_router
+from api.blog import router as blog_router
 from mangum import Mangum
 from fastapi.responses import JSONResponse
 from fastapi import Request
