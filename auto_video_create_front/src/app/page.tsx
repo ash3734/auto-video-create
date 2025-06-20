@@ -1,14 +1,11 @@
 "use client";
-import { Box, Button, TextField, Typography, CircularProgress, LinearProgress, Snackbar, Alert, Paper, Dialog, IconButton, ToggleButtonGroup, ToggleButton, ImageList, ImageListItem } from "@mui/material";
+import { Box, Button, TextField, Typography, CircularProgress, LinearProgress, Snackbar, Alert, Paper, Dialog, IconButton, ImageListItem } from "@mui/material";
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { useMediaQuery } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import Link from "next/link";
 import Confetti from 'react-confetti';
-import ImageIcon from '@mui/icons-material/Image';
-import VideocamIcon from '@mui/icons-material/Videocam';
 import CloseIcon from '@mui/icons-material/Close';
 
 interface MediaList {
@@ -32,8 +29,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [media, setMedia] = useState<MediaList & { scripts?: string[], title?: string } | null>(null);
   const [scripts, setScripts] = useState<string[]>([]);
-  const [selectedImages, setSelectedImages] = useState<string[]>([]);
-  const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState<string>("");
   const [step, setStep] = useState<'input' | 'select' | 'generating' | 'done'>('input');
@@ -87,8 +82,6 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setMedia(null);
-    setSelectedImages([]);
-    setSelectedVideo(null);
     setScripts([]);
     setTitle("");
     setStep('input');
@@ -114,32 +107,6 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleImageClick = (url: string) => {
-    setSelectedImages(prev => {
-      const idx = prev.indexOf(url);
-      if (idx === -1) {
-        if (prev.length < 4) {
-          return [...prev, url];
-        } else {
-          return prev;
-        }
-      } else if (idx === prev.length - 1) {
-        return prev.slice(0, -1);
-      } else {
-        return prev;
-      }
-    });
-  };
-
-  const getImageOrder = (url: string) => {
-    const idx = selectedImages.indexOf(url);
-    return idx !== -1 ? idx + 1 : null;
-  };
-
-  const handleVideoSelect = (url: string) => {
-    setSelectedVideo(prev => prev === url ? null : url);
   };
 
   const handleGenerateVideo = async () => {
@@ -197,8 +164,6 @@ export default function Home() {
     setLoading(false);
     setError(null);
     setMedia(null);
-    setSelectedImages([]);
-    setSelectedVideo(null);
     setScripts([]);
     setTitle("");
     setStep('input');
@@ -356,7 +321,7 @@ export default function Home() {
                     <Typography variant="h6" fontWeight={700} gutterBottom>이미지 선택</Typography>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start', mb: 2 }}>
                       {media.images.length === 0 && <Typography color="text.secondary">이미지가 없습니다.</Typography>}
-                      {media.images.map((url, idx) => {
+                      {media.images.map((url) => {
                         const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
                         
                         return (
@@ -467,7 +432,7 @@ export default function Home() {
                 ))}
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', mb: 2 }}>
                   {media.images.length === 0 && <Typography color="text.secondary">이미지가 없습니다.</Typography>}
-                  {media.images.map((url, idx) => {
+                  {media.images.map((url) => {
                     const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
                     
                     return (
