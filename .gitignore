@@ -7,3 +7,6 @@ __pycache__/
 
 # Audio files
 *.mp3
+
+auto_video_create_server/lambda/
+lambda.zip

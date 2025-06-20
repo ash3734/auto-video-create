@@ -12,13 +12,9 @@ CREATOMATE_TEMPLATE_ID = "14457245-7822-48a6-a711-62d15b739b85"
 ## 네이버 "e78f211a-9e4c-4f5c-a871-36b9d680ee11"
 ## 유튜브 "14457245-7822-48a6-a711-62d15b739b85"
 
-def create_creatomate_video(image_urls, audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, **kwargs):
+def create_creatomate_video(audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, **kwargs):
     print("create_creatomate_video 호출")
     variables = {
-        "image1.source": image_urls[0],
-        "image2.source": image_urls[1],
-        "image3.source": image_urls[2],
-        "image4.source": image_urls[3],
         "audio1.source": audio_paths[0],
         "audio2.source": audio_paths[1],
         "audio3.source": audio_paths[2],
