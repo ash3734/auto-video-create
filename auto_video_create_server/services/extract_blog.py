@@ -1,4 +1,4 @@
-from services.blog_shorts import extract_blog_content, summarize_for_shorts_sets
+from .blog_shorts import extract_blog_content, summarize_for_shorts_sets
 
 if __name__ == "__main__":
     url = input("네이버 블로그 주소를 입력하세요: ")
