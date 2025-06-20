@@ -1,5 +1,5 @@
 "use client";
-import { Box, Button, TextField, Typography, CircularProgress, LinearProgress, Snackbar, Alert, Paper, Dialog, IconButton } from "@mui/material";
+import { Box, Button, TextField, Typography, CircularProgress, LinearProgress, Snackbar, Alert, Paper, Dialog, IconButton, ToggleButtonGroup, ToggleButton, ImageList, ImageListItem } from "@mui/material";
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { useMediaQuery } from "@mui/material";
@@ -7,6 +7,9 @@ import { useTheme } from "@mui/material/styles";
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import Link from "next/link";
 import Confetti from 'react-confetti';
+import ImageIcon from '@mui/icons-material/Image';
+import VideocamIcon from '@mui/icons-material/Videocam';
+import CloseIcon from '@mui/icons-material/Close';
 
 interface MediaList {
   images: string[];
@@ -14,7 +17,15 @@ interface MediaList {
   scripts?: { script: string }[] | string[];
 }
 
+// 섹션별 미디어 타입과 선택된 URL을 관리하는 인터페이스
+interface SectionMedia {
+  type: 'image' | 'video';
+  url: string;
+}
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+
+const getProxiedImageUrl = (url: string) => `/api/image-proxy?url=${encodeURIComponent(url)}`;
 
 export default function Home() {
   const [blogUrl, setBlogUrl] = useState("");
@@ -34,6 +45,42 @@ export default function Home() {
   const [showConfetti, setShowConfetti] = useState(false);
   const theme = useTheme();
   const isPc = useMediaQuery(theme.breakpoints.up('md'));
+
+  // sectionMedia: 길이 5, 각 원소는 SectionMedia 또는 null
+  const [sectionMedia, setSectionMedia] = useState<(SectionMedia|null)[]>([null, null, null, null, null]);
+
+  console.log("--- Component Re-rendering ---");
+  console.log("Current sectionMedia state:", JSON.stringify(sectionMedia, null, 2));
+
+  // 미디어 클릭 핸들러
+  const handleMediaClick = (type: 'image' | 'video', url: string) => {
+    console.log(`[handleMediaClick] Fired for type: ${type}, url: ${url}`);
+    setSectionMedia(prev => {
+      const updated = [...prev];
+      const idx = updated.findIndex(m => m && m.url === url);
+      
+      if (idx !== -1) {
+        updated[idx] = null;
+      } else {
+        const emptyIdx = updated.findIndex(m => m === null);
+        if (emptyIdx !== -1) {
+          updated[emptyIdx] = { type, url };
+        } else {
+          console.log('[handleMediaClick] No empty slot available.');
+        }
+      }
+      return updated;
+    });
+  };
+
+  // 섹션 미디어 해제 핸들러 (스크립트별 미리보기에서 X 클릭)
+  const handleSectionMediaDeselect = (idx: number) => {
+    setSectionMedia(prev => {
+      const updated = [...prev]; // 배열을 복사하여 새로운 참조를 만듭니다.
+      updated[idx] = null; // 해당 인덱스를 null로 설정합니다.
+      return updated; // 수정된 새 배열을 반환합니다.
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,8 +153,7 @@ export default function Home() {
         body: JSON.stringify({
           title,
           scripts,
-          images: selectedImages,
-          video: selectedVideo,
+          sections: sectionMedia,
         }),
       });
       const data = await res.json();
@@ -254,8 +300,7 @@ export default function Home() {
                   <Paper elevation={3} sx={{ flex: 1, p: 4, borderRadius: 4, minWidth: 340, maxWidth: 480, bgcolor: '#fafbfc', boxShadow: '0 4px 24px rgba(0,0,0,0.04)' }}>
                     <Typography variant="h6" fontWeight={700} gutterBottom>생성된 스크립트</Typography>
                     {scripts.map((script, idx) => {
-                      // 선택된 이미지/영상이 이 스크립트에 할당되어 있으면 활성화
-                      const isActive = selectedImages[idx] || (idx === scripts.length - 1 && selectedVideo);
+                      const section = sectionMedia[idx];
                       return (
                         <Paper
                           key={idx}
@@ -263,18 +308,44 @@ export default function Home() {
                             mb: 2,
                             p: 2,
                             borderRadius: 2,
-                            boxShadow: isActive ? '0 0 0 3px #1976d2, 0 2px 8px rgba(0,0,0,0.06)' : '0 2px 8px rgba(0,0,0,0.03)',
-                            border: isActive ? '2px solid #1976d2' : '1.5px solid #e3e6ef',
-                            bgcolor: isActive ? 'rgba(25, 118, 210, 0.07)' : '#fff',
+                            boxShadow: section ? '0 0 0 3px #1976d2, 0 2px 8px rgba(0,0,0,0.06)' : '0 2px 8px rgba(0,0,0,0.03)',
+                            border: section ? '2px solid #1976d2' : '1.5px solid #e3e6ef',
+                            bgcolor: section ? 'rgba(25, 118, 210, 0.07)' : '#fff',
                             transition: 'all 0.2s',
                           }}
                         >
                           <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.5 }}>스크립트 {idx + 1}</Typography>
-                          <Typography variant="body1">{script}</Typography>
-                          {idx === scripts.length - 1 && (
-                            <Typography variant="body2" color="secondary" sx={{ mt: 1 }}>
-                              이 스크립트에는 영상을 선택해 주세요.
-                            </Typography>
+                          <Typography variant="body1" sx={{ mb: 2 }}>{script}</Typography>
+                          {/* 미디어 미리보기 */}
+                          {section && (
+                            <Box sx={{ mt: 2, position: 'relative' }}>
+                              {section.type === 'image' ? (
+                                <img 
+                                  src={getProxiedImageUrl(section.url)} 
+                                  alt={`스크립트 ${idx + 1} 이미지`}
+                                  style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 8 }}
+                                />
+                              ) : (
+                                <video
+                                  src={section.url}
+                                  style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 8 }}
+                                  controls
+                                />
+                              )}
+                              <IconButton
+                                size="small"
+                                onClick={() => handleSectionMediaDeselect(idx)}
+                                sx={{ 
+                                  position: 'absolute', 
+                                  top: 8, 
+                                  right: 8, 
+                                  bgcolor: 'rgba(0,0,0,0.5)',
+                                  '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' },
+                                }}
+                              >
+                                <CloseIcon sx={{ color: 'white' }} />
+                              </IconButton>
+                            </Box>
                           )}
                         </Paper>
                       );
@@ -286,53 +357,31 @@ export default function Home() {
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start', mb: 2 }}>
                       {media.images.length === 0 && <Typography color="text.secondary">이미지가 없습니다.</Typography>}
                       {media.images.map((url, idx) => {
-                        const order = getImageOrder(url);
+                        const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
+                        
                         return (
-                          <Box
+                          <ImageListItem 
                             key={url}
-                            sx={{
-                              position: "relative",
-                              cursor: order === null && selectedImages.length < 4 ? "pointer" : order !== null ? "pointer" : "not-allowed",
-                              borderRadius: 2,
-                              overflow: "hidden",
-                              border: order !== null ? "2px solid #1976d2" : "2px solid transparent",
-                              boxShadow: order !== null ? "0 0 0 2px #1976d2" : "none",
-                              opacity: order === null && selectedImages.length >= 4 ? 0.5 : 1,
-                              width: 80,
-                              height: 80,
-                              mr: 1,
+                            sx={{ 
+                              cursor: 'pointer',
+                              transition: 'opacity 0.2s',
+                              position: 'relative',
                             }}
-                            onClick={() => handleImageClick(url)}
                           >
-                            <Image
-                              src={`/api/image-proxy?url=${encodeURIComponent(url)}`}
-                              alt={`img${idx}`}
-                              width={80}
-                              height={80}
-                              style={{
-                                objectFit: "cover",
-                                display: "block",
-                                filter: order !== null ? "brightness(0.6)" : "none",
-                                transition: "filter 0.2s, box-shadow 0.2s",
+                            <img
+                              onClick={() => handleMediaClick('image', url)}
+                              src={getProxiedImageUrl(url)}
+                              alt=""
+                              loading="lazy"
+                              style={{ 
+                                width: '100%',
+                                height: 120,
+                                objectFit: 'cover',
+                                borderRadius: 8,
+                                border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent',
                               }}
-                              unoptimized
                             />
-                            {/* 확대 버튼 */}
-                            <IconButton
-                              size="small"
-                              sx={{
-                                position: 'absolute',
-                                top: 4,
-                                right: 4,
-                                bgcolor: 'rgba(255,255,255,0.8)',
-                                zIndex: 2,
-                                '&:hover': { bgcolor: 'rgba(255,255,255,1)' },
-                              }}
-                              onClick={e => { e.stopPropagation(); setZoomImg(url); }}
-                            >
-                              <ZoomInIcon fontSize="small" />
-                            </IconButton>
-                            {order !== null && (
+                            {selectedIdx !== -1 && (
                               <Box
                                 sx={{
                                   position: "absolute",
@@ -347,12 +396,9 @@ export default function Home() {
                                   pointerEvents: "none",
                                 }}
                               >
-                                <Typography variant="subtitle2" color="#fff" fontWeight={700}>
-                                  스크립트 {order}번
-                                </Typography>
                               </Box>
                             )}
-                          </Box>
+                          </ImageListItem>
                         );
                       })}
                     </Box>
@@ -367,28 +413,30 @@ export default function Home() {
                         mb: 2,
                       }}
                     >
-                      {media.videos.map((url) => (
-                        <Box key={url} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 220 }}>
-                          <video
-                            src={url}
-                            style={{ width: 200, height: 140, borderRadius: 8, border: selectedVideo === url ? '3px solid #1976d2' : '2px solid #eee', marginBottom: 8, background: '#000' }}
-                            controls
-                          />
-                          <Button
-                            variant={selectedVideo === url ? 'contained' : 'outlined'}
-                            color={selectedVideo === url ? 'primary' : 'inherit'}
-                            size="small"
-                            onClick={() => handleVideoSelect(url)}
-                            sx={{ width: 180 }}
+                      {media.videos.map((url) => {
+                        const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
+
+                        return (
+                          <Box 
+                            key={url} 
+                            sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}
                           >
-                            {selectedVideo === url ? '선택됨' : '이 영상 선택'}
-                          </Button>
-                        </Box>
-                      ))}
+                            <video
+                              onClick={() => handleMediaClick('video', url)}
+                              src={url}
+                              style={{ 
+                                width: '100%',
+                                height: 120,
+                                objectFit: 'cover',
+                                borderRadius: 8,
+                                border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent',
+                              }}
+                              controls
+                            />
+                          </Box>
+                        );
+                      })}
                     </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                      영상을 1개만 선택할 수 있습니다. 선택을 취소하려면 다시 클릭하세요.
-                    </Typography>
                     <Button
                       variant="contained"
                       color="primary"
@@ -396,7 +444,7 @@ export default function Home() {
                       fullWidth
                       sx={{ mt: 4, fontWeight: 700, fontSize: 18, height: 48 }}
                       onClick={handleGenerateVideo}
-                      disabled={selectedImages.length === 0 || loading}
+                      disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading}
                     >
                       {loading ? <CircularProgress size={24} color="inherit" /> : "쇼츠 만들기"}
                     </Button>
@@ -417,43 +465,37 @@ export default function Home() {
                     )}
                   </Box>
                 ))}
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 2 }}>
-                  이미지를 클릭하면 선택 순서대로 각 스크립트에 할당됩니다.<br />
-                  선택을 취소하려면 마지막에 선택한 이미지를 다시 클릭하세요.<br />
-                  (최대 4개까지 선택할 수 있습니다)
-                </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', mb: 2 }}>
                   {media.images.length === 0 && <Typography color="text.secondary">이미지가 없습니다.</Typography>}
                   {media.images.map((url, idx) => {
-                    const order = getImageOrder(url);
+                    const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
+                    
                     return (
                       <Box
                         key={url}
                         sx={{
                           position: "relative",
-                          cursor: order === null && selectedImages.length < 4 ? "pointer" : order !== null ? "pointer" : "not-allowed",
+                          cursor: "pointer",
                           borderRadius: 2,
                           overflow: "hidden",
-                          border: order !== null ? "2px solid #1976d2" : "2px solid transparent",
-                          boxShadow: order !== null ? "0 0 0 2px #1976d2" : "none",
-                          opacity: order === null && selectedImages.length >= 4 ? 0.5 : 1,
+                          border: selectedIdx !== -1 ? "2px solid #1976d2" : "2px solid transparent",
+                          boxShadow: selectedIdx !== -1 ? "0 0 0 2px #1976d2" : "none",
                         }}
-                        onClick={() => handleImageClick(url)}
+                        onClick={() => handleMediaClick('image', url)}
                       >
-                        <Image
-                          src={`/api/image-proxy?url=${encodeURIComponent(url)}`}
-                          alt={`img${idx}`}
-                          width={80}
-                          height={80}
-                          style={{
-                            objectFit: "cover",
-                            display: "block",
-                            filter: order !== null ? "brightness(0.6)" : "none",
-                            transition: "filter 0.2s, box-shadow 0.2s",
+                        <img
+                          src={getProxiedImageUrl(url)}
+                          alt=""
+                          loading="lazy"
+                          style={{ 
+                            width: '100%',
+                            height: 120,
+                            objectFit: 'cover',
+                            borderRadius: 8,
+                            border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent'
                           }}
-                          unoptimized
                         />
-                        {order !== null && (
+                        {selectedIdx !== -1 && (
                           <Box
                             sx={{
                               position: "absolute",
@@ -469,7 +511,7 @@ export default function Home() {
                             }}
                           >
                             <Typography variant="h6" color="#fff" fontWeight={700}>
-                              {order}번 선택됨
+                              {selectedIdx + 1}번
                             </Typography>
                           </Box>
                         )}
@@ -490,28 +532,30 @@ export default function Home() {
                         mb: 2,
                       }}
                     >
-                      {media.videos.map((url) => (
-                        <Box key={url} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 220 }}>
-                          <video
-                            src={url}
-                            style={{ width: 200, height: 140, borderRadius: 8, border: selectedVideo === url ? '3px solid #1976d2' : '2px solid #eee', marginBottom: 8, background: '#000' }}
-                            controls
-                          />
-                          <Button
-                            variant={selectedVideo === url ? 'contained' : 'outlined'}
-                            color={selectedVideo === url ? 'primary' : 'inherit'}
-                            size="small"
-                            onClick={() => handleVideoSelect(url)}
-                            sx={{ width: 180 }}
+                      {media.videos.map((url) => {
+                        const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
+
+                        return (
+                          <Box 
+                            key={url} 
+                            sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}
                           >
-                            {selectedVideo === url ? '선택됨' : '이 영상 선택'}
-                          </Button>
-                        </Box>
-                      ))}
+                            <video
+                              onClick={() => handleMediaClick('video', url)}
+                              src={url}
+                              style={{ 
+                                width: '100%',
+                                height: 120,
+                                objectFit: 'cover',
+                                borderRadius: 8,
+                                border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent',
+                              }}
+                              controls
+                            />
+                          </Box>
+                        );
+                      })}
                     </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                      영상을 1개만 선택할 수 있습니다. 선택을 취소하려면 다시 클릭하세요.
-                    </Typography>
                   </Box>
                 )}
                 <Button
@@ -520,7 +564,7 @@ export default function Home() {
                   fullWidth
                   size="large"
                   sx={{ mt: 3, mb: 2 }}
-                  disabled={selectedImages.length !== 4 || !selectedVideo}
+                  disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading}
                   onClick={handleGenerateVideo}
                 >
                   최종 영상 생성하기
@@ -578,7 +622,7 @@ export default function Home() {
           {zoomImg && (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 2 }}>
               <Image
-                src={`/api/image-proxy?url=${encodeURIComponent(zoomImg)}`}
+                src={getProxiedImageUrl(zoomImg)}
                 alt="확대 이미지"
                 width={480}
                 height={360}

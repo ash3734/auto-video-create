@@ -1,18 +1,18 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from services.blog_shorts import extract_blog_content, get_blog_media_and_scripts
-from services.summarize import summarize_for_shorts_sets
-from services.tts_supertone import tts_with_supertone_multi
-from services.create_creatomate_video import create_creatomate_video, get_creatomate_vars, poll_creatomate_video_url
+from ..services.blog_shorts import extract_blog_content, get_blog_media_and_scripts
+from ..services.summarize import summarize_for_shorts_sets
+from ..services.tts_supertone import tts_with_supertone_multi
+from ..services.create_creatomate_video import create_creatomate_video, get_creatomate_vars, poll_creatomate_video_url
 import os
-from typing import List, Optional
+from typing import List, Optional, Literal
 import requests
 
 # 필요시 아래 함수들도 services. 경로로 import
-# from services.summarize import ...
-# from services.tts_fal import ...
-# from services.create_creatomate_video import ...
-# from services.extract_blog import ...
+# from ..services.summarize import ...
+# from ..services.tts_fal import ...
+# from ..services.create_creatomate_video import ...
+# from ..services.extract_blog import ...
 
 router = APIRouter()
 
@@ -24,6 +24,10 @@ class ExtractMediaResponse(BaseModel):
     images: list[str]
     videos: list[str]
     message: str = None
+
+class SectionMedia(BaseModel):
+    type: Literal["image", "video"]
+    url: str
 
 @router.get("/hello")
 def hello():
@@ -49,8 +53,7 @@ def extract_all(req: ExtractMediaRequest):
 class GenerateVideoRequest(BaseModel):
     title: str
     scripts: List[str]
-    images: List[str]  # 4개
-    video: Optional[str] = None  # 마지막 스크립트에 매핑된 영상
+    sections: List[SectionMedia]  # 5개
 
 class GenerateVideoResponse(BaseModel):
     status: str
@@ -83,14 +86,25 @@ def generate_video(req: GenerateVideoRequest):
             durations.append(audio.info.length)
         creatomate_vars = get_creatomate_vars(durations)
 
-        # 3. Creatomate 영상 생성
+        # 3. 섹션별 미디어 타입에 따라 Creatomate 변수 생성
+        variables = {}
+        for i, section in enumerate(req.sections, 1):
+            if section.type == "image":
+                variables[f"image{i}.source"] = section.url
+                variables[f"image{i}.visible"] = "true"
+                variables[f"video{i}.visible"] = "false"
+            else:
+                variables[f"video{i}.source"] = section.url
+                variables[f"image{i}.visible"] = "false"
+                variables[f"video{i}.visible"] = "true"
+
+        # 4. Creatomate 영상 생성
         result = create_creatomate_video(
-            image_urls=req.images,
             audio_paths=audio_urls,
             scripts=req.scripts,
             title=req.title,
-            video5=req.video,
-            **creatomate_vars
+            **creatomate_vars,
+            **variables
         )
         # Creatomate 응답에서 render_id 추출
         render_id = None
