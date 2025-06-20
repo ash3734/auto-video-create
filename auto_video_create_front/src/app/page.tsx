@@ -56,23 +56,19 @@ export default function Home() {
   const handleMediaClick = (type: 'image' | 'video', url: string) => {
     console.log(`[handleMediaClick] Fired for type: ${type}, url: ${url}`);
     setSectionMedia(prev => {
-      console.log('[handleMediaClick] Previous state:', JSON.stringify(prev, null, 2));
       const updated = [...prev];
       const idx = updated.findIndex(m => m && m.url === url);
       
       if (idx !== -1) {
-        console.log(`[handleMediaClick] Deselecting. Found at index: ${idx}`);
         updated[idx] = null;
       } else {
         const emptyIdx = updated.findIndex(m => m === null);
-        console.log(`[handleMediaClick] Selecting. Found empty slot at index: ${emptyIdx}`);
         if (emptyIdx !== -1) {
           updated[emptyIdx] = { type, url };
         } else {
           console.log('[handleMediaClick] No empty slot available.');
         }
       }
-      console.log('[handleMediaClick] New state to be set:', JSON.stringify(updated, null, 2));
       return updated;
     });
   };
@@ -361,7 +357,6 @@ export default function Home() {
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start', mb: 2 }}>
                       {media.images.length === 0 && <Typography color="text.secondary">이미지가 없습니다.</Typography>}
                       {media.images.map((url, idx) => {
-                        const order = getImageOrder(url);
                         const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
                         
                         return (
@@ -369,7 +364,6 @@ export default function Home() {
                             key={url}
                             sx={{ 
                               cursor: 'pointer',
-                              opacity: selectedIdx !== -1 ? 0.5 : 1,
                               transition: 'opacity 0.2s',
                               position: 'relative',
                             }}
@@ -402,9 +396,6 @@ export default function Home() {
                                   pointerEvents: "none",
                                 }}
                               >
-                                <Typography variant="subtitle2" color="#fff" fontWeight={700}>
-                                  스크립트 {order}번
-                                </Typography>
                               </Box>
                             )}
                           </ImageListItem>
@@ -439,7 +430,6 @@ export default function Home() {
                                 objectFit: 'cover',
                                 borderRadius: 8,
                                 border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent',
-                                opacity: selectedIdx !== -1 ? 0.5 : 1,
                               }}
                               controls
                             />
@@ -447,9 +437,6 @@ export default function Home() {
                         );
                       })}
                     </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                      영상을 1개만 선택할 수 있습니다. 선택을 취소하려면 다시 클릭하세요.
-                    </Typography>
                     <Button
                       variant="contained"
                       color="primary"
@@ -478,15 +465,9 @@ export default function Home() {
                     )}
                   </Box>
                 ))}
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 2 }}>
-                  이미지를 클릭하면 선택 순서대로 각 스크립트에 할당됩니다.<br />
-                  선택을 취소하려면 마지막에 선택한 이미지를 다시 클릭하세요.<br />
-                  (최대 4개까지 선택할 수 있습니다)
-                </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', mb: 2 }}>
                   {media.images.length === 0 && <Typography color="text.secondary">이미지가 없습니다.</Typography>}
                   {media.images.map((url, idx) => {
-                    const order = getImageOrder(url);
                     const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
                     
                     return (
@@ -494,12 +475,11 @@ export default function Home() {
                         key={url}
                         sx={{
                           position: "relative",
-                          cursor: order === null && selectedImages.length < 4 ? "pointer" : order !== null ? "pointer" : "not-allowed",
+                          cursor: "pointer",
                           borderRadius: 2,
                           overflow: "hidden",
-                          border: order !== null ? "2px solid #1976d2" : "2px solid transparent",
-                          boxShadow: order !== null ? "0 0 0 2px #1976d2" : "none",
-                          opacity: order === null && selectedImages.length >= 4 ? 0.5 : 1,
+                          border: selectedIdx !== -1 ? "2px solid #1976d2" : "2px solid transparent",
+                          boxShadow: selectedIdx !== -1 ? "0 0 0 2px #1976d2" : "none",
                         }}
                         onClick={() => handleMediaClick('image', url)}
                       >
@@ -512,10 +492,10 @@ export default function Home() {
                             height: 120,
                             objectFit: 'cover',
                             borderRadius: 8,
-                            border: selectedImages.indexOf(url) !== -1 ? '2px solid #1976d2' : '2px solid transparent'
+                            border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent'
                           }}
                         />
-                        {order !== null && (
+                        {selectedIdx !== -1 && (
                           <Box
                             sx={{
                               position: "absolute",
@@ -531,7 +511,7 @@ export default function Home() {
                             }}
                           >
                             <Typography variant="h6" color="#fff" fontWeight={700}>
-                              {order}번 선택됨
+                              {selectedIdx + 1}번
                             </Typography>
                           </Box>
                         )}
@@ -569,7 +549,6 @@ export default function Home() {
                                 objectFit: 'cover',
                                 borderRadius: 8,
                                 border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent',
-                                opacity: selectedIdx !== -1 ? 0.5 : 1,
                               }}
                               controls
                             />
@@ -585,7 +564,7 @@ export default function Home() {
                   fullWidth
                   size="large"
                   sx={{ mt: 3, mb: 2 }}
-                  disabled={selectedImages.length !== 4 || !selectedVideo}
+                  disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading}
                   onClick={handleGenerateVideo}
                 >
                   최종 영상 생성하기
