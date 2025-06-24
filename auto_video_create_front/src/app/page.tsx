@@ -200,7 +200,7 @@ export default function Home() {
                 sx={{ fontWeight: 700, fontSize: 22, letterSpacing: -1, cursor: 'pointer', textDecoration: 'none', color: 'inherit' }}
                 onClick={e => { e.preventDefault(); window.location.href = '/'; }}
               >
-                Blog Shorts
+                Blog to Short-form
               </Box>
             </Link>
             <Box sx={{ bgcolor: "#1976d2", color: "#fff", fontSize: 12, fontWeight: 700, borderRadius: 1, px: 1.2, py: 0.3, ml: 1 }}>BETA</Box>
@@ -219,24 +219,15 @@ export default function Home() {
           </Box>
         </Box>
 
-        {/* 다시하기 버튼: 헤더 바로 아래, step !== 'input'일 때만 */}
-        {step !== 'input' && (
-          <Box sx={{ width: '100%', display: 'flex', justifyContent: 'flex-end', px: 4, mt: 2 }}>
-            <Button variant="outlined" color="primary" onClick={handleReset} sx={{ fontWeight: 600 }}>
-              다시하기
-            </Button>
-          </Box>
-        )}
-
         {/* 메인 컨텐츠 */}
         <Box sx={{ flex: 1, minHeight: '100vh', display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", px: 2 }}>
           {step === 'input' && (
             <Box sx={{ width: "100%", maxWidth: 420, textAlign: "center", mt: 12 }}>
               <Typography variant="h4" fontWeight={700} gutterBottom sx={{ mt: 6 }}>
-                블로그 주소로 쇼츠 만들기
+                블로그 주소로 숏폼 만들기
               </Typography>
               <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-                네이버 블로그 주소를 입력하면 쇼츠 영상을 만들어줍니다.
+                네이버 블로그 주소를 입력하면 숏폼 영상을 만들어줍니다.
               </Typography>
               <Box component="form" onSubmit={handleSubmit} sx={{ width: "100%", mb: 2 }}>
                 <TextField
@@ -249,7 +240,7 @@ export default function Home() {
                   inputProps={{ inputMode: "url" }}
                 />
                 <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={loading} sx={{ fontWeight: 700, fontSize: 18, height: 48 }}>
-                  {loading ? <CircularProgress size={24} color="inherit" /> : "쇼츠 만들기"}
+                  {loading ? <CircularProgress size={24} color="inherit" /> : "숏폼 만들기"}
                 </Button>
               </Box>
               {error && <Typography color="error" sx={{ mb: 2 }}>{error}</Typography>}
@@ -260,30 +251,30 @@ export default function Home() {
               <>
                 <Box
                   sx={{
+                    width: '100%',
+                    maxWidth: 1000,
+                    mx: 'auto',
+                    mt: 4,
+                    mb: 4,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    bgcolor: '#f8fbff',
-                    border: '1.5px solid #1976d2',
-                    borderRadius: 2,
-                    px: 3,
-                    py: 2,
-                    mb: 4,
-                    boxShadow: '0 2px 8px rgba(25,118,210,0.07)',
+                    bgcolor: '#fff',
+                    borderRadius: 3,
+                    boxShadow: '0 2px 12px rgba(25,118,210,0.07)',
+                    px: 4,
+                    py: 2.5,
+                    border: '1.5px solid #f2f4f8',
                   }}
                 >
-                  {/* 안내문구 */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Box sx={{ fontSize: 24, color: 'primary.main', mr: 1 }}>💡</Box>
-                    <Typography
-                      variant="subtitle1"
-                      sx={{ fontWeight: 700, color: 'primary.main', fontSize: 18 }}
-                    >
-                      생성된 스크립트에 알맞는 이미지를 순서대로 선택해 주세요.
+                  {/* 왼쪽: 타이틀+안내문구 */}
+                  <Box>
+                    <Typography variant="h5" fontWeight={700} sx={{ color: '#222', letterSpacing: -1, mb: 0.5 }}>
+                    생성된 스크립트에 알맞는 이미지 또는 영상을 순서대로 선택해 주세요.
                     </Typography>
                   </Box>
-                  {/* 버튼 영역 */}
-                  <Box sx={{ display: 'flex', gap: 1 }}>
+                  {/* 오른쪽: 액션 버튼 2개 */}
+                  <Box sx={{ display: 'flex', gap: 1.5 }}>
                     <Button
                       variant="outlined"
                       color="primary"
@@ -300,7 +291,7 @@ export default function Home() {
                       onClick={handleGenerateVideo}
                       disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading}
                     >
-                      {loading ? <CircularProgress size={24} color="inherit" /> : "쇼츠 만들기"}
+                      {loading ? <CircularProgress size={24} color="inherit" /> : "숏폼 만들기"}
                     </Button>
                   </Box>
                 </Box>
@@ -376,11 +367,20 @@ export default function Home() {
                         backgroundRepeat: 'no-repeat',
                         backgroundSize: '100% 20px',
                         backgroundPosition: 'top, bottom',
+                        scrollbarGutter: 'stable',
+                        '&::-webkit-scrollbar': {
+                          width: '10px',
+                          background: '#f2f4f8',
+                        },
+                        '&::-webkit-scrollbar-thumb': {
+                          background: '#d1d5db',
+                          borderRadius: 8,
+                        },
+                        '&::-webkit-scrollbar-corner': {
+                          background: '#f2f4f8',
+                        },
                       }}
                     >
-                      <Box sx={{ textAlign: 'center', fontSize: 12, color: '#888', mb: 1 }}>
-                        ⬇️ 아래로 스크롤하여 더 많은 이미지를 확인하세요
-                      </Box>
                       <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
                         {media.images.map((url) => {
                           const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
@@ -391,7 +391,7 @@ export default function Home() {
                                 src={getProxiedImageUrl(url)}
                                 alt=""
                                 loading="lazy"
-                                style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8, border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent' }}
+                                style={{ width: '100%', height: 140, objectFit: 'cover', borderRadius: 8, border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent' }}
                               />
                               <IconButton
                                 size="small"
@@ -409,7 +409,7 @@ export default function Home() {
                       </Box>
                     </Box>
                     <Typography variant="h6" fontWeight={700} gutterBottom sx={{ mt: 4 }}>영상 선택</Typography>
-                    <Box sx={{ maxHeight: 400, overflowY: 'auto', pr: 1, mb: 2 }}>
+                    <Box sx={{ maxHeight: 400, overflowY: 'scroll', pr: 1, mb: 2, scrollbarGutter: 'stable', '&::-webkit-scrollbar': { width: '10px', background: '#f2f4f8' }, '&::-webkit-scrollbar-thumb': { background: '#d1d5db', borderRadius: 8 }, '&::-webkit-scrollbar-corner': { background: '#f2f4f8' } }}>
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                         {media.videos.map((url) => {
                           const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
@@ -418,7 +418,7 @@ export default function Home() {
                               <video
                                 onClick={() => handleMediaClick('video', url)}
                                 src={url}
-                                style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 8, border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent' }}
+                                style={{ width: '100%', height: 350, objectFit: 'contain', borderRadius: 8, border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent' }}
                                 controls
                               />
                             </Box>
@@ -577,6 +577,16 @@ export default function Home() {
                     controls
                     style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 12, background: '#000' }}
                   />
+                </Box>
+                <Box sx={{ width: '100%', maxWidth: 1000, mx: 'auto', mt: 4, mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button
+                    variant="outlined"
+                    color="primary"
+                    onClick={handleReset}
+                    sx={{ fontWeight: 600, minWidth: 100 }}
+                  >
+                    다시하기
+                  </Button>
                 </Box>
               </Box>
             </>
