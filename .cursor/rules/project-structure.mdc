@@ -3,7 +3,7 @@ description:
 globs: 
 alwaysApply: false
 ---
-# Project Structure Guide
+# Back-end Project Structure Guide
 
 - 백엔드 FastAPI 서버의 메인 엔트리포인트는 [main.py](mdc:auto_video_create_server/main.py)입니다.
 - API 라우터는 [api/blog.py](mdc:auto_video_create_server/api/blog.py) 등 `api/` 폴더에 분리되어 있습니다.
@@ -15,15 +15,88 @@ alwaysApply: false
 - TTS로 변환된 mp3 파일은 S3 버킷(`auto-video-tts-files`)에 업로드되며, Creatomate에는 S3 public URL이 전달됩니다.
 - composition별 duration, time, 전체 영상 길이 등 Creatomate 템플릿 변수는 서비스 함수([get_creatomate_vars](mdc:auto_video_create_server/services/create_creatomate_video.py))로 계산해 전달합니다.
 
-# 주요 연동 흐름
 
-1. [pipeline_blog_to_shorts.py](mdc:auto_video_create_server/scripts/pipeline_blog_to_shorts.py)에서 블로그 주소 입력 → 본문/이미지/영상 추출
-2. GPT로 쇼츠 스크립트 생성([services/summarize.py](mdc:auto_video_create_server/services/summarize.py))
-3. Supertone TTS로 mp3 생성 및 S3 업로드([services/tts_supertone.py](mdc:auto_video_create_server/services/tts_supertone.py))
-4. mp3 길이로 composition별 duration/time 계산([get_creatomate_vars](mdc:auto_video_create_server/services/create_creatomate_video.py))
-5. Creatomate API로 영상 합성([services/create_creatomate_video.py](mdc:auto_video_create_server/services/create_creatomate_video.py)), 결과 mp4는 [scripts/output/](mdc:auto_video_create_server/scripts/output)에 저장
+# Front-end Project Structure 
 
-# 기타
+## 프로젝트 구조 요약
 
-- S3 업로드 시 ExtraArgs(ACL)는 사용하지 않으며, public 읽기는 버킷 정책으로 관리합니다.
-- 모든 주요 파이프라인 변수/로직은 서비스 계층 함수로 분리되어 있습니다.
+```
+auto_video_create_front/
+├── src/
+│   ├── app/
+│   │   ├── page.tsx           # 메인 페이지(실질적 모든 UI/로직)
+│   │   ├── layout.tsx         # 전체 레이아웃
+│   │   ├── ClientLayout.tsx   # 클라이언트 전용 레이아웃
+│   │   ├── globals.css        # 전역 스타일
+│   │   ├── page.module.css    # 메인 페이지 스타일
+│   │   └── api/
+│   │       └── image-proxy/
+│   │           └── route.ts   # 이미지 프록시 API
+│   ├── createEmotionCache.ts  # MUI 관련
+│   └── theme.ts               # MUI 테마
+├── package.json
+├── next.config.ts
+├── tsconfig.json
+└── ...
+```
+
+- 모든 UI/로직이 `src/app/page.tsx`에 집중
+- 별도 components 폴더 없이 단일 페이지 구조
+- 스타일은 CSS 모듈(`page.module.css`)과 글로벌 CSS 혼용
+- API는 Next.js의 route handler(`api/image-proxy/route.ts`)만 사용
+
+---
+
+## Cursor Rule 제안
+
+### 1. 컴포넌트/핸들러 네이밍 및 위치
+- 모든 주요 UI/로직은 `page.tsx`에 위치
+- 핸들러 함수(예: `handleMediaClick`, `handleGenerateVideo`)는 `page.tsx` 내에서 `const handleXxx = ...` 형태로 선언
+- 검색 팁: `const handle`로 함수 핸들러 빠르게 찾기
+
+### 2. 상태 관리
+- 상태 변수는 `useState`로 선언, 모두 `page.tsx` 상단에 위치
+- 주요 상태: `sectionMedia`, `step`, `media`, `scripts` 등
+- 검색 팁: `const [`로 상태 변수 일괄 검색
+
+### 3. 스타일 관리
+- 전역 스타일은 `globals.css`, 페이지별 스타일은 `page.module.css`에 작성
+- MUI의 `sx` prop과 CSS 모듈을 혼용
+- 검색 팁: `className={styles.`로 CSS 모듈 적용 위치 찾기, `sx={{`로 MUI 인라인 스타일 적용 위치 찾기
+
+### 4. API 연동
+- 모든 API 호출(fetch)은 `page.tsx` 내에서 직접 수행
+- 이미지 프록시는 `/api/image-proxy/route.ts`에서 처리
+- 검색 팁: `fetch(`, `await fetch`로 API 호출 위치 찾기
+
+### 5. 파일/폴더 네이밍
+- 페이지/레이아웃/스타일 파일은 `app/` 폴더에 위치
+- API 핸들러는 `app/api/` 하위에 위치
+
+---
+
+## Cursor Rule 예시 (YAML)
+
+```yaml
+rules:
+  - name: "핸들러 함수 빠르게 찾기"
+    pattern: "const handle[A-Z][a-zA-Z]+ ="
+    description: "모든 UI 이벤트 핸들러를 빠르게 찾을 수 있습니다."
+
+  - name: "상태 변수 선언부 찾기"
+    pattern: "const \\[.*\\] = useState"
+    description: "상태 변수 선언 위치를 빠르게 찾을 수 있습니다."
+
+  - name: "API 호출 위치 찾기"
+    pattern: "fetch\\("
+    description: "API 호출이 이루어지는 부분을 빠르게 찾을 수 있습니다."
+
+  - name: "CSS 모듈 적용 위치"
+    pattern: "className=\\{styles\."
+    description: "CSS 모듈이 적용된 컴포넌트 위치를 찾을 수 있습니다."
+
+  - name: "MUI 인라인 스타일 적용 위치"
+    pattern: "sx=\\{\\{"
+    description: "MUI의 인라인 스타일이 적용된 부분을 찾을 수 있습니다."
+```
+

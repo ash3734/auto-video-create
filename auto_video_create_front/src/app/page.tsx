@@ -7,6 +7,7 @@ import { useTheme } from "@mui/material/styles";
 import Link from "next/link";
 import Confetti from 'react-confetti';
 import CloseIcon from '@mui/icons-material/Close';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
 
 interface MediaList {
   images: string[];
@@ -87,6 +88,7 @@ export default function Home() {
     setStep('input');
     setVideoUrl(null);
     setGenerateError(null);
+    setSectionMedia([null, null, null, null, null]);
     try {
       const res = await fetch(`${API_BASE_URL}/api/blog/extract-all`, {
         method: "POST",
@@ -110,6 +112,7 @@ export default function Home() {
   };
 
   const handleGenerateVideo = async () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
     setStep('generating');
     setGenerateError(null);
     setVideoUrl(null);
@@ -169,6 +172,7 @@ export default function Home() {
     setStep('input');
     setVideoUrl(null);
     setGenerateError(null);
+    setSectionMedia([null, null, null, null, null]);
   };
 
   const handleBetaAlert = (msg: string) => {
@@ -254,10 +258,50 @@ export default function Home() {
           {step === 'select' && media && scripts.length > 0 && (
             isPc ? (
               <>
-                <Box sx={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', mt: 2, mb: 3 }}>
-                  <Box sx={{ minWidth: 340, maxWidth: 600, px: 3, py: 2, bgcolor: 'rgba(25, 118, 210, 0.08)', border: '2px solid #1976d2', borderRadius: 2, fontWeight: 700, color: 'primary.main', fontSize: 18, display: 'flex', alignItems: 'center', gap: 1, boxShadow: '0 2px 12px rgba(25,118,210,0.07)' }}>
-                    <span style={{ fontSize: 22, marginRight: 8 }}>💡</span>
-                    생성된 스크립트에 알맞는 이미지를 <b>순서대로</b> 선택해 주세요.
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    bgcolor: '#f8fbff',
+                    border: '1.5px solid #1976d2',
+                    borderRadius: 2,
+                    px: 3,
+                    py: 2,
+                    mb: 4,
+                    boxShadow: '0 2px 8px rgba(25,118,210,0.07)',
+                  }}
+                >
+                  {/* 안내문구 */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box sx={{ fontSize: 24, color: 'primary.main', mr: 1 }}>💡</Box>
+                    <Typography
+                      variant="subtitle1"
+                      sx={{ fontWeight: 700, color: 'primary.main', fontSize: 18 }}
+                    >
+                      생성된 스크립트에 알맞는 이미지를 순서대로 선택해 주세요.
+                    </Typography>
+                  </Box>
+                  {/* 버튼 영역 */}
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      variant="outlined"
+                      color="primary"
+                      onClick={handleReset}
+                      sx={{ fontWeight: 600, minWidth: 100 }}
+                    >
+                      다시하기
+                    </Button>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      size="large"
+                      sx={{ fontWeight: 700, minWidth: 140 }}
+                      onClick={handleGenerateVideo}
+                      disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading}
+                    >
+                      {loading ? <CircularProgress size={24} color="inherit" /> : "쇼츠 만들기"}
+                    </Button>
                   </Box>
                 </Box>
                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 4, px: 4, py: 6, maxWidth: 1200, mx: 'auto', width: '100%' }}>
@@ -319,100 +363,69 @@ export default function Home() {
                   {/* 오른쪽: 이미지/영상 선택 */}
                   <Paper elevation={3} sx={{ flex: 1, p: 4, borderRadius: 4, minWidth: 340, maxWidth: 600, bgcolor: '#fff', boxShadow: '0 4px 24px rgba(0,0,0,0.04)' }}>
                     <Typography variant="h6" fontWeight={700} gutterBottom>이미지 선택</Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start', mb: 2 }}>
-                      {media.images.length === 0 && <Typography color="text.secondary">이미지가 없습니다.</Typography>}
-                      {media.images.map((url) => {
-                        const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
-                        
-                        return (
-                          <ImageListItem 
-                            key={url}
-                            sx={{ 
-                              cursor: 'pointer',
-                              transition: 'opacity 0.2s',
-                              position: 'relative',
-                            }}
-                          >
-                            <img
-                              onClick={() => handleMediaClick('image', url)}
-                              src={getProxiedImageUrl(url)}
-                              alt=""
-                              loading="lazy"
-                              style={{ 
-                                width: '100%',
-                                height: 120,
-                                objectFit: 'cover',
-                                borderRadius: 8,
-                                border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent',
-                              }}
-                            />
-                            {selectedIdx !== -1 && (
-                              <Box
-                                sx={{
-                                  position: "absolute",
-                                  bottom: 0,
-                                  left: 0,
-                                  width: "100%",
-                                  height: 28,
-                                  bgcolor: "rgba(25, 118, 210, 0.7)",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  pointerEvents: "none",
-                                }}
-                              >
-                              </Box>
-                            )}
-                          </ImageListItem>
-                        );
-                      })}
-                    </Box>
-                    <Typography variant="h6" fontWeight={700} gutterBottom sx={{ mt: 4 }}>영상 선택</Typography>
                     <Box
                       sx={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(2, 1fr)',
-                        gap: 3,
-                        justifyItems: 'center',
-                        alignItems: 'center',
+                        maxHeight: 400,
+                        overflowY: 'scroll',
+                        pr: 1,
                         mb: 2,
+                        position: 'relative',
+                        border: '1px solid #eee',
+                        borderRadius: 2,
+                        background: 'linear-gradient(to bottom, #fff 90%, rgba(255,255,255,0)), linear-gradient(to top, #fff 90%, rgba(255,255,255,0))',
+                        backgroundRepeat: 'no-repeat',
+                        backgroundSize: '100% 20px',
+                        backgroundPosition: 'top, bottom',
                       }}
                     >
-                      {media.videos.map((url) => {
-                        const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
-
-                        return (
-                          <Box 
-                            key={url} 
-                            sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}
-                          >
-                            <video
-                              onClick={() => handleMediaClick('video', url)}
-                              src={url}
-                              style={{ 
-                                width: '100%',
-                                height: 120,
-                                objectFit: 'cover',
-                                borderRadius: 8,
-                                border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent',
-                              }}
-                              controls
-                            />
-                          </Box>
-                        );
-                      })}
+                      <Box sx={{ textAlign: 'center', fontSize: 12, color: '#888', mb: 1 }}>
+                        ⬇️ 아래로 스크롤하여 더 많은 이미지를 확인하세요
+                      </Box>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                        {media.images.map((url) => {
+                          const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
+                          return (
+                            <ImageListItem key={url} sx={{ position: 'relative', cursor: 'pointer', transition: 'opacity 0.2s' }}>
+                              <img
+                                onClick={() => handleMediaClick('image', url)}
+                                src={getProxiedImageUrl(url)}
+                                alt=""
+                                loading="lazy"
+                                style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8, border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent' }}
+                              />
+                              <IconButton
+                                size="small"
+                                sx={{ position: 'absolute', top: 8, right: 8, bgcolor: 'rgba(0,0,0,0.5)', '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' } }}
+                                onClick={e => { e.stopPropagation(); setZoomImg(url); }}
+                              >
+                                <ZoomInIcon sx={{ color: 'white' }} />
+                              </IconButton>
+                              {selectedIdx !== -1 && (
+                                <Box sx={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: 28, bgcolor: "rgba(25, 118, 210, 0.7)", display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }} />
+                              )}
+                            </ImageListItem>
+                          );
+                        })}
+                      </Box>
                     </Box>
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      size="large"
-                      fullWidth
-                      sx={{ mt: 4, fontWeight: 700, fontSize: 18, height: 48 }}
-                      onClick={handleGenerateVideo}
-                      disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading}
-                    >
-                      {loading ? <CircularProgress size={24} color="inherit" /> : "쇼츠 만들기"}
-                    </Button>
+                    <Typography variant="h6" fontWeight={700} gutterBottom sx={{ mt: 4 }}>영상 선택</Typography>
+                    <Box sx={{ maxHeight: 400, overflowY: 'auto', pr: 1, mb: 2 }}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {media.videos.map((url) => {
+                          const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
+                          return (
+                            <Box key={url} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
+                              <video
+                                onClick={() => handleMediaClick('video', url)}
+                                src={url}
+                                style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 8, border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent' }}
+                                controls
+                              />
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                    </Box>
                   </Paper>
                 </Box>
               </>
