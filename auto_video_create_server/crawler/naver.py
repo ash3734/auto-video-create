@@ -5,6 +5,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 import time
+import os
 
 
 def extract_blog_content(url):
@@ -13,14 +14,26 @@ def extract_blog_content(url):
     :param url: 네이버 블로그 글 URL
     :return: (본문 텍스트, 이미지 URL 리스트, 비디오 URL 리스트)
     """
-    # 1. Selenium으로 크롬 헤드리스 브라우저 실행
+    # Lambda/로컬 환경 분기
+    is_lambda = os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None
+    if is_lambda:
+        chrome_bin = "/var/task/bin/headless-chromium"
+        driver_bin = "/var/task/bin/chromedriver"
+    else:
+        chrome_bin = os.environ.get("CHROME_BINARY")
+        driver_bin = os.environ.get("CHROMEDRIVER")
     chrome_options = Options()
     chrome_options.add_argument('--headless')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
     chrome_options.add_argument('--disable-gpu')
     chrome_options.add_argument('--window-size=1280,2000')
-    driver = webdriver.Chrome(options=chrome_options)
+    if chrome_bin:
+        chrome_options.binary_location = chrome_bin
+    if driver_bin:
+        driver = webdriver.Chrome(executable_path=driver_bin, options=chrome_options)
+    else:
+        driver = webdriver.Chrome(options=chrome_options)
     driver.get(url)
     time.sleep(2)  # 네트워크 상황에 따라 조정
 
