@@ -8,3 +8,4 @@ mutagen
 pydantic
 openai
 beautifulsoup4 
+selenium
