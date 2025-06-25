@@ -66,7 +66,7 @@ def generate_video(req: GenerateVideoRequest):
     try:
         # 1. TTS 변환 (scripts → mp3 url)
         SUPERTONE_API_KEY = os.environ.get("SUPERTONE_API_KEY")
-        SUPERTONE_VOICE_ID = "42b52760fe9ecf701f8ed3"
+        SUPERTONE_VOICE_ID = "c9220df3a5a70647d7b022"
         SUPERTONE_SPEED = 1.4
         audio_local_paths, audio_urls = tts_with_supertone_multi(
             req.scripts,
