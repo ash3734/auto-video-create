@@ -1,0 +1,61 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Backend Project Structure & Coding Rules (auto_video_create_server)
+
+## Overview
+This backend powers the blog-to-shorts SaaS, handling crawling, summarization, TTS, and video generation. The codebase is modular, with clear separation between API, service, crawler, and utility layers.
+
+## Directory Structure
+- **[main.py](mdc:main.py)**: FastAPI entry point, router registration.
+- **[api/](mdc:api)**: API routers (FastAPI), request/response models, endpoint logic.
+- **[services/](mdc:services)**: Business logic, external API integrations (TTS, Creatomate, summarization).
+- **[crawler/](mdc:crawler)**: Web crawling/parsing modules (e.g., Naver blog).
+- **[find_difference/](mdc:find_difference)**: Special video generation (e.g., spot-the-difference).
+- **[scripts/](mdc:scripts)**: Pipeline scripts, CLI utilities.
+- **[templates/](mdc:templates)**: Video template JSONs for Creatomate.
+- **[tts_outputs/](mdc:tts_outputs)**: Cached/generated TTS files.
+- **[lambda/](mdc:lambda)**: Serverless/lambda-related code.
+- **[data/](mdc:data)**: Datasets, cache, or sample data.
+
+## MUST-FOLLOW Rules (DOs)
+- **Use clear separation of concerns:**
+  - API logic in [api/](mdc:api), business logic in [services/](mdc:services), crawling in [crawler/](mdc:crawler).
+- **Use snake_case for all Python file, function, and variable names.**
+- **Use type hints for all function signatures.**
+- **Handle exceptions explicitly; always log errors with context.**
+- **Document all public functions and modules with docstrings.**
+- **Use environment variables for all secrets and API keys. Never hardcode them.**
+- **Write modular, testable code.**
+- **Use f-strings for string formatting.**
+- **Keep requirements.txt up to date with all dependencies.**
+- **Use Pydantic models for FastAPI request/response validation.**
+- **Commit only source code and essential configs; ignore .pyc, .DS_Store, and large binaries.**
+
+## STRICT DON'Ts
+- **DO NOT mix API, business, and crawling logic in the same file.**
+- **DO NOT hardcode credentials, API keys, or secrets anywhere.**
+- **DO NOT use camelCase for Python code.**
+- **DO NOT use print for production logging; use logging module (except for quick debugging).**
+- **DO NOT commit cache, output, or environment files.**
+- **DO NOT use global variables for stateful logic.**
+- **DO NOT make breaking changes to shared templates or service interfaces without team review.**
+- **DO NOT bypass error handling or ignore exceptions.**
+
+## Prompt Engineering Best Practices
+- **Be explicit in function and variable naming; avoid ambiguity.**
+- **Always validate and sanitize external input (especially from crawlers).**
+- **Design for extensibility: new platforms, TTS engines, or video templates should be pluggable.**
+- **Write clear, concise docstrings and comments for all non-trivial logic.**
+- **When in doubt, prefer clarity and maintainability over cleverness.**
+
+## Example: Adding a New Crawler
+1. Create a new module in [crawler/](mdc:crawler).
+2. Expose a function with a clear, typed interface (e.g., `extract_blog_content(url: str) -> Tuple[str, List[str], List[str]]`).
+3. Add error handling and logging.
+4. Register the new crawler in the relevant service or API layer.
+
+---
+**Follow these rules strictly to ensure code quality, maintainability, and security. Violations may cause system instability or security risks.**
