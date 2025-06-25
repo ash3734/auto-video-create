@@ -17,8 +17,8 @@ def extract_blog_content(url):
     # Lambda/로컬 환경 분기
     is_lambda = os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None
     if is_lambda:
-        chrome_bin = "/var/task/bin/headless-chromium"
-        driver_bin = "/var/task/bin/chromedriver"
+        chrome_bin = "/opt/headless-chromium"
+        driver_bin = "/opt/chromedriver"
     else:
         chrome_bin = os.environ.get("CHROME_BINARY")
         driver_bin = os.environ.get("CHROMEDRIVER")
