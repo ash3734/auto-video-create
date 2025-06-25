@@ -14,7 +14,7 @@ alwaysApply: false
 - 파이프라인 전체 실행(콘솔 진입점)은 [scripts/pipeline_blog_to_shorts.py](mdc:auto_video_create_server/scripts/pipeline_blog_to_shorts.py)에서 수행합니다.
 - TTS로 변환된 mp3 파일은 S3 버킷(`auto-video-tts-files`)에 업로드되며, Creatomate에는 S3 public URL이 전달됩니다.
 - composition별 duration, time, 전체 영상 길이 등 Creatomate 템플릿 변수는 서비스 함수([get_creatomate_vars](mdc:auto_video_create_server/services/create_creatomate_video.py))로 계산해 전달합니다.
-
+-- 실행을 root에서 PYTHONPATH=auto_video_create_server python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload 이렇게 실행 시키면 됨
 
 # Front-end Project Structure 
 

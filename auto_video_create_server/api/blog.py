@@ -7,6 +7,7 @@ from services.create_creatomate_video import create_creatomate_video, get_creato
 import os
 from typing import List, Optional, Literal
 import requests
+import traceback
 
 # 필요시 아래 함수들도 services. 경로로 import
 # from services.summarize import ...
@@ -33,21 +34,20 @@ class SectionMedia(BaseModel):
 def hello():
     return {"message": "Hello, World!!!!!"}
 
-@router.post("/extract-media", response_model=ExtractMediaResponse)
-def extract_media(req: ExtractMediaRequest):
-    try:
-        text, images, videos = extract_blog_content(req.blog_url)
-        return {"status": "success", "images": images, "videos": videos}
-    except Exception as e:
-        return {"status": "error", "images": [], "videos": [], "message": str(e)}
-
 @router.post("/extract-all")
 def extract_all(req: ExtractMediaRequest):
     try:
+        print("extract_all 시작")
         result = get_blog_media_and_scripts(req.blog_url)
+        print("extract_all 성공")
+        print("extract_all 응답 반환 직전")
         return {"status": "success", **result}
     except Exception as e:
+        print("extract_all 에러:", e)
+        traceback.print_exc()
         return {"status": "error", "message": str(e)}
+    finally:
+        print("extract_all finally 블록 실행")
 
 # --- 최종 영상 생성 API ---
 class GenerateVideoRequest(BaseModel):

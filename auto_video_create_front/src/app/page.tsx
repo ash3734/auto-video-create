@@ -89,12 +89,16 @@ export default function Home() {
     setVideoUrl(null);
     setGenerateError(null);
     setSectionMedia([null, null, null, null, null]);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 180000); // 3분
     try {
       const res = await fetch(`${API_BASE_URL}/api/blog/extract-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ blog_url: blogUrl }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const data = await res.json();
       if (data.status === "success") {
         setMedia({ images: data.images, videos: data.videos, scripts: data.scripts, title: data.title });
@@ -116,6 +120,8 @@ export default function Home() {
     setStep('generating');
     setGenerateError(null);
     setVideoUrl(null);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 180000); // 3분
     try {
       const res = await fetch(`${API_BASE_URL}/api/blog/generate-video`, {
         method: "POST",
@@ -125,14 +131,19 @@ export default function Home() {
           scripts,
           sections: sectionMedia,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const data = await res.json();
       if (data.status === "started" && data.render_id) {
         // Creatomate polling via backend proxy
         let pollCount = 0;
         let videoUrl = null;
         while (pollCount < 60) { // 최대 3분(3초 * 60)
-          const pollRes = await fetch(`${API_BASE_URL}/api/blog/poll-video?render_id=${data.render_id}`);
+          const pollController = new AbortController();
+          const pollTimeoutId = setTimeout(() => pollController.abort(), 180000); // 3분
+          const pollRes = await fetch(`${API_BASE_URL}/api/blog/poll-video?render_id=${data.render_id}`, { signal: pollController.signal });
+          clearTimeout(pollTimeoutId);
           const pollData = await pollRes.json();
           if (pollData.status === "succeeded" && pollData.url) {
             videoUrl = pollData.url;
