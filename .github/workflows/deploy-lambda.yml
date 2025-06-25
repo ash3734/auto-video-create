@@ -36,10 +36,6 @@ jobs:
             auto_video_create_server/api \
             auto_video_create_server/services \
             auto_video_create_server/crawler \
-            auto_video_create_server/scripts \
-            auto_video_create_server/find_difference \
-            auto_video_create_server/data \
-            auto_video_create_server/templates \
             python/
           cd python
           zip -r ../${LAMBDA_ZIP} . -x "*/__pycache__/*" -x "*.pyc"
