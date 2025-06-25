@@ -31,11 +31,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r auto_video_create_server/requirements.txt -t python
-          # Download headless-chromium and chromedriver for AWS Lambda
-          mkdir -p python/bin
-          wget -O python/bin/headless-chromium https://github.com/shelfio/chrome-aws-lambda-layer/releases/download/v125.0.6422.60/headless-chromium
-          wget -O python/bin/chromedriver https://github.com/shelfio/chrome-aws-lambda-layer/releases/download/v125.0.6422.60/chromedriver
-          chmod +x python/bin/headless-chromium python/bin/chromedriver
           cp -r \
             auto_video_create_server/main.py \
             auto_video_create_server/api \
