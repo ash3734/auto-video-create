@@ -42,7 +42,7 @@ jobs:
             auto_video_create_server/templates \
             python/
           cd python
-          zip -r ../${LAMBDA_ZIP} .
+          zip -r ../${LAMBDA_ZIP} . -x "*/__pycache__/*" -x "*.pyc"
           cd ..
 
       - name: Configure AWS credentials
