@@ -1,9 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from services.blog_shorts import extract_blog_content, get_blog_media_and_scripts
 from services.summarize import summarize_for_shorts_sets
 from services.tts_supertone import tts_with_supertone_multi
 from services.create_creatomate_video import create_creatomate_video, get_creatomate_vars, poll_creatomate_video_url
+from services.account_service import get_user_if_active
 import os
 from typing import List, Optional, Literal
 import requests
@@ -14,6 +15,15 @@ import traceback
 # from services.tts_fal import ...
 # from services.create_creatomate_video import ...
 # from services.extract_blog import ...
+
+def require_active_subscription(request: Request):
+    user_id = request.headers.get("X-USER-ID") or request.query_params.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="인증 정보가 없습니다.")
+    user = get_user_if_active(user_id)
+    if not user:
+        raise HTTPException(status_code=403, detail="구독이 만료된 계정입니다.")
+    return user
 
 router = APIRouter()
 
@@ -35,7 +45,7 @@ def hello():
     return {"message": "Hello, World!!!!!"}
 
 @router.post("/extract-all")
-def extract_all(req: ExtractMediaRequest):
+def extract_all(req: ExtractMediaRequest, user=Depends(require_active_subscription)):
     try:
         print("extract_all 시작")
         result = get_blog_media_and_scripts(req.blog_url)
@@ -61,7 +71,7 @@ class GenerateVideoResponse(BaseModel):
     message: Optional[str] = None
 
 @router.post("/generate-video")
-def generate_video(req: GenerateVideoRequest):
+def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscription)):
     print("generate_video 호출")
     try:
         # 1. TTS 변환 (scripts → mp3 url)
@@ -122,7 +132,7 @@ def generate_video(req: GenerateVideoRequest):
         return {"status": "error", "message": str(e)}
 
 @router.get("/poll-video")
-def poll_video(render_id: str):
+def poll_video(render_id: str, user=Depends(require_active_subscription)):
     CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
     url = f"https://api.creatomate.com/v1/renders/{render_id}"
     headers = {"Authorization": f"Bearer {CREATOMATE_API_KEY}"}
