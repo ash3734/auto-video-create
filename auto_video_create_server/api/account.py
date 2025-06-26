@@ -18,6 +18,8 @@ class LoginResponse(BaseModel):
 @router.post("/login", response_model=LoginResponse)
 def login(req: LoginRequest):
     user = authenticate_user(req.id, req.pw)
+    if user == "expired":
+        return LoginResponse(status="fail", reason="구독 기간이 만료되었습니다. 관리자에게 문의하세요.")
     if user:
         return LoginResponse(status="success", id=user["id"], subscription_start=user["subscription_start"], subscription_end=user["subscription_end"])
     else:
