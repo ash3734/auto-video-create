@@ -36,6 +36,7 @@ jobs:
             auto_video_create_server/api \
             auto_video_create_server/services \
             auto_video_create_server/crawler \
+            auto_video_create_server/utils \
             python/
           cd python
           zip -r ../${LAMBDA_ZIP} . -x "*/__pycache__/*" -x "*.pyc"
