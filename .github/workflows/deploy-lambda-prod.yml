@@ -1,4 +1,4 @@
-name: Deploy FastAPI to AWS Lambda
+name: Deploy FastAPI to AWS Lambda PROD
 
 on:
   push:
