@@ -27,6 +27,16 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
 const getProxiedImageUrl = (url: string) => `/api/image-proxy?url=${encodeURIComponent(url)}`;
 
+// 공통 fetch wrapper 함수 추가
+function authFetch(url: string, options: RequestInit = {}) {
+  const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
+  const headers = {
+    ...(options.headers || {}),
+    "X-USER-ID": userId ?? "",
+  };
+  return fetch(url, { ...options, headers });
+}
+
 export default function Home() {
   const [blogUrl, setBlogUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -101,7 +111,7 @@ export default function Home() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180000); // 3분
     try {
-      const res = await fetch(`${API_BASE_URL}/api/blog/extract-all`, {
+      const res = await authFetch(`${API_BASE_URL}/api/blog/extract-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ blog_url: blogUrl }),
@@ -132,7 +142,7 @@ export default function Home() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180000); // 3분
     try {
-      const res = await fetch(`${API_BASE_URL}/api/blog/generate-video`, {
+      const res = await authFetch(`${API_BASE_URL}/api/blog/generate-video`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -151,7 +161,7 @@ export default function Home() {
         while (pollCount < 60) { // 최대 3분(3초 * 60)
           const pollController = new AbortController();
           const pollTimeoutId = setTimeout(() => pollController.abort(), 180000); // 3분
-          const pollRes = await fetch(`${API_BASE_URL}/api/blog/poll-video?render_id=${data.render_id}`, { signal: pollController.signal });
+          const pollRes = await authFetch(`${API_BASE_URL}/api/blog/poll-video?render_id=${data.render_id}`, { signal: pollController.signal });
           clearTimeout(pollTimeoutId);
           const pollData = await pollRes.json();
           if (pollData.status === "succeeded" && pollData.url) {
