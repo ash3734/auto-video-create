@@ -227,10 +227,28 @@ export default function Home() {
             <Link href="/" passHref legacyBehavior>
               <Box
                 component="a"
-                sx={{ fontWeight: 700, fontSize: 22, letterSpacing: -1, cursor: 'pointer', textDecoration: 'none', color: 'inherit' }}
+                sx={{
+                  width: 120,
+                  height: 48,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-start',
+                  position: 'relative',
+                  cursor: 'pointer',
+                  textDecoration: 'none',
+                  color: 'inherit',
+                  marginRight: 2 // theme.spacing(2) = 16px
+                }}
                 onClick={e => { e.preventDefault(); window.location.href = '/'; }}
               >
-                Blog to Short-form
+                <Image
+                  src="/logo.png"
+                  alt="logo"
+                  fill
+                  style={{ objectFit: "contain" }}
+                  sizes="120px"
+                  priority
+                />
               </Box>
             </Link>
           </Box>
