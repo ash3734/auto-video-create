@@ -12,16 +12,6 @@ import { useRouter } from "next/navigation";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
-// 공통 fetch wrapper 함수 추가 (로그인 요청 제외)
-function authFetch(url: string, options: RequestInit = {}) {
-  const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
-  const headers = {
-    ...(options.headers || {}),
-    "X-USER-ID": userId ?? "",
-  };
-  return fetch(url, { ...options, headers });
-}
-
 export default function LoginPage() {
   const [id, setId] = React.useState("");
   const [pw, setPw] = React.useState("");
