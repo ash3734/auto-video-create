@@ -8,6 +8,8 @@ import Link from "next/link";
 import Confetti from 'react-confetti';
 import CloseIcon from '@mui/icons-material/Close';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import AuthGuard from "../components/AuthGuard";
+import LogoutButton from "../components/LogoutButton";
 
 interface MediaList {
   images: string[];
@@ -41,12 +43,19 @@ export default function Home() {
   const [showConfetti, setShowConfetti] = useState(false);
   const theme = useTheme();
   const isPc = useMediaQuery(theme.breakpoints.up('md'));
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   // sectionMedia: 길이 5, 각 원소는 SectionMedia 또는 null
   const [sectionMedia, setSectionMedia] = useState<(SectionMedia|null)[]>([null, null, null, null, null]);
 
   console.log("--- Component Re-rendering ---");
   console.log("Current sectionMedia state:", JSON.stringify(sectionMedia, null, 2));
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setIsLoggedIn(!!localStorage.getItem("user_id"));
+    }
+  }, []);
 
   // 미디어 클릭 핸들러
   const handleMediaClick = (type: 'image' | 'video', url: string) => {
@@ -200,7 +209,7 @@ export default function Home() {
   }, [step, videoUrl]);
 
   return (
-    <>
+    <AuthGuard>
       <Box sx={{ minHeight: "100vh", bgcolor: "#fff", display: "flex", flexDirection: "column" }}>
         {/* 헤더 */}
         <Box sx={{ width: "100%", height: 64, display: "flex", alignItems: "center", justifyContent: "space-between", px: 4, borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
@@ -214,19 +223,24 @@ export default function Home() {
                 Blog to Short-form
               </Box>
             </Link>
-            <Box sx={{ bgcolor: "#1976d2", color: "#fff", fontSize: 12, fontWeight: 700, borderRadius: 1, px: 1.2, py: 0.3, ml: 1 }}>BETA</Box>
           </Box>
           <Box sx={{ display: "flex", gap: 1, alignItems: 'center' }}>
-            <Button variant="outlined" color="inherit" size="small" sx={{ fontWeight: 600 }} onClick={() => handleBetaAlert("Beta 버전에서는 로그인 기능이 지원되지 않습니다.")}>로그인</Button>
-            <Button
-              variant="contained"
-              color="primary"
-              size="small"
-              sx={{ fontWeight: 600, display: { xs: 'none', sm: 'inline-flex' } }}
-              onClick={() => handleBetaAlert("Beta 버전에서는 회원가입 기능이 지원되지 않습니다.")}
-            >
-              무료로 회원 가입
-            </Button>
+            {isLoggedIn ? (
+              <LogoutButton />
+            ) : (
+              <>
+                <Button variant="outlined" color="inherit" size="small" sx={{ fontWeight: 600 }} onClick={() => handleBetaAlert("Beta 버전에서는 로그인 기능이 지원되지 않습니다.")}>로그인</Button>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  size="small"
+                  sx={{ fontWeight: 600, display: { xs: 'none', sm: 'inline-flex' } }}
+                  onClick={() => handleBetaAlert("Beta 버전에서는 회원가입 기능이 지원되지 않습니다.")}
+                >
+                  무료로 회원 가입
+                </Button>
+              </>
+            )}
           </Box>
         </Box>
 
@@ -606,7 +620,7 @@ export default function Home() {
 
         {/* 하단 Beta 안내 */}
         <Box sx={{ width: "100%", textAlign: "center", py: 2, bgcolor: "#f8fafd", borderTop: "1px solid #eee", fontSize: 14, color: "#888" }}>
-          <b>BETA</b> 버전입니다. 서비스는 테스트 중이며, 기능 및 데이터는 예고 없이 변경될 수 있습니다.
+          사용중 문의사항이 있으면 mukghost2025@gmail.com 또는 오픈 채팅방으로 문의해주세요.
         </Box>
 
         {/* Snackbar for Beta 알림 */}
@@ -632,6 +646,6 @@ export default function Home() {
           )}
         </Dialog>
       </Box>
-    </>
+    </AuthGuard>
   );
 }

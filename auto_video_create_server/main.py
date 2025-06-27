@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from api.blog import router as blog_router
+from api.account import router as account_router
 from mangum import Mangum
 from fastapi.responses import JSONResponse
 from fastapi import Request
@@ -24,6 +25,7 @@ app.add_middleware(
 )
 
 app.include_router(blog_router, prefix="/api/blog")
+app.include_router(account_router, prefix="/api/account")
 
 @app.get("/")
 async def root():
