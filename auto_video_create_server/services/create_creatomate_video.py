@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
-CREATOMATE_TEMPLATE_ID = "14457245-7822-48a6-a711-62d15b739b85"
+if os.environ.get("ENV") == "production":
+    CREATOMATE_TEMPLATE_ID = "14457245-7822-48a6-a711-62d15b739b85"
+else:
+    CREATOMATE_TEMPLATE_ID = "174e58da-5e54-48f7-9037-eb812ce00f9c"
 
 ## 네이버 "e78f211a-9e4c-4f5c-a871-36b9d680ee11"
 ## 유튜브 "14457245-7822-48a6-a711-62d15b739b85"
