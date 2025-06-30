@@ -87,15 +87,6 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
         audio_local_paths = audio_local_paths[:5]
         audio_urls = audio_urls[:5]
 
-        # 2. 각 mp3 파일의 길이(초) 추출
-        import mutagen
-        from mutagen.mp3 import MP3
-        durations = []
-        for path in audio_local_paths:
-            audio = MP3(path)
-            durations.append(audio.info.length)
-        creatomate_vars = get_creatomate_vars(durations)
-
         # 3. 섹션별 미디어 타입에 따라 Creatomate 변수 생성
         variables = {}
         for i, section in enumerate(req.sections, 1):
@@ -113,7 +104,6 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
             audio_paths=audio_urls,
             scripts=req.scripts,
             title=req.title,
-            **creatomate_vars,
             **variables
         )
         # Creatomate 응답에서 render_id 추출

@@ -1,6 +1,7 @@
 import os
 import requests
 import boto3
+import time
 
 def upload_to_s3(local_path, bucket, s3_key):
     s3 = boto3.client('s3')
@@ -44,7 +45,8 @@ def tts_with_supertone_multi(scripts, api_key, voice_id, speed=1.2, output_dir="
         output_path = os.path.join(output_dir, f"shorts_script_{idx}.mp3")
         local_path, _ = tts_with_supertone(text, output_path, api_key, voice_id, speed)
         audio_local_paths.append(local_path)
-        s3_key = f"shorts_script_{idx}.mp3"
+        ms = int(time.time() * 1000)
+        s3_key = f"shorts_script_{idx}_{ms}.mp3"
         url = upload_to_s3(local_path, bucket, s3_key)
         audio_urls.append(url)
     return audio_local_paths, audio_urls 
