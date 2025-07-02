@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
-CREATOMATE_TEMPLATE_ID = "14457245-7822-48a6-a711-62d15b739b85"
+if os.environ.get("ENV") == "production":
+    CREATOMATE_TEMPLATE_ID = "8fd5eb79-c084-41cd-8a6b-8164eb876818"
+else:
+    CREATOMATE_TEMPLATE_ID = "e0738890-e503-4f5c-a8cf-e979dfe15f7a"
 
 ## 네이버 "e78f211a-9e4c-4f5c-a871-36b9d680ee11"
 ## 유튜브 "14457245-7822-48a6-a711-62d15b739b85"
@@ -20,11 +23,6 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
         "audio3.source": audio_paths[2],
         "audio4.source": audio_paths[3],
         "audio5.source": audio_paths[4],
-        "text1.text": scripts[0],
-        "text2.text": scripts[1],
-        "text3.text": scripts[2],
-        "text4.text": scripts[3],
-        "text5.text": scripts[4],
     }
     if video5:
         variables["video5.source"] = video5
