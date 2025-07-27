@@ -31,8 +31,14 @@ def validate_blog_url(user_id: str, blog_url: str) -> bool:
     """
     사용자의 블로그 주소와 요청된 블로그 주소를 비교하여 검증
     네이버 블로그의 경우: blog.naver.com/사용자명 형태로 비교
+    test 사용자이고 테스트 서버일 경우 검증을 건너뜀
     """
     try:
+        # test 사용자이고 테스트 서버일 경우 검증 건너뛰기
+        if user_id == "test" and os.environ.get("ENV").lower() == 'test':
+            print(f"테스트 서버에서 test 사용자 블로그 검증 건너뛰기: {blog_url}")
+            return True
+        
         # S3에서 사용자 데이터 로드
         users_data = load_json_from_s3("blog-to-short-form-users", "users.json")
         
