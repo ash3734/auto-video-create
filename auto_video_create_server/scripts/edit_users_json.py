@@ -2,13 +2,17 @@ import boto3
 import json
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
 
 BUCKET = "blog-to-short-form-users"
 KEY = "users.json"
 
 s3 = boto3.client("s3",
-    aws_access_key_id="xxxxxxx",
-    aws_secret_access_key="xxxxxxx",
+    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
     region_name="ap-northeast-2"
 )
 
@@ -23,7 +27,8 @@ def upload_users(users):
 def print_users(users):
     print("\n=== 사용자 목록 ===")
     for i, user in enumerate(users):
-        print(f"{i+1}. id: {user['id']}, pw: {user['pw']}, 구독: {user['subscription_start']} ~ {user['subscription_end']}")
+        blog_url = user.get('blog_url', '없음')
+        print(f"{i+1}. id: {user['id']}, pw: {user['pw']}, 구독: {user['subscription_start']} ~ {user['subscription_end']}, 블로그: {blog_url}")
     print()
 
 def add_user(users):
@@ -31,7 +36,13 @@ def add_user(users):
     pw = input("비밀번호: ").strip()
     start = input("구독 시작일(YYYY-MM-DD): ").strip()
     end = input("구독 종료일(YYYY-MM-DD): ").strip()
-    users.append({"id": id, "pw": pw, "subscription_start": start, "subscription_end": end})
+    blog_url = input("블로그 주소 (선택사항): ").strip()
+    
+    user_data = {"id": id, "pw": pw, "subscription_start": start, "subscription_end": end}
+    if blog_url:
+        user_data["blog_url"] = blog_url
+    
+    users.append(user_data)
     print(f"[+] 사용자 {id} 추가 완료.")
 
 def delete_user(users):
@@ -55,10 +66,24 @@ def update_subscription(users):
             return
     print(f"[!] 해당 id 없음.")
 
+def update_blog_url(users):
+    id = input("블로그 주소 변경할 id: ").strip()
+    for user in users:
+        if user["id"] == id:
+            current_blog = user.get('blog_url', '없음')
+            blog_url = input(f"새 블로그 주소 (현재: {current_blog}): ").strip()
+            if blog_url:
+                user["blog_url"] = blog_url
+            else:
+                user.pop("blog_url", None)  # 빈 값이면 제거
+            print(f"[*] {id} 블로그 주소 변경 완료.")
+            return
+    print(f"[!] 해당 id 없음.")
+
 def main():
     users = download_users()
     while True:
-        print("\n1. 전체 목록 보기\n2. 사용자 추가\n3. 사용자 삭제\n4. 구독일 변경\n5. 저장(업로드)\n6. 종료")
+        print("\n1. 전체 목록 보기\n2. 사용자 추가\n3. 사용자 삭제\n4. 구독일 변경\n5. 블로그 주소 변경\n6. 저장(업로드)\n7. 종료")
         sel = input("선택: ").strip()
         if sel == "1":
             print_users(users)
@@ -69,8 +94,10 @@ def main():
         elif sel == "4":
             update_subscription(users)
         elif sel == "5":
-            upload_users(users)
+            update_blog_url(users)
         elif sel == "6":
+            upload_users(users)
+        elif sel == "7":
             print("종료합니다.")
             break
         else:

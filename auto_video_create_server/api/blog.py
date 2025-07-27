@@ -5,10 +5,12 @@ from services.summarize import summarize_for_shorts_sets
 from services.tts_supertone import tts_with_supertone_multi
 from services.create_creatomate_video import create_creatomate_video, get_creatomate_vars, poll_creatomate_video_url
 from services.account_service import get_user_if_active
+from utils.s3_utils import load_json_from_s3
 import os
 from typing import List, Optional, Literal
 import requests
 import traceback
+from urllib.parse import urlparse
 
 # 필요시 아래 함수들도 services. 경로로 import
 # from services.summarize import ...
@@ -24,6 +26,53 @@ def require_active_subscription(request: Request):
     if not user:
         raise HTTPException(status_code=403, detail="구독이 만료된 계정입니다.")
     return user
+
+def validate_blog_url(user_id: str, blog_url: str) -> bool:
+    """
+    사용자의 블로그 주소와 요청된 블로그 주소를 비교하여 검증
+    네이버 블로그의 경우: blog.naver.com/사용자명 형태로 비교
+    """
+    try:
+        # S3에서 사용자 데이터 로드
+        users_data = load_json_from_s3("blog-to-short-form-users", "users.json")
+        
+        # 사용자 찾기
+        user = None
+        for u in users_data:
+            if u["id"] == user_id:
+                user = u
+                break
+        
+        if not user:
+            print(f"사용자를 찾을 수 없음: {user_id}")
+            return False
+        
+        # 사용자의 블로그 주소 확인
+        user_blog_url = user.get("blog_url")
+        if not user_blog_url:
+            print(f"사용자 {user_id}의 블로그 주소가 설정되지 않음")
+            return False
+        
+        # URL 파싱하여 도메인과 첫 번째 디렉토리명 비교
+        def parse_blog_url(url):
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+            path_parts = parsed.path.strip('/').split('/')
+            username = path_parts[0] if path_parts else ""
+            return domain, username
+        
+        user_domain, user_username = parse_blog_url(user_blog_url)
+        request_domain, request_username = parse_blog_url(blog_url)
+        
+        print(f"사용자 블로그: {user_domain}/{user_username}")
+        print(f"요청 블로그: {request_domain}/{request_username}")
+        
+        # 도메인과 사용자명 모두 일치하는지 확인
+        return user_username == request_username
+        
+    except Exception as e:
+        print(f"블로그 URL 검증 중 오류: {e}")
+        return False
 
 router = APIRouter()
 
@@ -48,6 +97,15 @@ def hello():
 def extract_all(req: ExtractMediaRequest, user=Depends(require_active_subscription)):
     try:
         print("extract_all 시작")
+        
+        # 블로그 URL 검증
+        user_id = user["id"]
+        if not validate_blog_url(user_id, req.blog_url):
+            return {
+                "status": "error", 
+                "message": "등록된 블로그 주소가 아닙니다. 관리자에게 문의하여 블로그 주소를 등록해주세요."
+            }
+        
         result = get_blog_media_and_scripts(req.blog_url)
         print("extract_all 성공")
         print("extract_all 응답 반환 직전")
