@@ -4,7 +4,7 @@ from services.blog_shorts import extract_blog_content, get_blog_media_and_script
 from services.summarize import summarize_for_shorts_sets
 from services.tts_supertone import tts_with_supertone_multi
 from services.create_creatomate_video import create_creatomate_video, get_creatomate_vars, poll_creatomate_video_url
-from services.account_service import get_user_if_active
+from services.account_service import get_user_if_active, check_user_credits, get_current_credits
 from utils.s3_utils import load_json_from_s3
 import os
 from typing import List, Optional, Literal
@@ -25,6 +25,27 @@ def require_active_subscription(request: Request):
     user = get_user_if_active(user_id)
     if not user:
         raise HTTPException(status_code=403, detail="구독이 만료된 계정입니다.")
+    return user
+
+def require_active_subscription_and_credits(request: Request, required_credits: int = 1000):
+    """구독 상태와 크레딧을 모두 체크하는 함수"""
+    user_id = request.headers.get("X-USER-ID") or request.query_params.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="인증 정보가 없습니다.")
+    
+    # 구독 상태 체크
+    user = get_user_if_active(user_id)
+    if not user:
+        raise HTTPException(status_code=403, detail="구독이 만료된 계정입니다.")
+    
+    # 크레딧 체크
+    if not check_user_credits(user_id, required_credits):
+        current_credits = get_current_credits(user_id)
+        raise HTTPException(
+            status_code=402, 
+            detail=f"크레딧이 부족합니다. 현재 보유 크레딧: {current_credits}개, 필요 크레딧: {required_credits}개"
+        )
+    
     return user
 
 def validate_blog_url(user_id: str, blog_url: str) -> bool:
@@ -134,7 +155,7 @@ class GenerateVideoResponse(BaseModel):
     message: Optional[str] = None
 
 @router.post("/generate-video")
-def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscription)):
+def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscription_and_credits)):
     print("generate_video 호출")
     try:
         # 1. TTS 변환 (scripts → mp3 url)
@@ -162,13 +183,23 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
                 variables[f"image{i}.visible"] = "false"
                 variables[f"video{i}.visible"] = "true"
 
-        # 4. Creatomate 영상 생성
+        # 4. Creatomate 영상 생성 (user_id 전달)
         result = create_creatomate_video(
             audio_paths=audio_urls,
             scripts=req.scripts,
             title=req.title,
+            user_id=user["id"],  # 크레딧 체크/차감을 위해 user_id 전달
             **variables
         )
+        # Creatomate 응답 처리
+        if isinstance(result, dict) and result.get("error"):
+            # 크레딧 부족 등의 에러 응답
+            return {
+                "status": "error", 
+                "message": result.get("message", "영상 생성 실패"),
+                "error_type": result.get("error")
+            }
+        
         # Creatomate 응답에서 render_id 추출
         render_id = None
         if isinstance(result, list):
@@ -190,4 +221,16 @@ def poll_video(render_id: str, user=Depends(require_active_subscription)):
     url = f"https://api.creatomate.com/v1/renders/{render_id}"
     headers = {"Authorization": f"Bearer {CREATOMATE_API_KEY}"}
     resp = requests.get(url, headers=headers)
-    return resp.json() 
+    return resp.json()
+
+@router.get("/credits")
+def get_user_credits(user=Depends(require_active_subscription)):
+    """사용자의 현재 크레딧 정보 조회"""
+    user_id = user["id"]
+    current_credits = get_current_credits(user_id)
+    return {
+        "status": "success",
+        "user_id": user_id,
+        "current_credits": current_credits,
+        "required_credits": 1000
+    }
