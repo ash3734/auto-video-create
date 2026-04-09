@@ -1,6 +1,64 @@
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+import json
+from typing import List
+
+
+def _normalize_image_url(base_url: str, candidate_url: str) -> str:
+    """이미지 후보 URL을 절대경로로 정규화하고 사이즈 파라미터를 통일한다."""
+    full_url = urljoin(base_url, candidate_url.strip())
+    if "?type=" in full_url:
+        full_url = full_url.split("?type=")[0] + "?type=w966"
+    return full_url
+
+
+def _is_valid_naver_image_url(full_url: str) -> bool:
+    """네이버 블로그 이미지 도메인인지 확인한다."""
+    # 모바일/에디터 구조에서 postfiles 외 다양한 pstatic 하위 도메인을 사용한다.
+    return "pstatic.net" in full_url and full_url.startswith(("http://", "https://"))
+
+
+def _extract_image_candidates(img_tag) -> List[str]:
+    """img 태그에서 src/data-src/srcset/data-* 속성을 폭넓게 수집한다."""
+    candidates: List[str] = []
+
+    direct_attrs = [
+        "src",
+        "data-src",
+        "data-lazy-src",
+        "data-original",
+        "data-original-src",
+        "data-linkdata",
+    ]
+    for attr in direct_attrs:
+        value = img_tag.get(attr)
+        if value:
+            candidates.append(value)
+
+    srcset = img_tag.get("srcset")
+    if srcset:
+        for item in srcset.split(","):
+            src_part = item.strip().split(" ")[0].strip()
+            if src_part:
+                candidates.append(src_part)
+
+    # data-linkdata / data-module 에 JSON이 들어오는 케이스 대응
+    for json_attr in ("data-linkdata", "data-module"):
+        raw_json = img_tag.get(json_attr)
+        if not raw_json:
+            continue
+        try:
+            parsed = json.loads(raw_json)
+            if isinstance(parsed, dict):
+                for key in ("src", "url", "originalUrl", "thumbnail"):
+                    value = parsed.get(key)
+                    if isinstance(value, str) and value:
+                        candidates.append(value)
+        except Exception:
+            continue
+
+    return candidates
 
 
 def extract_blog_content(url):
@@ -38,18 +96,19 @@ def extract_blog_content(url):
 
     # 이미지 링크 추출
     images = []
+    seen_images = set()
     img_count = 0
     for img in main_area.find_all('img'):
-        src = img.get('src')
-        if src:
-            full_url = urljoin(url, src)
-            if '?type=' in full_url:
-                full_url = full_url.split('?type=')[0] + '?type=w966'
-            # 도메인 필터링: postfiles.pstatic.net만 허용
-            if 'postfiles.pstatic.net' in full_url:
-                images.append(full_url)
-                img_count += 1
-                print(f"[이미지 {img_count}] {full_url}")
+        for candidate in _extract_image_candidates(img):
+            full_url = _normalize_image_url(url, candidate)
+            if not _is_valid_naver_image_url(full_url):
+                continue
+            if full_url in seen_images:
+                continue
+            seen_images.add(full_url)
+            images.append(full_url)
+            img_count += 1
+            print(f"[이미지 {img_count}] {full_url}")
 
     # 비디오 링크 추출
     videos = []
