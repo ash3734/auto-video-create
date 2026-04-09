@@ -49,6 +49,7 @@ export default function Home() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMsg, setSnackbarMsg] = useState("");
+  const [snackbarSeverity, setSnackbarSeverity] = useState<"info" | "error" | "warning" | "success">("info");
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const theme = useTheme();
@@ -153,6 +154,19 @@ export default function Home() {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+      
+      // HTTP 응답 상태 체크
+      if (!res.ok) {
+        const errorData = await res.json();
+        const errorMessage = errorData.detail || `HTTP ${res.status}: ${res.statusText}`;
+        setGenerateError(errorMessage);
+        setSnackbarMsg(errorMessage);
+        setSnackbarSeverity("error");
+        setSnackbarOpen(true);
+        setStep('select');
+        return;
+      }
+      
       const data = await res.json();
       if (data.status === "started" && data.render_id) {
         // Creatomate polling via backend proxy
@@ -168,7 +182,11 @@ export default function Home() {
             videoUrl = pollData.url;
             break;
           } else if (pollData.status === "failed") {
-            setGenerateError("영상 생성에 실패했습니다.");
+            const errorMessage = "영상 생성에 실패했습니다.";
+            setGenerateError(errorMessage);
+            setSnackbarMsg(errorMessage);
+            setSnackbarSeverity("error");
+            setSnackbarOpen(true);
             setStep('select');
             return;
           }
@@ -179,15 +197,27 @@ export default function Home() {
           setVideoUrl(videoUrl);
           setStep('done');
         } else {
-          setGenerateError("영상 생성이 제한 시간 내에 완료되지 않았습니다.");
+          const errorMessage = "영상 생성이 제한 시간 내에 완료되지 않았습니다.";
+          setGenerateError(errorMessage);
+          setSnackbarMsg(errorMessage);
+          setSnackbarSeverity("error");
+          setSnackbarOpen(true);
           setStep('select');
         }
       } else {
-        setGenerateError(data.message || "영상 생성에 실패했습니다.");
+        const errorMessage = data.message || "영상 생성에 실패했습니다.";
+        setGenerateError(errorMessage);
+        setSnackbarMsg(errorMessage);
+        setSnackbarSeverity("error");
+        setSnackbarOpen(true);
         setStep('select');
       }
     } catch {
-      setGenerateError("서버 요청 중 오류가 발생했습니다.");
+      const errorMessage = "서버 요청 중 오류가 발생했습니다.";
+      setGenerateError(errorMessage);
+      setSnackbarMsg(errorMessage);
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
       setStep('select');
     }
   };
@@ -651,9 +681,9 @@ export default function Home() {
           사용중 문의사항이 있으면 mukghost2025@gmail.com 또는 오픈 채팅방으로 문의해주세요.
         </Box>
 
-        {/* Snackbar for Beta 알림 */}
-        <Snackbar open={snackbarOpen} autoHideDuration={2500} onClose={() => setSnackbarOpen(false)} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
-          <Alert onClose={() => setSnackbarOpen(false)} severity="info" sx={{ width: '100%' }}>
+        {/* Snackbar for 알림 */}
+        <Snackbar open={snackbarOpen} autoHideDuration={4000} onClose={() => setSnackbarOpen(false)} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
+          <Alert onClose={() => setSnackbarOpen(false)} severity={snackbarSeverity} sx={{ width: '100%' }}>
             {snackbarMsg}
           </Alert>
         </Snackbar>

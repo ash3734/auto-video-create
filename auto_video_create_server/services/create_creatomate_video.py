@@ -9,26 +9,38 @@ load_dotenv()
 
 CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
 if os.environ.get("ENV") == "production":
-    CREATOMATE_TEMPLATE_ID = "8fd5eb79-c084-41cd-8a6b-8164eb876818"
+    CREATOMATE_TEMPLATE_ID = "cab85e50-1e78-41b8-9644-80a061d349f6"
 else:
-    CREATOMATE_TEMPLATE_ID = "e0738890-e503-4f5c-a8cf-e979dfe15f7a"
+    CREATOMATE_TEMPLATE_ID = "eda9d421-b086-4660-9f3c-9236d826226f"
 
 ## 네이버 "e78f211a-9e4c-4f5c-a871-36b9d680ee11"
 ## 유튜브 "14457245-7822-48a6-a711-62d15b739b85"
 
 def create_creatomate_video(audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, user_id=None, **kwargs):
-    print("create_creatomate_video 호출")
+    print("[create_creatomate_video] 호출")
+    print(
+        "[create_creatomate_video] 입력 요약 | "
+        f"user_id={user_id}, audio_count={len(audio_paths) if audio_paths else 0}, "
+        f"script_count={len(scripts) if scripts else 0}, "
+        f"title_exists={bool(title)}, extra_var_count={len(kwargs)}"
+    )
     
     # 크레딧 체크 (1000 크레딧 필요)
     if user_id:
+        print(f"[create_creatomate_video] 크레딧 검사 시작 | user_id={user_id}, required=1000")
         if not check_user_credits(user_id, 1000):
             current_credits = get_current_credits(user_id)  # 현재 크레딧 조회
+            print(
+                "[create_creatomate_video] 크레딧 부족으로 종료 | "
+                f"user_id={user_id}, current_credits={current_credits}"
+            )
             return {
                 "error": "insufficient_credits",
                 "message": f"크레딧이 부족합니다. 현재 보유 크레딧: {current_credits}개, 필요 크레딧: 1000개",
                 "current_credits": current_credits,
                 "required_credits": 1000
             }
+        print(f"[create_creatomate_video] 크레딧 검사 통과 | user_id={user_id}")
     
     variables = {
         "audio1.source": audio_paths[0],
@@ -46,8 +58,13 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
         "template_id": CREATOMATE_TEMPLATE_ID,
         "modifications": variables
     }
+    print(
+        "[create_creatomate_video] payload 준비 완료 | "
+        f"template_id={CREATOMATE_TEMPLATE_ID}, modification_count={len(variables)}"
+    )
     
     try:
+        print("[create_creatomate_video] Creatomate API 요청 시작")
         response = requests.post(
             "https://api.creatomate.com/v1/renders",
             headers={
@@ -56,11 +73,29 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
             },
             data=json.dumps(payload)
         )
+        print(
+            "[create_creatomate_video] Creatomate API 응답 수신 | "
+            f"status_code={response.status_code}"
+        )
         
         result = response.json()
+        if isinstance(result, list):
+            preview_id = result[0].get("id") if result and isinstance(result[0], dict) else None
+            print(
+                "[create_creatomate_video] 응답 파싱 완료 | "
+                f"type=list, length={len(result)}, first_id={preview_id}"
+            )
+        elif isinstance(result, dict):
+            print(
+                "[create_creatomate_video] 응답 파싱 완료 | "
+                f"type=dict, keys={list(result.keys())[:10]}, id={result.get('id')}"
+            )
+        else:
+            print(f"[create_creatomate_video] 응답 파싱 완료 | type={type(result)}")
         
         # 성공 시 크레딧 차감
         if user_id and response.status_code == 200:
+            print(f"[create_creatomate_video] 크레딧 차감 시도 | user_id={user_id}, amount=1000")
             # render_id가 있는지 확인 (성공적인 렌더링 시작)
             if isinstance(result, list) and result and result[0].get('id'):
                 render_id = result[0]['id']
@@ -76,11 +111,19 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
                     print(f"[+] {user_id} 크레딧 차감 완료 (render_id: {render_id})")
                 else:
                     print(f"[!] {user_id} 크레딧 차감 실패")
+            else:
+                print("[create_creatomate_video] 크레딧 차감 스킵 | render_id 미확인")
+        elif user_id:
+            print(
+                "[create_creatomate_video] 크레딧 차감 스킵 | "
+                f"user_id={user_id}, status_code={response.status_code}"
+            )
         
+        print("[create_creatomate_video] 정상 반환")
         return result
         
     except Exception as e:
-        print(f"[!] Creatomate API 호출 실패: {e}")
+        print(f"[create_creatomate_video][ERROR] Creatomate API 호출 실패: {e}")
         return {
             "error": "api_error",
             "message": f"영상 생성 API 호출 실패: {str(e)}"
