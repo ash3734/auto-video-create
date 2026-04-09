@@ -126,11 +126,11 @@ def extract_all(req: ExtractMediaRequest, user=Depends(require_active_subscripti
         
         # 블로그 URL 검증
         user_id = user["id"]
-        if not validate_blog_url(user_id, req.blog_url):
-            return {
-                "status": "error", 
-                "message": "등록된 블로그 주소가 아닙니다. 관리자에게 문의하여 블로그 주소를 등록해주세요."
-            }
+        # if not validate_blog_url(user_id, req.blog_url):
+        #     return {
+        #         "status": "error", 
+        #         "message": "등록된 블로그 주소가 아닙니다. 관리자에게 문의하여 블로그 주소를 등록해주세요.!!"
+        #     }
         
         result = get_blog_media_and_scripts(req.blog_url)
         print("extract_all 성공")
@@ -194,11 +194,19 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
         # Creatomate 응답 처리
         if isinstance(result, dict) and result.get("error"):
             # 크레딧 부족 등의 에러 응답
-            return {
+            error_response = {
                 "status": "error", 
                 "message": result.get("message", "영상 생성 실패"),
                 "error_type": result.get("error")
             }
+            # Creatomate 400 응답 디버깅을 위해 보조 정보 전달
+            if result.get("status_code") is not None:
+                error_response["status_code"] = result.get("status_code")
+            if result.get("hint"):
+                error_response["hint"] = result.get("hint")
+            if result.get("documentation"):
+                error_response["documentation"] = result.get("documentation")
+            return error_response
         
         # Creatomate 응답에서 render_id 추출
         render_id = None
