@@ -50,7 +50,12 @@ def get_current_credits(user_id: str) -> int:
     return 0
 
 def check_user_credits(user_id: str, required_credits: int = 1000) -> bool:
-    """사용자의 크레딧이 충분한지 체크"""
+    """사용자의 크레딧이 충분한지 체크.
+
+    cycle-2 (ADR-6): ENV=test 환경에서는 항상 True (deduct_credits 와 일관).
+    """
+    if os.environ.get("ENV", "").lower() == "test":
+        return True
     current_credits = get_current_credits(user_id)
     return current_credits >= required_credits
 
@@ -66,7 +71,16 @@ def save_credit_record(credit_record: dict):
     )
 
 def deduct_credits(user_id: str, amount: int = 1000, reason: str = "video_generation") -> bool:
-    """크레딧 차감"""
+    """크레딧 차감.
+
+    cycle-2 (ADR-6): ENV=test 환경에서는 차감 건너뜀.
+    KPI funnel (test 무료 시도 → prod 결제) 의 본질이므로 정책으로 강제.
+    """
+    # cycle-2: ENV=test 일관 우회
+    if os.environ.get("ENV", "").lower() == "test":
+        print(f"[deduct_credits] ENV=test — 차감 건너뜀 (user={user_id}, amount={amount}, reason={reason})")
+        return True
+
     try:
         users = load_json_from_s3(BUCKET_USERS, KEY_USERS)
         user_found = False
