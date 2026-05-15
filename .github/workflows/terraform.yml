@@ -65,7 +65,13 @@ jobs:
             ${{ steps.plan.outputs.stdout }}
             ```
 
+      # ⚠️ 자동 apply 임시 비활성화 (cycle-2, 2026-05-15)
+      # 사유: state ↔ AWS 사이 큰 drift 존재. 머지 시 자동 apply 가 다음 위험을 유발:
+      #   - test Lambda(my-fastapi-backend) 의 ENV: "test" → "production" 강제 변경 (D-6 정책 깨짐)
+      #   - 11개 리소스를 "이미 deleted" 로 인식하고 다시 create 시도 → ResourceAlreadyExists 에러
+      # 다음 사이클(별도 인프라 정리 사이클)에서 drift 정리 후 재활성화 예정.
+      # 그동안 인프라 변경이 필요하면 workflow_dispatch 로 plan 만 돌리고 수동 apply.
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: false  # disabled — see comment above
         run: terraform apply -auto-approve -var="github_token=$GITHUB_TOKEN"
         working-directory: infra 
