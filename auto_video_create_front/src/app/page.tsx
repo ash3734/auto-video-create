@@ -15,12 +15,18 @@ interface MediaList {
   images: string[];
   videos: string[];
   scripts?: { script: string }[] | string[];
+  // cycle-2: 일반 블로그 지원 — BE 가 응답에 포함. FE 는 default_slot_count 만 사용.
+  category?: 'restaurant' | 'general';
+  platform?: 'naver' | 'tistory' | 'brunch';
+  default_slot_count?: number;
 }
 
 // 섹션별 미디어 타입과 선택된 URL을 관리하는 인터페이스
 interface SectionMedia {
-  type: 'image' | 'video';
-  url: string;
+  type: 'image' | 'video' | 'default';
+  url: string | null;
+  // cycle-2: type='default' 일 때 BE 가 generate-video 시점에 AI 배경 생성
+  isDefaultBackground?: boolean;
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
@@ -73,15 +79,23 @@ export default function Home() {
     setSectionMedia(prev => {
       const updated = [...prev];
       const idx = updated.findIndex(m => m && m.url === url);
-      
+
       if (idx !== -1) {
+        // 이미 선택된 미디어 → 해제
         updated[idx] = null;
       } else {
+        // cycle-2 (BUG-002 fix): 빈 슬롯 우선, 없으면 첫 default 슬롯에 직접 교체.
+        // 이전 동작: null 슬롯만 채워서 default 슬롯이 뒤에 있는데도 앞 null 슬롯이 먼저 채워져 순서 어긋남.
         const emptyIdx = updated.findIndex(m => m === null);
         if (emptyIdx !== -1) {
           updated[emptyIdx] = { type, url };
         } else {
-          console.log('[handleMediaClick] No empty slot available.');
+          const defaultIdx = updated.findIndex(m => m && m.type === 'default');
+          if (defaultIdx !== -1) {
+            updated[defaultIdx] = { type, url };
+          } else {
+            console.log('[handleMediaClick] No empty / default slot available.');
+          }
         }
       }
       return updated;
@@ -123,6 +137,18 @@ export default function Home() {
         setMedia({ images: data.images, videos: data.videos, scripts: data.scripts, title: data.title });
         setScripts((data.scripts || []).map((s: { script: string } | string) => typeof s === 'string' ? s : s.script));
         setTitle(data.title || "");
+        // cycle-2: BE 가 default_slot_count 만큼 부족 슬롯을 알려주면 후반부를 AI 기본 배경으로 채움
+        const defaultCount: number = typeof data.default_slot_count === 'number' ? data.default_slot_count : 0;
+        if (defaultCount > 0) {
+          setSectionMedia(prev => {
+            const updated = [...prev];
+            const start = Math.max(0, 5 - defaultCount);
+            for (let i = start; i < 5; i++) {
+              updated[i] = { type: 'default', url: null, isDefaultBackground: true };
+            }
+            return updated;
+          });
+        }
         setStep('select');
       } else {
         setError(data.message || "이미지/영상/스크립트 추출에 실패했습니다.");
@@ -277,20 +303,22 @@ export default function Home() {
           {step === 'input' && (
             <Box sx={{ width: "100%", maxWidth: 420, textAlign: "center", mt: 12 }}>
               <Typography variant="h4" fontWeight={700} gutterBottom sx={{ mt: 6 }}>
-                블로그 주소로 숏폼 만들기
+                내 블로그로 숏폼 영상 만들기
               </Typography>
-              <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-                네이버 블로그 주소를 입력하면 숏폼 영상을 만들어줍니다.
+              <Typography variant="body1" color="text.primary" sx={{ mb: 4, wordBreak: 'keep-all' }}>
+                <Box component="span" sx={{ fontWeight: 500 }}>네이버 블로그, 티스토리, 브런치</Box> 주소를 붙여넣으면 숏폼 영상을 자동으로 만들어줘요.
               </Typography>
               <Box component="form" onSubmit={handleSubmit} sx={{ width: "100%", mb: 2 }}>
                 <TextField
-                  label="네이버 블로그 주소"
+                  label="블로그 주소"
+                  placeholder="https://blog.naver.com/username/123456"
                   variant="outlined"
                   fullWidth
                   value={blogUrl}
                   onChange={e => setBlogUrl(e.target.value)}
                   sx={{ mb: 2, bgcolor: "#fafbfc" }}
                   inputProps={{ inputMode: "url" }}
+                  InputLabelProps={{ shrink: true }}
                 />
                 <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={loading} sx={{ fontWeight: 700, fontSize: 18, height: 48 }}>
                   {loading ? <CircularProgress size={24} color="inherit" /> : "숏폼 만들기"}
@@ -354,6 +382,8 @@ export default function Home() {
                     <Typography variant="h6" fontWeight={700} gutterBottom>생성된 스크립트</Typography>
                     {scripts.map((script, idx) => {
                       const section = sectionMedia[idx];
+                      // cycle-2: 사용자가 직접 고른 슬롯만 강조. AI 기본 배경 슬롯은 강조 X.
+                      const isUserSelected = !!section && section.type !== 'default';
                       return (
                         <Paper
                           key={idx}
@@ -361,9 +391,9 @@ export default function Home() {
                             mb: 2,
                             p: 2,
                             borderRadius: 2,
-                            boxShadow: section ? '0 0 0 3px #1976d2, 0 2px 8px rgba(0,0,0,0.06)' : '0 2px 8px rgba(0,0,0,0.03)',
-                            border: section ? '2px solid #1976d2' : '1.5px solid #e3e6ef',
-                            bgcolor: section ? 'rgba(25, 118, 210, 0.07)' : '#fff',
+                            boxShadow: isUserSelected ? '0 0 0 3px #1976d2, 0 2px 8px rgba(0,0,0,0.06)' : '0 2px 8px rgba(0,0,0,0.03)',
+                            border: isUserSelected ? '2px solid #1976d2' : '1.5px solid #e3e6ef',
+                            bgcolor: isUserSelected ? 'rgba(25, 118, 210, 0.07)' : '#fff',
                             transition: 'all 0.2s',
                           }}
                         >
@@ -372,15 +402,37 @@ export default function Home() {
                           {/* 미디어 미리보기 */}
                           {section && (
                             <Box sx={{ mt: 2, position: 'relative' }}>
-                              {section.type === 'image' ? (
-                                <img 
-                                  src={getProxiedImageUrl(section.url)} 
+                              {section.type === 'default' ? (
+                                <>
+                                  <Box sx={{
+                                    width: '100%',
+                                    height: 200,
+                                    borderRadius: 2,
+                                    background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
+                                  }} />
+                                  <Box sx={{
+                                    position: 'absolute',
+                                    top: 8,
+                                    left: 8,
+                                    bgcolor: 'rgba(25, 118, 210, 0.85)',
+                                    color: '#fff',
+                                    fontSize: 12,
+                                    fontWeight: 500,
+                                    px: 1.25,
+                                    py: 0.5,
+                                    borderRadius: 999,
+                                    letterSpacing: 0.2,
+                                  }}>AI 기본 배경</Box>
+                                </>
+                              ) : section.type === 'image' ? (
+                                <img
+                                  src={getProxiedImageUrl(section.url as string)}
                                   alt={`스크립트 ${idx + 1} 이미지`}
                                   style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 8 }}
                                 />
                               ) : (
                                 <video
-                                  src={section.url}
+                                  src={section.url as string}
                                   style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 8 }}
                                   controls
                                 />
@@ -388,10 +440,10 @@ export default function Home() {
                               <IconButton
                                 size="small"
                                 onClick={() => handleSectionMediaDeselect(idx)}
-                                sx={{ 
-                                  position: 'absolute', 
-                                  top: 8, 
-                                  right: 8, 
+                                sx={{
+                                  position: 'absolute',
+                                  top: 8,
+                                  right: 8,
                                   bgcolor: 'rgba(0,0,0,0.5)',
                                   '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' },
                                 }}
@@ -399,6 +451,11 @@ export default function Home() {
                                 <CloseIcon sx={{ color: 'white' }} />
                               </IconButton>
                             </Box>
+                          )}
+                          {section?.type === 'default' && (
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 1, wordBreak: 'keep-all' }}>
+                              AI가 어울리는 배경을 채워뒀어요. 오른쪽에서 직접 바꿀 수 있어요.
+                            </Typography>
                           )}
                         </Paper>
                       );
@@ -485,17 +542,48 @@ export default function Home() {
             ) : (
               <Box sx={{ width: "100%", mb: 4 }}>
                 <Typography variant="h6" gutterBottom>생성된 스크립트</Typography>
-                {scripts.map((script, idx) => (
-                  <Box key={idx} sx={{ mb: 1, p: 1, border: '1px solid #eee', borderRadius: 2 }}>
-                    <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.5 }}>스크립트 {idx + 1}</Typography>
-                    <Typography variant="body1">{script}</Typography>
-                    {idx === scripts.length - 1 && (
-                      <Typography variant="body2" color="secondary" sx={{ mt: 1 }}>
-                        이 스크립트에는 영상을 선택해 주세요.
-                      </Typography>
-                    )}
-                  </Box>
-                ))}
+                {scripts.map((script, idx) => {
+                  const section = sectionMedia[idx];
+                  return (
+                    <Box key={idx} sx={{ mb: 1, p: 1, border: '1px solid #eee', borderRadius: 2 }}>
+                      <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.5 }}>스크립트 {idx + 1}</Typography>
+                      <Typography variant="body1">{script}</Typography>
+                      {/* cycle-2: AI 기본 배경 슬롯은 모바일에서도 안내 카피 + 그라디언트 패널 표시 */}
+                      {section?.type === 'default' && (
+                        <>
+                          <Box sx={{ mt: 1, position: 'relative' }}>
+                            <Box sx={{
+                              width: '100%',
+                              height: 120,
+                              borderRadius: 2,
+                              background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
+                            }} />
+                            <Box sx={{
+                              position: 'absolute',
+                              top: 6,
+                              left: 6,
+                              bgcolor: 'rgba(25, 118, 210, 0.85)',
+                              color: '#fff',
+                              fontSize: 11,
+                              fontWeight: 500,
+                              px: 1,
+                              py: 0.25,
+                              borderRadius: 999,
+                            }}>AI 기본 배경</Box>
+                          </Box>
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 1, wordBreak: 'keep-all' }}>
+                            AI가 어울리는 배경을 채워뒀어요. 아래에서 직접 바꿀 수 있어요.
+                          </Typography>
+                        </>
+                      )}
+                      {idx === scripts.length - 1 && (
+                        <Typography variant="body2" color="secondary" sx={{ mt: 1 }}>
+                          이 스크립트에는 영상을 선택해 주세요.
+                        </Typography>
+                      )}
+                    </Box>
+                  );
+                })}
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', mb: 2 }}>
                   {media.images.length === 0 && <Typography color="text.secondary">이미지가 없습니다.</Typography>}
                   {media.images.map((url) => {

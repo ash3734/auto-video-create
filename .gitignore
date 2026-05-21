@@ -10,3 +10,4 @@ __pycache__/
 
 auto_video_create_server/lambda/
 lambda.zip
+infra/.terraform/

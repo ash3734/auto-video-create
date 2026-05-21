@@ -66,6 +66,16 @@ resource "aws_s3_bucket" "test" {
   force_destroy = true
 }
 
+# cycle-2: AI 배경 생성(DALL-E) 실패 시 사용하는 fallback 이미지.
+# services/ai_background.py 가 이 객체를 참조한다.
+resource "aws_s3_object" "default_bg" {
+  bucket       = aws_s3_bucket.my_bucket.id
+  key          = "static/default-bg.png"
+  source       = "${path.module}/files/default-bg.png"
+  etag         = filemd5("${path.module}/files/default-bg.png")
+  content_type = "image/png"
+}
+
 data "aws_caller_identity" "current" {}
 
 # 업로드/삭제는 AWS IAM 인증 사용자만 가능 (별도 정책 필요 없음)
