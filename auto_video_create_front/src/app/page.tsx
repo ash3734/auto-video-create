@@ -79,15 +79,23 @@ export default function Home() {
     setSectionMedia(prev => {
       const updated = [...prev];
       const idx = updated.findIndex(m => m && m.url === url);
-      
+
       if (idx !== -1) {
+        // 이미 선택된 미디어 → 해제
         updated[idx] = null;
       } else {
+        // cycle-2 (BUG-002 fix): 빈 슬롯 우선, 없으면 첫 default 슬롯에 직접 교체.
+        // 이전 동작: null 슬롯만 채워서 default 슬롯이 뒤에 있는데도 앞 null 슬롯이 먼저 채워져 순서 어긋남.
         const emptyIdx = updated.findIndex(m => m === null);
         if (emptyIdx !== -1) {
           updated[emptyIdx] = { type, url };
         } else {
-          console.log('[handleMediaClick] No empty slot available.');
+          const defaultIdx = updated.findIndex(m => m && m.type === 'default');
+          if (defaultIdx !== -1) {
+            updated[defaultIdx] = { type, url };
+          } else {
+            console.log('[handleMediaClick] No empty / default slot available.');
+          }
         }
       }
       return updated;
