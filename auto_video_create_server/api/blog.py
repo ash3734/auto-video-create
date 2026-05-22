@@ -4,7 +4,10 @@ from services.blog_shorts import extract_blog_content, get_blog_media_and_script
 from services.summarize import summarize_for_shorts_sets
 from services.tts_supertone import tts_with_supertone_multi
 from services.create_creatomate_video import create_creatomate_video, get_creatomate_vars, poll_creatomate_video_url
-from services.account_service import get_user_if_active
+from services.account_service import get_user_if_active, check_user_credits, get_current_credits
+from services.ai_background import generate_backgrounds_parallel, FALLBACK_URL as DEFAULT_BG_FALLBACK_URL
+from services.image_mirror import maybe_mirror
+from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
 import os
 from typing import List, Optional, Literal
@@ -27,6 +30,27 @@ def require_active_subscription(request: Request):
         raise HTTPException(status_code=403, detail="구독이 만료된 계정입니다.")
     return user
 
+def require_active_subscription_and_credits(request: Request, required_credits: int = 1000):
+    """구독 상태와 크레딧을 모두 체크하는 함수"""
+    user_id = request.headers.get("X-USER-ID") or request.query_params.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="인증 정보가 없습니다.")
+    
+    # 구독 상태 체크
+    user = get_user_if_active(user_id)
+    if not user:
+        raise HTTPException(status_code=403, detail="구독이 만료된 계정입니다.")
+    
+    # 크레딧 체크
+    if not check_user_credits(user_id, required_credits):
+        current_credits = get_current_credits(user_id)
+        raise HTTPException(
+            status_code=402, 
+            detail=f"크레딧이 부족합니다. 현재 보유 크레딧: {current_credits}개, 필요 크레딧: {required_credits}개"
+        )
+    
+    return user
+
 def validate_blog_url(user_id: str, blog_url: str) -> bool:
     """
     사용자의 블로그 주소와 요청된 블로그 주소를 비교하여 검증
@@ -35,7 +59,7 @@ def validate_blog_url(user_id: str, blog_url: str) -> bool:
     """
     try:
         # test 사용자이고 테스트 서버일 경우 검증 건너뛰기
-        if user_id == "test" and os.environ.get("ENV").lower() == 'test':
+        if user_id == "test" and os.environ.get("ENV", "").lower() == 'test':
             print(f"테스트 서버에서 test 사용자 블로그 검증 건너뛰기: {blog_url}")
             return True
         # S3에서 사용자 데이터 로드
@@ -58,22 +82,40 @@ def validate_blog_url(user_id: str, blog_url: str) -> bool:
             print(f"사용자 {user_id}의 블로그 주소가 설정되지 않음")
             return False
         
-        # URL 파싱하여 도메인과 첫 번째 디렉토리명 비교
+        # URL 파싱: 플랫폼별 username 추출 규칙 (cycle-2: tistory / brunch 추가)
         def parse_blog_url(url):
             parsed = urlparse(url)
-            domain = parsed.netloc.lower()
-            path_parts = parsed.path.strip('/').split('/')
-            username = path_parts[0] if path_parts else ""
-            return domain, username
-        
-        user_domain, user_username = parse_blog_url(user_blog_url)
-        request_domain, request_username = parse_blog_url(blog_url)
-        
-        print(f"사용자 블로그: {user_domain}/{user_username}")
-        print(f"요청 블로그: {request_domain}/{request_username}")
-        
-        # 도메인과 사용자명 모두 일치하는지 확인
-        return user_username == request_username
+            host = parsed.netloc.lower()
+            path = parsed.path.strip('/')
+            path_parts = path.split('/') if path else []
+
+            # 네이버: blog.naver.com/{username}
+            if "blog.naver.com" in host:
+                username = path_parts[0] if path_parts else ""
+                return "naver", username
+
+            # 티스토리: {username}.tistory.com
+            if host.endswith(".tistory.com"):
+                subdomain = host.replace(".tistory.com", "")
+                return "tistory", subdomain
+
+            # 브런치: brunch.co.kr/@{username}
+            if "brunch.co.kr" in host:
+                first = path_parts[0] if path_parts else ""
+                username = first[1:] if first.startswith("@") else first
+                return "brunch", username
+
+            # 그 외: 도메인 자체를 username 으로 (개인 도메인은 1차 사이클 미지원이지만 fallback)
+            return host, ""
+
+        user_platform, user_username = parse_blog_url(user_blog_url)
+        request_platform, request_username = parse_blog_url(blog_url)
+
+        print(f"사용자 블로그: {user_platform}/{user_username}")
+        print(f"요청 블로그: {request_platform}/{request_username}")
+
+        # 플랫폼과 사용자명 모두 일치해야 통과
+        return (user_platform == request_platform) and (user_username == request_username) and user_username != ""
         
     except Exception as e:
         print(f"블로그 URL 검증 중 오류: {e}")
@@ -88,11 +130,18 @@ class ExtractMediaResponse(BaseModel):
     status: str
     images: list[str]
     videos: list[str]
+    # cycle-2: 신규 필드 (BE 내부 사용 / 디버깅 / FE 는 default_slot_count 만 사용)
+    category: Optional[Literal["restaurant", "general"]] = None
+    platform: Optional[Literal["naver", "tistory", "brunch"]] = None
+    default_slot_count: Optional[int] = 0
     message: str = None
 
+
 class SectionMedia(BaseModel):
-    type: Literal["image", "video"]
-    url: str
+    # cycle-2: 'default' 추가 — BE 가 generate-video 시점에 AI 배경 생성
+    type: Literal["image", "video", "default"]
+    url: Optional[str] = None
+    isDefaultBackground: Optional[bool] = False
 
 @router.get("/hello")
 def hello():
@@ -102,23 +151,35 @@ def hello():
 def extract_all(req: ExtractMediaRequest, user=Depends(require_active_subscription)):
     try:
         print("extract_all 시작")
-        
-        # 블로그 URL 검증
+
+        # cycle-2 (D-1): validate_blog_url 활성화. ENV=test 환경은 함수 내부에서 우회.
         user_id = user["id"]
         if not validate_blog_url(user_id, req.blog_url):
             return {
-                "status": "error", 
-                "message": "등록된 블로그 주소가 아닙니다. 관리자에게 문의하여 블로그 주소를 등록해주세요."
+                "status": "error",
+                "error_code": "blog_not_registered",
+                "message": "등록된 블로그 주소가 아닙니다. 관리자에게 문의해주세요.",
             }
-        
+
         result = get_blog_media_and_scripts(req.blog_url)
         print("extract_all 성공")
-        print("extract_all 응답 반환 직전")
         return {"status": "success", **result}
+    except UnsupportedPlatformError as e:
+        # cycle-2: 비지원 플랫폼 (네이버 / 티스토리 / 브런치 외)
+        print(f"extract_all 비지원 플랫폼: {e}")
+        return {
+            "status": "error",
+            "error_code": "unsupported_platform",
+            "message": "지원하지 않는 블로그 플랫폼이에요. 네이버 블로그, 티스토리, 브런치만 가능해요.",
+        }
     except Exception as e:
         print("extract_all 에러:", e)
         traceback.print_exc()
-        return {"status": "error", "message": str(e)}
+        return {
+            "status": "error",
+            "error_code": "crawl_failed",
+            "message": "블로그를 불러올 수 없어요. 다른 글로 시도해주세요.",
+        }
     finally:
         print("extract_all finally 블록 실행")
 
@@ -134,7 +195,7 @@ class GenerateVideoResponse(BaseModel):
     message: Optional[str] = None
 
 @router.post("/generate-video")
-def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscription)):
+def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscription_and_credits)):
     print("generate_video 호출")
     try:
         # 1. TTS 변환 (scripts → mp3 url)
@@ -151,24 +212,59 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
         audio_urls = audio_urls[:5]
 
         # 3. 섹션별 미디어 타입에 따라 Creatomate 변수 생성
+        # cycle-2: type='default' 슬롯은 AI 배경을 lazy 병렬 생성 (ADR-4).
+        default_pairs = [
+            (i, req.scripts[i] if i < len(req.scripts) else "")
+            for i, section in enumerate(req.sections)
+            if section.type == "default"
+        ]
+        ai_bg_urls = {}
+        if default_pairs:
+            print(f"[generate_video] AI 배경 병렬 생성 — 슬롯 {[idx for idx, _ in default_pairs]}")
+            try:
+                ai_bg_urls = generate_backgrounds_parallel(default_pairs, max_workers=5)
+            except Exception as e:
+                # 병렬 호출 전체 실패 시 fallback URL 로 채움
+                print(f"[generate_video] AI 배경 생성 실패 — fallback 전체 적용: {e}")
+                ai_bg_urls = {idx: DEFAULT_BG_FALLBACK_URL for idx, _ in default_pairs}
+
         variables = {}
         for i, section in enumerate(req.sections, 1):
+            zero_idx = i - 1
             if section.type == "image":
-                variables[f"image{i}.source"] = section.url
+                # cycle-2.2 BUG-007: Creatomate 가 차단당하는 외부 호스트(Daum CDN 등) 는
+                # S3 미러링 후 그 URL 을 전달. 그 외 호스트는 원본 그대로.
+                image_src = maybe_mirror(section.url or "", referer="https://brunch.co.kr/")
+                variables[f"image{i}.source"] = image_src
                 variables[f"image{i}.visible"] = "true"
                 variables[f"video{i}.visible"] = "false"
-            else:
+            elif section.type == "video":
                 variables[f"video{i}.source"] = section.url
                 variables[f"image{i}.visible"] = "false"
                 variables[f"video{i}.visible"] = "true"
+            else:  # 'default' — AI 생성 배경 (이미지로 처리)
+                bg_url = ai_bg_urls.get(zero_idx, DEFAULT_BG_FALLBACK_URL)
+                variables[f"image{i}.source"] = bg_url
+                variables[f"image{i}.visible"] = "true"
+                variables[f"video{i}.visible"] = "false"
 
-        # 4. Creatomate 영상 생성
+        # 4. Creatomate 영상 생성 (user_id 전달)
         result = create_creatomate_video(
             audio_paths=audio_urls,
             scripts=req.scripts,
             title=req.title,
+            user_id=user["id"],  # 크레딧 체크/차감을 위해 user_id 전달
             **variables
         )
+        # Creatomate 응답 처리
+        if isinstance(result, dict) and result.get("error"):
+            # 크레딧 부족 등의 에러 응답
+            return {
+                "status": "error", 
+                "message": result.get("message", "영상 생성 실패"),
+                "error_type": result.get("error")
+            }
+        
         # Creatomate 응답에서 render_id 추출
         render_id = None
         if isinstance(result, list):
@@ -190,4 +286,16 @@ def poll_video(render_id: str, user=Depends(require_active_subscription)):
     url = f"https://api.creatomate.com/v1/renders/{render_id}"
     headers = {"Authorization": f"Bearer {CREATOMATE_API_KEY}"}
     resp = requests.get(url, headers=headers)
-    return resp.json() 
+    return resp.json()
+
+@router.get("/credits")
+def get_user_credits(user=Depends(require_active_subscription)):
+    """사용자의 현재 크레딧 정보 조회"""
+    user_id = user["id"]
+    current_credits = get_current_credits(user_id)
+    return {
+        "status": "success",
+        "user_id": user_id,
+        "current_credits": current_credits,
+        "required_credits": 1000
+    }

@@ -5,7 +5,10 @@ applications:
       phases:
         preBuild:
           commands:
-            - nvm use 18 && npm ci
+            # cycle-2.1 BUG-005 + BUG-006 fix.
+            # - Amplify build image 의 nvm 에 노드 사전 설치 안 됨 → install 먼저
+            # - AWS Amplify Console 이 2026-05 부터 Node 18 deprecate → Node 20 로 통일
+            - nvm install 20 && nvm use 20 && npm ci
         build:
           commands:
             - npm run lint:src
