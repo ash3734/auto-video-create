@@ -102,6 +102,19 @@ export default function Home() {
     });
   };
 
+  // cycle-2.2: 외부 이미지가 404/차단 등으로 로드 실패 시 해당 갤러리/슬롯을 hide 한다.
+  // BUG-008 (네이버 OGQ 스티커) 같은 pre-existing + 미래 외부 호스트 변경 대비 안전망.
+  // 시각 회귀로 사용자가 깨진 이미지를 클릭하지 않도록 wrapper 자체 hide.
+  const handleImgError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    const wrapper = img.closest('li') || img.parentElement;
+    if (wrapper instanceof HTMLElement) {
+      wrapper.style.display = 'none';
+    } else {
+      img.style.display = 'none';
+    }
+  };
+
   // 섹션 미디어 해제 핸들러 (스크립트별 미리보기에서 X 클릭)
   const handleSectionMediaDeselect = (idx: number) => {
     setSectionMedia(prev => {
@@ -428,6 +441,7 @@ export default function Home() {
                                 <img
                                   src={getProxiedImageUrl(section.url as string)}
                                   alt={`스크립트 ${idx + 1} 이미지`}
+                                  onError={handleImgError}
                                   style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 8 }}
                                 />
                               ) : (
@@ -501,6 +515,7 @@ export default function Home() {
                                 src={getProxiedImageUrl(url)}
                                 alt=""
                                 loading="lazy"
+                                onError={handleImgError}
                                 style={{ width: '100%', height: 140, objectFit: 'cover', borderRadius: 8, border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent' }}
                               />
                               <IconButton
@@ -606,7 +621,8 @@ export default function Home() {
                           src={getProxiedImageUrl(url)}
                           alt=""
                           loading="lazy"
-                          style={{ 
+                          onError={handleImgError}
+                          style={{
                             width: '100%',
                             height: 120,
                             objectFit: 'cover',

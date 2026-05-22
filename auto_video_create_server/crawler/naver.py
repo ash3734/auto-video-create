@@ -14,9 +14,19 @@ def _normalize_image_url(base_url: str, candidate_url: str) -> str:
 
 
 def _is_valid_naver_image_url(full_url: str) -> bool:
-    """네이버 블로그 이미지 도메인인지 확인한다."""
-    # 모바일/에디터 구조에서 postfiles 외 다양한 pstatic 하위 도메인을 사용한다.
-    return "pstatic.net" in full_url and full_url.startswith(("http://", "https://"))
+    """네이버 블로그 이미지 도메인인지 확인한다.
+
+    cycle-2.2 BUG-008: OGQ 스티커 (`storep-phinf.pstatic.net/ogq_*`) 는 본문 사진이 아니라
+    네이버 이모티콘/스티커. URL 자체가 404 응답하는 경우가 다수 → 갤러리 엑박 / 영상 합성 실패 원인.
+    """
+    if not full_url.startswith(("http://", "https://")):
+        return False
+    if "pstatic.net" not in full_url:
+        return False
+    # OGQ 스티커 제외
+    if "storep-phinf.pstatic.net/ogq_" in full_url:
+        return False
+    return True
 
 
 def _extract_image_candidates(img_tag) -> List[str]:
