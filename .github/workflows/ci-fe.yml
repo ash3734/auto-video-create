@@ -1,0 +1,37 @@
+name: 'FE CI'
+
+on:
+  pull_request:
+    paths:
+      - 'auto_video_create_front/**'
+      - '.github/workflows/ci-fe.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: auto_video_create_front
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: auto_video_create_front/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        run: npm run lint:src
+
+      - name: Next.js build
+        run: npm run build

@@ -1,0 +1,31 @@
+name: 'BE CI'
+
+on:
+  pull_request:
+    paths:
+      - 'auto_video_create_server/**'
+      - '.github/workflows/ci-be.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: auto_video_create_server
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Python compile check
+        # syntax + import path 검증 (런타임 의존성 부족 시에도 컴파일은 통과)
+        run: python -m compileall -q api services crawler utils
