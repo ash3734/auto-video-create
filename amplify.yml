@@ -5,7 +5,9 @@ applications:
       phases:
         preBuild:
           commands:
-            - nvm use 18 && npm ci
+            # cycle-2.1 BUG-005 fix: Amplify build image 의 nvm 에 node 18 이 사전 설치 안 됨.
+            # "nvm use 18" 만으로는 "version not installed" 에러. install 먼저 실행.
+            - nvm install 18 && nvm use 18 && npm ci
         build:
           commands:
             - npm run lint:src
