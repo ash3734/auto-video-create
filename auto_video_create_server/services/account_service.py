@@ -18,9 +18,20 @@ def authenticate_user(user_id: str, pw: str) -> dict | str | None:
     return None
 
 def get_user_if_active(user_id: str) -> dict | None:
+    """사용자 존재 + 구독 활성 여부 확인.
+
+    cycle-2.1 BUG-003 fix (ADR-6 보강):
+    - ENV=test 환경에서는 구독 만료 체크를 건너뜀 (`check/deduct_credits` 와 일관)
+    - 사용자가 users.json 에 존재하면 만료일 무관 활성으로 간주
+    - test 계정 운영 시 만료 갱신을 PO 가 매번 안 해도 됨
+    """
     users = load_json_from_s3("blog-to-short-form-users", "users.json")
+    is_test_env = os.environ.get("ENV", "").lower() == "test"
     for user in users:
         if user["id"] == user_id:
+            if is_test_env:
+                # cycle-2.1: test 환경은 만료 체크 우회. 존재만 확인.
+                return user
             today = datetime.utcnow().date()
             start = datetime.strptime(user["subscription_start"], "%Y-%m-%d").date()
             end = datetime.strptime(user["subscription_end"], "%Y-%m-%d").date()
