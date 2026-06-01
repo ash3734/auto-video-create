@@ -7,10 +7,18 @@ from services.create_creatomate_video import create_creatomate_video, get_creato
 from services.account_service import get_user_if_active, check_user_credits, get_current_credits
 from services.ai_background import generate_backgrounds_parallel, FALLBACK_URL as DEFAULT_BG_FALLBACK_URL
 from services.image_mirror import maybe_mirror
+# cycle-3: 자막 스타일 편집 신규 서비스
+from services.font_service import get_korean_fonts, get_allowed_font_families
+from services.subtitle_settings_service import (
+    get_subtitle_settings,
+    save_subtitle_settings,
+    validate_subtitle_settings,
+    apply_subtitle_settings_to_variables,
+)
 from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
 import os
-from typing import List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal
 import requests
 import traceback
 from urllib.parse import urlparse
@@ -183,11 +191,33 @@ def extract_all(req: ExtractMediaRequest, user=Depends(require_active_subscripti
     finally:
         print("extract_all finally 블록 실행")
 
+# ─────────────────────────────────────────────
+# cycle-3: 자막 스타일 관련 Pydantic 모델
+# ─────────────────────────────────────────────
+
+class TextStyleModel(BaseModel):
+    font_family: str
+    font_size: str       # "S" / "M" / "L"
+    fill_color: str      # "#RRGGBB"
+
+
+class SubtitleSettingsModel(BaseModel):
+    title: TextStyleModel
+    subtitle: TextStyleModel
+
+
+class SubtitleSettingsRequest(BaseModel):
+    title: TextStyleModel
+    subtitle: TextStyleModel
+
+
 # --- 최종 영상 생성 API ---
 class GenerateVideoRequest(BaseModel):
     title: str
     scripts: List[str]
     sections: List[SectionMedia]  # 5개
+    # cycle-3: optional — 없으면 Creatomate 템플릿 기본값 유지
+    subtitle_settings: Optional[SubtitleSettingsModel] = None
 
 class GenerateVideoResponse(BaseModel):
     status: str
@@ -248,7 +278,19 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
                 variables[f"image{i}.visible"] = "true"
                 variables[f"video{i}.visible"] = "false"
 
-        # 4. Creatomate 영상 생성 (user_id 전달)
+        # 4. cycle-3: subtitle_settings 가 있으면 Creatomate modifications 에 주입
+        if req.subtitle_settings:
+            apply_subtitle_settings_to_variables(
+                variables,
+                req.subtitle_settings.model_dump(),
+            )
+            print(
+                f"[generate_video] subtitle_settings 주입 완료 "
+                f"(title_font={req.subtitle_settings.title.font_family}, "
+                f"subtitle_font={req.subtitle_settings.subtitle.font_family})"
+            )
+
+        # 5. Creatomate 영상 생성 (user_id 전달)
         result = create_creatomate_video(
             audio_paths=audio_urls,
             scripts=req.scripts,
@@ -299,3 +341,93 @@ def get_user_credits(user=Depends(require_active_subscription)):
         "current_credits": current_credits,
         "required_credits": 1000
     }
+
+
+# ─────────────────────────────────────────────
+# cycle-3 신규 엔드포인트
+# ─────────────────────────────────────────────
+
+@router.get("/fonts")
+def get_fonts(user=Depends(require_active_subscription)):
+    """
+    GET /api/blog/fonts
+
+    한글 지원 폰트 목록 반환. Google Fonts API Korean subset 기반.
+    Lambda 인스턴스 레벨 메모리 캐시 (TTL=인스턴스 수명 ≒ 24h).
+
+    응답: { status: "success", fonts: [{ family, category, slug }, ...] }
+    """
+    try:
+        fonts = get_korean_fonts()
+        return {"status": "success", "fonts": fonts}
+    except Exception as e:
+        print(f"[get_fonts 에러] {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=503,
+            detail="폰트 목록을 불러올 수 없습니다. 잠시 후 다시 시도해주세요.",
+        )
+
+
+@router.get("/subtitle-settings")
+def get_subtitle_settings_endpoint(user=Depends(require_active_subscription)):
+    """
+    GET /api/blog/subtitle-settings
+
+    select step 진입 시 저장된 자막 스타일 설정 로드.
+    저장값 없으면 settings=null 반환 (FE 가 기본값으로 처리).
+
+    응답: { status: "success", settings: { title: {...}, subtitle: {...} } | null }
+    """
+    user_id = user["id"]
+    try:
+        settings = get_subtitle_settings(user_id)
+        return {"status": "success", "settings": settings}
+    except Exception as e:
+        print(f"[get_subtitle_settings 에러] user={user_id} {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="설정을 불러올 수 없습니다.")
+
+
+@router.put("/subtitle-settings")
+def put_subtitle_settings_endpoint(
+    req: SubtitleSettingsRequest,
+    user=Depends(require_active_subscription),
+):
+    """
+    PUT /api/blog/subtitle-settings
+
+    사용자가 폰트/크기/색상을 변경할 때 계정에 저장 (FE debounce 500ms 후 호출).
+    font_family 는 GET /api/blog/fonts 응답 기반 허용 목록으로 검증.
+
+    응답: { status: "success" } 또는 422 에러
+    """
+    user_id = user["id"]
+    settings_dict = req.model_dump()
+
+    # font_family 유효성 검증 (허용 목록 = Google Fonts Korean subset)
+    try:
+        allowed_families = get_allowed_font_families()
+    except Exception:
+        # Google Fonts API 장애 시 유효성 검증 완화 (저장은 허용)
+        allowed_families = set()
+        print(f"[put_subtitle_settings] font 허용 목록 로드 실패 — 검증 완화")
+
+    errors = validate_subtitle_settings(settings_dict, allowed_families)
+    if errors:
+        raise HTTPException(
+            status_code=422,
+            detail="유효하지 않은 설정값입니다.: " + " | ".join(errors),
+        )
+
+    try:
+        success = save_subtitle_settings(user_id, settings_dict)
+        if not success:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[put_subtitle_settings 에러] user={user_id} {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="설정을 저장할 수 없습니다.")
