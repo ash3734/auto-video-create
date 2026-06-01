@@ -110,7 +110,12 @@ resource "aws_lambda_function" "fastapi" {
   environment {
     variables = {
       ENV = "production"
-      # 필요한 환경변수 추가
+      # cycle-3: 한글 폰트 목록 조회용 Google Fonts Developer API 키.
+      # 실제 값은 infra/terraform.tfvars (gitignore) 또는 GitHub Secrets → terraform plan -var 로 주입.
+      # PO 운영 작업: Google Cloud Console에서 키 발급 후 아래 두 곳에 등록 필요.
+      #   1) infra/terraform.tfvars: google_fonts_api_key = "AIza..."
+      #   2) GitHub Secrets: GOOGLE_FONTS_API_KEY (terraform.yml 의 -var 플래그로 전달)
+      GOOGLE_FONTS_API_KEY = var.google_fonts_api_key
     }
   }
   timeout     = 30
@@ -157,6 +162,16 @@ output "api_endpoint" {
 variable "github_token" {
   description = "GitHub Personal Access Token for Amplify"
   type        = string
+}
+
+# cycle-3: Google Fonts Developer API 키 (한글 폰트 목록 조회).
+# 실값은 infra/terraform.tfvars (gitignore) 또는 GitHub Secrets 로 주입.
+# 발급: https://console.cloud.google.com → API 및 서비스 → 사용자 인증 정보 → API 키 생성
+#       → Web Fonts 제한 권장.
+variable "google_fonts_api_key" {
+  description = "Google Fonts Developer API Key for Korean font subset listing (GET /api/blog/fonts)"
+  type        = string
+  sensitive   = true
 }
 
 resource "aws_amplify_app" "frontend" {

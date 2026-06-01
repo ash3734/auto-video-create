@@ -25,6 +25,8 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: ap-northeast-2
       GITHUB_TOKEN: ${{ secrets.AMPLIFY_GITHUB_TOKEN }}
+      # cycle-3: Google Fonts API Key — PO 운영 작업으로 GitHub Secrets 에 GOOGLE_FONTS_API_KEY 등록 필요
+      GOOGLE_FONTS_API_KEY: ${{ secrets.GOOGLE_FONTS_API_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -52,7 +54,7 @@ jobs:
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -no-color -var="github_token=$GITHUB_TOKEN"
+        run: terraform plan -no-color -var="github_token=$GITHUB_TOKEN" -var="google_fonts_api_key=$GOOGLE_FONTS_API_KEY"
         working-directory: infra
 
       - name: Add Plan Comment
@@ -73,5 +75,5 @@ jobs:
       # 그동안 인프라 변경이 필요하면 workflow_dispatch 로 plan 만 돌리고 수동 apply.
       - name: Terraform Apply
         if: false  # disabled — see comment above
-        run: terraform apply -auto-approve -var="github_token=$GITHUB_TOKEN"
+        run: terraform apply -auto-approve -var="github_token=$GITHUB_TOKEN" -var="google_fonts_api_key=$GOOGLE_FONTS_API_KEY"
         working-directory: infra 
