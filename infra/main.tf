@@ -116,6 +116,15 @@ resource "aws_lambda_function" "fastapi" {
       #   1) infra/terraform.tfvars: google_fonts_api_key = "AIza..."
       #   2) GitHub Secrets: GOOGLE_FONTS_API_KEY (terraform.yml 의 -var 플래그로 전달)
       GOOGLE_FONTS_API_KEY = var.google_fonts_api_key
+      # security-hotfix (cycle-3, 2026-06-01): OPENAI_API_KEY 를 terraform 관리로 이관.
+      # 배경: 이전에는 AWS 콘솔에서 수동 등록돼 있어 terraform plan 이 AWS 상태 refresh 시
+      #        해당 키 실값을 "삭제 예정" diff 로 평문 출력 → PR 코멘트로 공개 노출됨 (PR #40, #45).
+      # 해결: terraform 이 키를 var 로 알면 plan 이 drift 없이 인식 → 평문 실값 diff 미발생.
+      # 실제 값은 아래 중 하나로 주입 (실값 커밋 절대 금지):
+      #   1) infra/terraform.tfvars (gitignore): openai_api_key = "sk-..."
+      #   2) GitHub Secrets: OPENAI_API_KEY → terraform.yml 의 -var="openai_api_key=$OPENAI_API_KEY" 로 전달
+      # PO 운영 작업: 유출된 키 2개 폐기+재발급 후 GitHub Secrets + AWS Lambda(test/prod) 에 새 키 등록.
+      OPENAI_API_KEY = var.openai_api_key
     }
   }
   timeout     = 30
@@ -170,6 +179,20 @@ variable "github_token" {
 #       → Web Fonts 제한 권장.
 variable "google_fonts_api_key" {
   description = "Google Fonts Developer API Key for Korean font subset listing (GET /api/blog/fonts)"
+  type        = string
+  sensitive   = true
+}
+
+# security-hotfix (cycle-3, 2026-06-01): OPENAI_API_KEY terraform 관리 이관.
+# 배경: AWS 콘솔 수동 등록 → terraform plan refresh 시 실값 평문 노출 (PR #40, #45).
+# 실값은 infra/terraform.tfvars (gitignore) 또는 GitHub Secrets 로 주입 (실값 커밋 금지).
+# PO 운영 작업:
+#   1) OpenAI 대시보드에서 유출 키 2개 폐기 + 새 키 발급 (OpenAI 가 이미 1개 비활성화함 — 나머지 1개도 즉시 폐기)
+#   2) 새 키를 GitHub Secrets OPENAI_API_KEY 에 등록
+#   3) AWS Lambda my-fastapi-backend (test/prod) 콘솔에서 OPENAI_API_KEY 환경변수 업데이트
+#   4) GitHub secret scanning 알림 2건 resolve
+variable "openai_api_key" {
+  description = "OpenAI API Key for video script generation and DALL-E background generation"
   type        = string
   sensitive   = true
 }
