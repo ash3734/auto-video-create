@@ -71,9 +71,6 @@ export default function Home() {
     subtitle: { font_family: "Noto Sans KR", font_size: "M", fill_color: "#ffffff" },
   });
 
-  console.log("--- Component Re-rendering ---");
-  console.log("Current sectionMedia state:", JSON.stringify(sectionMedia, null, 2));
-
   useEffect(() => {
     if (typeof window !== "undefined") {
       setIsLoggedIn(!!localStorage.getItem("user_id"));
