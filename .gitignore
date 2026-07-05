@@ -1,5 +1,6 @@
 .env
-auto_video_create_server/.env .terraform/
+auto_video_create_server/.env
+.terraform/
 
 # Python bytecode
 *.pyc
@@ -11,3 +12,9 @@ __pycache__/
 auto_video_create_server/lambda/
 lambda.zip
 infra/.terraform/
+
+# Terraform — 실값 파일 커밋 금지
+terraform.tfvars
+*.auto.tfvars
+infra/terraform.tfvars
+infra/*.auto.tfvars

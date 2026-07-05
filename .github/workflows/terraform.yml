@@ -25,14 +25,21 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: ap-northeast-2
       GITHUB_TOKEN: ${{ secrets.AMPLIFY_GITHUB_TOKEN }}
+      # cycle-3: Google Fonts API Key — PO 운영 작업으로 GitHub Secrets 에 GOOGLE_FONTS_API_KEY 등록 필요
+      GOOGLE_FONTS_API_KEY: ${{ secrets.GOOGLE_FONTS_API_KEY }}
+      # security-hotfix (cycle-3, 2026-06-01): OPENAI_API_KEY 를 terraform 변수로 관리.
+      # PO 운영 작업: GitHub Secrets 에 OPENAI_API_KEY 등록 필요.
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # security-hotfix (cycle-3, 2026-06-01): AWS_SECRET_ACCESS_KEY 평문 echo 제거.
+      # 자격증명 존재 여부만 확인.
       - name: Check AWS env
         run: |
-          echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
-          echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+          [ -n "$AWS_ACCESS_KEY_ID" ] && echo "AWS creds: AWS_ACCESS_KEY_ID set" || echo "AWS creds: AWS_ACCESS_KEY_ID NOT set"
+          [ -n "$AWS_SECRET_ACCESS_KEY" ] && echo "AWS creds: AWS_SECRET_ACCESS_KEY set" || echo "AWS creds: AWS_SECRET_ACCESS_KEY NOT set"
           echo "AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION"
 
       - name: Set up Terraform
@@ -52,18 +59,38 @@ jobs:
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -no-color -var="github_token=$GITHUB_TOKEN"
+        # security-hotfix (cycle-3, 2026-06-01): OPENAI_API_KEY 를 -var 로 주입해 terraform 이 키를 알도록 함.
+        # 이렇게 하면 plan 이 AWS 실제 상태와 drift 없이 인식해 평문 실값을 diff 로 노출하지 않음.
+        run: |
+          terraform plan -no-color \
+            -var="github_token=$GITHUB_TOKEN" \
+            -var="google_fonts_api_key=$GOOGLE_FONTS_API_KEY" \
+            -var="openai_api_key=$OPENAI_API_KEY" \
+            -detailed-exitcode 2>&1 | tee /tmp/plan_output.txt
+          echo "exitcode=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
         working-directory: infra
 
-      - name: Add Plan Comment
+      # security-hotfix (cycle-3, 2026-06-01): PR 코멘트에 plan stdout 전체를 게시하지 않음.
+      # 이전 방식(marocchino/sticky-pull-request-comment + steps.plan.outputs.stdout)은
+      # terraform refresh 결과에 포함된 Lambda env 실값(OPENAI_API_KEY 등)을 PR 공개면에 노출시킴.
+      # 변경: plan 성공/실패 + exit code 요약만 게시. 상세 출력은 Actions 로그에서만 확인 가능
+      # (Actions 로그는 repo read 권한 필요 — 공개 PR 코멘트보다 노출면 크게 축소).
+      - name: Add Plan Summary Comment
         if: github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           message: |
             ### Terraform Plan
-            ```
-            ${{ steps.plan.outputs.stdout }}
-            ```
+
+            **Exit code**: `${{ steps.plan.outputs.exitcode }}`
+
+            | Exit code | 의미 |
+            |---|---|
+            | 0 | 변경 없음 |
+            | 1 | 오류 |
+            | 2 | 변경 있음 (apply 필요) |
+
+            상세 plan 출력은 Actions 로그에서 확인하세요 (보안상 PR 코멘트에 포함하지 않습니다).
 
       # ⚠️ 자동 apply 임시 비활성화 (cycle-2, 2026-05-15)
       # 사유: state ↔ AWS 사이 큰 drift 존재. 머지 시 자동 apply 가 다음 위험을 유발:
@@ -73,5 +100,9 @@ jobs:
       # 그동안 인프라 변경이 필요하면 workflow_dispatch 로 plan 만 돌리고 수동 apply.
       - name: Terraform Apply
         if: false  # disabled — see comment above
-        run: terraform apply -auto-approve -var="github_token=$GITHUB_TOKEN"
-        working-directory: infra 
+        run: |
+          terraform apply -auto-approve \
+            -var="github_token=$GITHUB_TOKEN" \
+            -var="google_fonts_api_key=$GOOGLE_FONTS_API_KEY" \
+            -var="openai_api_key=$OPENAI_API_KEY"
+        working-directory: infra
