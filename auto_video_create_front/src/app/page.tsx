@@ -10,6 +10,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import AuthGuard from "../components/AuthGuard";
 import LogoutButton from "../components/LogoutButton";
+import SubtitleStyleEditor, { SubtitleSettings } from "./components/SubtitleStyleEditor";
 
 interface MediaList {
   images: string[];
@@ -64,8 +65,11 @@ export default function Home() {
   // sectionMedia: 길이 5, 각 원소는 SectionMedia 또는 null
   const [sectionMedia, setSectionMedia] = useState<(SectionMedia|null)[]>([null, null, null, null, null]);
 
-  console.log("--- Component Re-rendering ---");
-  console.log("Current sectionMedia state:", JSON.stringify(sectionMedia, null, 2));
+  // cycle-3: 자막 스타일 설정
+  const [subtitleSettings, setSubtitleSettings] = useState<SubtitleSettings>({
+    title: { font_family: "Black Han Sans", font_size: "M", fill_color: "#fff100" },
+    subtitle: { font_family: "Noto Sans KR", font_size: "M", fill_color: "#ffffff" },
+  });
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -188,6 +192,7 @@ export default function Home() {
           title,
           scripts,
           sections: sectionMedia,
+          subtitle_settings: subtitleSettings,
         }),
         signal: controller.signal,
       });
@@ -364,7 +369,10 @@ export default function Home() {
                   {/* 왼쪽: 타이틀+안내문구 */}
                   <Box>
                     <Typography variant="h5" fontWeight={700} sx={{ color: '#222', letterSpacing: -1, mb: 0.5 }}>
-                    생성된 스크립트에 알맞는 이미지 또는 영상을 순서대로 선택해 주세요.
+                      생성된 스크립트에 알맞는 이미지를 선택해 주세요.
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#666' }}>
+                      자막 스타일을 미리 설정하고 이미지를 선택하면 영상이 생성됩니다.
                     </Typography>
                   </Box>
                   {/* 오른쪽: 액션 버튼 2개 */}
@@ -389,7 +397,18 @@ export default function Home() {
                     </Button>
                   </Box>
                 </Box>
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 4, px: 4, py: 6, maxWidth: 1200, mx: 'auto', width: '100%' }}>
+                {/* cycle-3: 자막 스타일 설정 (Row 1 — 접힘 기본) */}
+                <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4, mt: 2 }}>
+                  <SubtitleStyleEditor onSettingsChange={setSubtitleSettings} />
+                  {/* Row 경계 시선 유도 */}
+                  <Typography
+                    variant="body2"
+                    sx={{ color: '#666', mb: 2, fontSize: 13 }}
+                  >
+                    이미지를 선택해 주세요 — 5개를 모두 고르면 영상 생성하기가 활성화됩니다.
+                  </Typography>
+                </Box>
+                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 4, px: 4, py: 2, maxWidth: 1200, mx: 'auto', width: '100%' }}>
                   {/* 왼쪽: 스크립트 */}
                   <Paper elevation={3} sx={{ flex: 1, p: 4, borderRadius: 4, minWidth: 340, maxWidth: 480, bgcolor: '#fafbfc', boxShadow: '0 4px 24px rgba(0,0,0,0.04)' }}>
                     <Typography variant="h6" fontWeight={700} gutterBottom>생성된 스크립트</Typography>

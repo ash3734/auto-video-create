@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 mangum==0.17.0
 requests
+httpx
 boto3
 python-dotenv
 mutagen
