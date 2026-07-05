@@ -200,3 +200,4 @@ def apply_subtitle_settings_to_variables(
         variables[f"Subtitles-{suffix}.font_family"] = sub_font
         variables[f"Subtitles-{suffix}.font_size"] = sub_size
         variables[f"Subtitles-{suffix}.fill_color"] = sub_color
+        variables[f"Subtitles-{suffix}.transcript_color"] = sub_color
