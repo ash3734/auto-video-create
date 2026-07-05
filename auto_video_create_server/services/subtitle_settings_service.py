@@ -9,7 +9,6 @@ data-model.md §1~§3 스키마 준수.
 
 import json
 import logging
-import os
 import re
 from typing import Optional
 
@@ -55,12 +54,7 @@ DEFAULT_SUBTITLE_SETTINGS: dict = {
     "fill_color": "#ffffff",
 }
 
-_s3 = boto3.client(
-    "s3",
-    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    region_name="ap-northeast-2",
-)
+_s3 = boto3.client("s3", region_name="ap-northeast-2")
 
 
 # ─────────────────────────────────────────────
