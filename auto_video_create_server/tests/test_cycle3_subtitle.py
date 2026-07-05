@@ -193,6 +193,9 @@ class TestApplySubtitleSettingsToVariables(unittest.TestCase):
             self.assertEqual(variables[f"Subtitles-{suffix}.font_family"], "Noto Sans KR")
             self.assertEqual(variables[f"Subtitles-{suffix}.font_size"], "4 vmin")   # S
             self.assertEqual(variables[f"Subtitles-{suffix}.fill_color"], "#ffffff")
+            # BUG-014: 템플릿 Subtitles-6K5 에 transcript_color 가 명시돼 있어 fill_color 를 무시함.
+            # transcript_color 도 동일값으로 함께 주입해야 comp1 자막 색이 반영됨.
+            self.assertEqual(variables[f"Subtitles-{suffix}.transcript_color"], "#ffffff")
 
     def test_title_size_M_not_injected(self):
         """제목 font_size=M 이면 title.font_size 미주입 (auto-fit 유지)."""
@@ -250,6 +253,7 @@ class TestApplySubtitleSettingsToVariables(unittest.TestCase):
             self.assertIn(f"Subtitles-{suffix}.font_family", variables)
             self.assertIn(f"Subtitles-{suffix}.font_size", variables)
             self.assertIn(f"Subtitles-{suffix}.fill_color", variables)
+            self.assertIn(f"Subtitles-{suffix}.transcript_color", variables)
 
     def test_existing_variables_not_overwritten_by_none_settings(self):
         """settings=None 이면 기존 variables 그대로 유지."""
