@@ -1,13 +1,15 @@
 """블로그 글 자동 분류 — 맛집(restaurant) vs 일반(general).
 
 cycle-2 신규. ADR-2 (architecture.md) 참조.
-GPT-3.5-turbo 한 번 호출로 분류. 비용 ~$0.0001/회 (무시 수준).
+Claude Sonnet 한 번 호출로 분류. 비용 미미 (~수백 토큰/회).
 사용자에게 노출되지 않음. BE 내부 — summarize 프롬프트 분기에 사용.
 """
 import os
 from typing import Literal
 
-import openai
+import anthropic
+
+CLAUDE_MODEL = "claude-sonnet-5"
 
 
 def classify_blog(text: str) -> Literal["restaurant", "general"]:
@@ -19,23 +21,21 @@ def classify_blog(text: str) -> Literal["restaurant", "general"]:
         return "general"
 
     try:
-        client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-        resp = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "다음 블로그 글이 음식점/맛집 후기인지 아닌지 판단해줘. "
-                        "답은 반드시 'restaurant' 또는 'general' 한 단어만 출력."
-                    ),
-                },
-                {"role": "user", "content": text[:500]},
-            ],
-            max_tokens=5,
-            temperature=0,
+        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        resp = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=10,
+            # 한 단어 분류라 thinking 불필요 — 지연/토큰 최소화
+            thinking={"type": "disabled"},
+            system=(
+                "다음 블로그 글이 음식점/맛집 후기인지 아닌지 판단해줘. "
+                "답은 반드시 'restaurant' 또는 'general' 한 단어만 출력."
+            ),
+            messages=[{"role": "user", "content": text[:500]}],
         )
-        answer = resp.choices[0].message.content.strip().lower()
+        answer = next(
+            b.text for b in resp.content if b.type == "text"
+        ).strip().lower()
         if "restaurant" in answer:
             return "restaurant"
         return "general"
