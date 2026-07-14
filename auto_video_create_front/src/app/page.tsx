@@ -8,6 +8,7 @@ import Link from "next/link";
 import Confetti from 'react-confetti';
 import CloseIcon from '@mui/icons-material/Close';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import EditIcon from '@mui/icons-material/Edit';
 import AuthGuard from "../components/AuthGuard";
 import LogoutButton from "../components/LogoutButton";
 import SubtitleStyleEditor, { SubtitleSettings } from "./components/SubtitleStyleEditor";
@@ -65,6 +66,10 @@ export default function Home() {
   // sectionMedia: 길이 5, 각 원소는 SectionMedia 또는 null
   const [sectionMedia, setSectionMedia] = useState<(SectionMedia|null)[]>([null, null, null, null, null]);
 
+  // GPT가 생성한 스크립트 수정 상태 (수정 중인 카드 인덱스 + 임시 텍스트)
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
+
   // cycle-3: 자막 스타일 설정
   const [subtitleSettings, setSubtitleSettings] = useState<SubtitleSettings>({
     title: { font_family: "Black Han Sans", font_size: "M", fill_color: "#fff100" },
@@ -119,6 +124,26 @@ export default function Home() {
     }
   };
 
+  // 스크립트 수정 시작/저장/취소 핸들러
+  const handleScriptEditStart = (idx: number) => {
+    setEditingIdx(idx);
+    setEditingText(scripts[idx] ?? "");
+  };
+
+  const handleScriptEditSave = () => {
+    if (editingIdx === null) return;
+    const trimmed = editingText.trim();
+    if (!trimmed) return;
+    setScripts(prev => prev.map((s, i) => (i === editingIdx ? trimmed : s)));
+    setEditingIdx(null);
+    setEditingText("");
+  };
+
+  const handleScriptEditCancel = () => {
+    setEditingIdx(null);
+    setEditingText("");
+  };
+
   // 섹션 미디어 해제 핸들러 (스크립트별 미리보기에서 X 클릭)
   const handleSectionMediaDeselect = (idx: number) => {
     setSectionMedia(prev => {
@@ -139,6 +164,8 @@ export default function Home() {
     setVideoUrl(null);
     setGenerateError(null);
     setSectionMedia([null, null, null, null, null]);
+    setEditingIdx(null);
+    setEditingText("");
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180000); // 3분
     try {
@@ -247,6 +274,8 @@ export default function Home() {
     setVideoUrl(null);
     setGenerateError(null);
     setSectionMedia([null, null, null, null, null]);
+    setEditingIdx(null);
+    setEditingText("");
   };
 
   const handleBetaAlert = (msg: string) => {
@@ -391,7 +420,7 @@ export default function Home() {
                       size="large"
                       sx={{ fontWeight: 700, minWidth: 140 }}
                       onClick={handleGenerateVideo}
-                      disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading}
+                      disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
                     >
                       {loading ? <CircularProgress size={24} color="inherit" /> : "숏폼 만들기"}
                     </Button>
@@ -412,6 +441,16 @@ export default function Home() {
                   {/* 왼쪽: 스크립트 */}
                   <Paper elevation={3} sx={{ flex: 1, p: 4, borderRadius: 4, minWidth: 340, maxWidth: 480, bgcolor: '#fafbfc', boxShadow: '0 4px 24px rgba(0,0,0,0.04)' }}>
                     <Typography variant="h6" fontWeight={700} gutterBottom>생성된 스크립트</Typography>
+                    <TextField
+                      label="영상 제목"
+                      value={title}
+                      onChange={e => setTitle(e.target.value)}
+                      fullWidth
+                      size="small"
+                      sx={{ mb: 2, bgcolor: '#fff' }}
+                      inputProps={{ maxLength: 30 }}
+                      helperText="GPT가 생성한 제목이에요. 자유롭게 수정할 수 있어요."
+                    />
                     {scripts.map((script, idx) => {
                       const section = sectionMedia[idx];
                       // cycle-2: 사용자가 직접 고른 슬롯만 강조. AI 기본 배경 슬롯은 강조 X.
@@ -430,7 +469,31 @@ export default function Home() {
                           }}
                         >
                           <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.5 }}>스크립트 {idx + 1}</Typography>
-                          <Typography variant="body1" sx={{ mb: 2 }}>{script}</Typography>
+                          {editingIdx === idx ? (
+                            <Box sx={{ mb: 2 }}>
+                              <TextField
+                                value={editingText}
+                                onChange={e => setEditingText(e.target.value)}
+                                multiline
+                                fullWidth
+                                size="small"
+                                autoFocus
+                                inputProps={{ maxLength: 100 }}
+                                helperText={`${editingText.length}/100자`}
+                              />
+                              <Box sx={{ display: 'flex', gap: 1, mt: 1, justifyContent: 'flex-end' }}>
+                                <Button size="small" onClick={handleScriptEditCancel}>취소</Button>
+                                <Button size="small" variant="contained" onClick={handleScriptEditSave} disabled={!editingText.trim()}>저장</Button>
+                              </Box>
+                            </Box>
+                          ) : (
+                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 2 }}>
+                              <Typography variant="body1" sx={{ flex: 1, whiteSpace: 'pre-line' }}>{script}</Typography>
+                              <IconButton size="small" onClick={() => handleScriptEditStart(idx)} aria-label={`스크립트 ${idx + 1} 수정`}>
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Box>
+                          )}
                           {/* 미디어 미리보기 */}
                           {section && (
                             <Box sx={{ mt: 2, position: 'relative' }}>
@@ -576,12 +639,46 @@ export default function Home() {
             ) : (
               <Box sx={{ width: "100%", mb: 4 }}>
                 <Typography variant="h6" gutterBottom>생성된 스크립트</Typography>
+                <TextField
+                  label="영상 제목"
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  fullWidth
+                  size="small"
+                  sx={{ mb: 2 }}
+                  inputProps={{ maxLength: 30 }}
+                  helperText="GPT가 생성한 제목이에요. 자유롭게 수정할 수 있어요."
+                />
                 {scripts.map((script, idx) => {
                   const section = sectionMedia[idx];
                   return (
                     <Box key={idx} sx={{ mb: 1, p: 1, border: '1px solid #eee', borderRadius: 2 }}>
                       <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.5 }}>스크립트 {idx + 1}</Typography>
-                      <Typography variant="body1">{script}</Typography>
+                      {editingIdx === idx ? (
+                        <Box>
+                          <TextField
+                            value={editingText}
+                            onChange={e => setEditingText(e.target.value)}
+                            multiline
+                            fullWidth
+                            size="small"
+                            autoFocus
+                            inputProps={{ maxLength: 100 }}
+                            helperText={`${editingText.length}/100자`}
+                          />
+                          <Box sx={{ display: 'flex', gap: 1, mt: 1, justifyContent: 'flex-end' }}>
+                            <Button size="small" onClick={handleScriptEditCancel}>취소</Button>
+                            <Button size="small" variant="contained" onClick={handleScriptEditSave} disabled={!editingText.trim()}>저장</Button>
+                          </Box>
+                        </Box>
+                      ) : (
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                          <Typography variant="body1" sx={{ flex: 1, whiteSpace: 'pre-line' }}>{script}</Typography>
+                          <IconButton size="small" onClick={() => handleScriptEditStart(idx)} aria-label={`스크립트 ${idx + 1} 수정`}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      )}
                       {/* cycle-2: AI 기본 배경 슬롯은 모바일에서도 안내 카피 + 그라디언트 패널 표시 */}
                       {section?.type === 'default' && (
                         <>
@@ -718,7 +815,7 @@ export default function Home() {
                   fullWidth
                   size="large"
                   sx={{ mt: 3, mb: 2 }}
-                  disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading}
+                  disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
                   onClick={handleGenerateVideo}
                 >
                   최종 영상 생성하기
