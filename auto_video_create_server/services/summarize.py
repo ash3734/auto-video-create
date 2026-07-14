@@ -121,44 +121,66 @@ GENERAL_PROMPT = """
 """
 
 
+def _generate_with_claude(prompt):
+    """Claude Sonnet 으로 title+scripts JSON 텍스트 생성. refusal 시 None."""
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    # Sonnet 5 는 adaptive thinking 이 기본이라 max_tokens 에 사고 토큰 여유가 필요.
+    # effort=low: 파이프라인 지연을 gpt-3.5 수준으로 유지.
+    response = client.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=4000,
+        output_config={
+            "effort": "low",
+            "format": {"type": "json_schema", "schema": SHORTS_OUTPUT_SCHEMA},
+        },
+        system="당신은 유능한 영상 스크립트 작가입니다.",
+        messages=[{"role": "user", "content": prompt}],
+    )
+    if response.stop_reason == "refusal":
+        print("Claude 응답 거부 (refusal)")
+        return None
+    return next(b.text for b in response.content if b.type == "text").strip()
+
+
+def _generate_with_openai(prompt):
+    """OpenAI fallback — ANTHROPIC_API_KEY 미설정 배포 환경에서 기존 동작 유지."""
+    import openai
+
+    client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "당신은 유능한 영상 스크립트 작가입니다."},
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=700,
+        temperature=0.7,
+    )
+    return response.choices[0].message.content.strip()
+
+
 def summarize_for_shorts_sets(text, category: str = "restaurant"):
     """카테고리에 따라 다른 프롬프트로 쇼츠용 title+scripts(5개) 생성.
+
+    ANTHROPIC_API_KEY 가 있으면 Claude Sonnet, 없으면 기존 OpenAI 로 동작.
 
     Args:
         text: 블로그 본문
         category: 'restaurant' (맛집, 기존) 또는 'general' (일반 블로그)
     """
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     template = RESTAURANT_PROMPT if category == "restaurant" else GENERAL_PROMPT
     prompt = template.format(text=text)
     try:
-        # Sonnet 5 는 adaptive thinking 이 기본이라 max_tokens 에 사고 토큰 여유가 필요.
-        # effort=low: 파이프라인 지연을 gpt-3.5 수준으로 유지.
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=4000,
-            output_config={
-                "effort": "low",
-                "format": {"type": "json_schema", "schema": SHORTS_OUTPUT_SCHEMA},
-            },
-            system="당신은 유능한 영상 스크립트 작가입니다.",
-            messages=[{"role": "user", "content": prompt}],
-        )
-        if response.stop_reason == "refusal":
-            print("Claude 응답 거부 (refusal)")
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            content = _generate_with_claude(prompt)
+        else:
+            print("[summarize] ANTHROPIC_API_KEY 미설정 — OpenAI fallback 사용")
+            content = _generate_with_openai(prompt)
+        if content is None:
             return "", []
-        try:
-            content = next(
-                b.text for b in response.content if b.type == "text"
-            ).strip()
-            print("Claude 응답:", content)
-        except Exception as e:
-            print("Claude 응답 content 파싱 실패:", e)
-            title = ""
-            scripts = []
-            return title, scripts
+        print("모델 응답:", content)
     except Exception as e:
-        print("Claude API 호출 실패:", e)
+        print("모델 API 호출 실패:", e)
         title = ""
         scripts = []
         return title, scripts
