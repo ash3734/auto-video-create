@@ -1,10 +1,31 @@
 import os
-import openai
+import anthropic
 from dotenv import load_dotenv
 import json
 import re
 
 load_dotenv()
+
+CLAUDE_MODEL = "claude-sonnet-5"
+
+# 구조화 출력 스키마 — Claude 가 항상 이 형태의 JSON 만 반환하도록 강제
+SHORTS_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "scripts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"script": {"type": "string"}},
+                "required": ["script"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["title", "scripts"],
+    "additionalProperties": False,
+}
 
 def extract_json_from_codeblock(content):
     match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", content)
@@ -100,37 +121,66 @@ GENERAL_PROMPT = """
 """
 
 
+def _generate_with_claude(prompt):
+    """Claude Sonnet 으로 title+scripts JSON 텍스트 생성. refusal 시 None."""
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    # Sonnet 5 는 adaptive thinking 이 기본이라 max_tokens 에 사고 토큰 여유가 필요.
+    # effort=low: 파이프라인 지연을 gpt-3.5 수준으로 유지.
+    response = client.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=4000,
+        output_config={
+            "effort": "low",
+            "format": {"type": "json_schema", "schema": SHORTS_OUTPUT_SCHEMA},
+        },
+        system="당신은 유능한 영상 스크립트 작가입니다.",
+        messages=[{"role": "user", "content": prompt}],
+    )
+    if response.stop_reason == "refusal":
+        print("Claude 응답 거부 (refusal)")
+        return None
+    return next(b.text for b in response.content if b.type == "text").strip()
+
+
+def _generate_with_openai(prompt):
+    """OpenAI fallback — ANTHROPIC_API_KEY 미설정 배포 환경에서 기존 동작 유지."""
+    import openai
+
+    client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "당신은 유능한 영상 스크립트 작가입니다."},
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=700,
+        temperature=0.7,
+    )
+    return response.choices[0].message.content.strip()
+
+
 def summarize_for_shorts_sets(text, category: str = "restaurant"):
     """카테고리에 따라 다른 프롬프트로 쇼츠용 title+scripts(5개) 생성.
+
+    ANTHROPIC_API_KEY 가 있으면 Claude Sonnet, 없으면 기존 OpenAI 로 동작.
 
     Args:
         text: 블로그 본문
         category: 'restaurant' (맛집, 기존) 또는 'general' (일반 블로그)
     """
-    client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     template = RESTAURANT_PROMPT if category == "restaurant" else GENERAL_PROMPT
     prompt = template.format(text=text)
     try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "당신은 유능한 영상 스크립트 작가입니다."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=700,
-            temperature=0.7,
-        )
-        print("OpenAI 원시 응답:", response)
-        try:
-            content = response.choices[0].message.content.strip()
-            print("OpenAI 응답:", content)
-        except Exception as e:
-            print("OpenAI 응답 content 파싱 실패:", e)
-            title = ""
-            scripts = []
-            return title, scripts
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            content = _generate_with_claude(prompt)
+        else:
+            print("[summarize] ANTHROPIC_API_KEY 미설정 — OpenAI fallback 사용")
+            content = _generate_with_openai(prompt)
+        if content is None:
+            return "", []
+        print("모델 응답:", content)
     except Exception as e:
-        print("OpenAI API 호출 실패:", e)
+        print("모델 API 호출 실패:", e)
         title = ""
         scripts = []
         return title, scripts
@@ -141,11 +191,11 @@ def summarize_for_shorts_sets(text, category: str = "restaurant"):
 
         # scripts가 6개면 마지막(5번 인덱스)을 빼고 0~4번(총 5개)만 남김
         if len(scripts) == 6:
-            print(f"[경고] GPT가 6개의 스크립트를 반환했습니다. 5번째(인덱스 4) 스크립트를 제외합니다.")
+            print(f"[경고] 모델이 6개의 스크립트를 반환했습니다. 5번째(인덱스 4) 스크립트를 제외합니다.")
             scripts = [scripts[0], scripts[1], scripts[2], scripts[3], scripts[5]]
         # 5개 초과(7개 이상)면 앞 5개만 사용
         elif len(scripts) > 5:
-            print(f"[경고] GPT가 {len(scripts)}개의 스크립트를 반환했습니다. 앞 5개만 사용합니다.")
+            print(f"[경고] 모델이 {len(scripts)}개의 스크립트를 반환했습니다. 앞 5개만 사용합니다.")
             scripts = scripts[:5]
         # 5개 미만이면 빈 문자열로 채움
         while len(scripts) < 5:
@@ -161,17 +211,17 @@ def summarize_for_shorts_sets(text, category: str = "restaurant"):
 
             # scripts가 6개면 마지막(5번 인덱스)을 빼고 0~4번(총 5개)만 남김
             if len(scripts) == 6:
-                print(f"[경고] GPT가 6개의 스크립트를 반환했습니다. 5번째(인덱스 4) 스크립트를 제외합니다.")
+                print(f"[경고] 모델이 6개의 스크립트를 반환했습니다. 5번째(인덱스 4) 스크립트를 제외합니다.")
                 scripts = [scripts[0], scripts[1], scripts[2], scripts[3], scripts[5]]
             # 5개 초과(7개 이상)면 앞 5개만 사용
             elif len(scripts) > 5:
-                print(f"[경고] GPT가 {len(scripts)}개의 스크립트를 반환했습니다. 앞 5개만 사용합니다.")
+                print(f"[경고] 모델이 {len(scripts)}개의 스크립트를 반환했습니다. 앞 5개만 사용합니다.")
                 scripts = scripts[:5]
             # 5개 미만이면 빈 문자열로 채움
             while len(scripts) < 5:
                 scripts.append({"script": ""})
         except Exception as e:
-            print(f"OpenAI 응답 파싱 실패: {e}")
+            print(f"Claude 응답 파싱 실패: {e}")
             title = ""
             scripts = []
     return title, scripts
