@@ -39,8 +39,12 @@ SIZE_MAP_TITLE_VMIN: dict[str, Optional[str]] = {
     "L": "12 vmin",
 }
 
-# Creatomate 자막 element 식별자 (data-model.md §6 / architecture.md DEP-01)
-SUBTITLE_SUFFIXES = ["6K5", "JTM", "MDV", "5Z2", "D6M"]
+# sprint-4 (B-2, data-model.md §3): 모듈 레벨 SUBTITLE_SUFFIXES 상수(기존 단일 템플릿 전용,
+# ["6K5","JTM","MDV","5Z2","D6M"])는 폐기됐다. 자막 element 식별자는 이제 템플릿(=concept_sample)
+# 마다 다르므로 concept_samples.get_sample(id)["subtitle_element_suffixes"] 로 샘플별 룩업한다.
+# apply_subtitle_settings_to_variables() 의 subtitle_element_suffixes 인자로 전달받는다.
+# 값은 DEP-S4-06(신규 템플릿 4종 실사) 완료 전까지 전부 None — 이 기간 동안 자막 스타일
+# 커스터마이징은 조용히 비활성화되고 Creatomate 템플릿 기본값이 유지된다(에러 아님).
 
 # 기본값 (data-model.md §3)
 DEFAULT_TITLE_SETTINGS: dict = {
@@ -166,6 +170,7 @@ def save_subtitle_settings(user_id: str, settings: dict) -> bool:
 def apply_subtitle_settings_to_variables(
     variables: dict,
     subtitle_settings: Optional[dict],
+    subtitle_element_suffixes: Optional[list[str]] = None,
 ) -> None:
     """
     subtitle_settings 를 Creatomate modifications dict (variables) 에 주입.
@@ -173,6 +178,12 @@ def apply_subtitle_settings_to_variables(
 
     api-contract.md "BE 처리 로직 — Creatomate modifications 주입" 구현.
     변수는 in-place 수정.
+
+    sprint-4 (B-2, architecture.md §4-4): subtitle_element_suffixes 는 호출부(api/blog.py)가
+    concept_samples.get_sample(concept_sample_id)["subtitle_element_suffixes"] 로 전달한다.
+    title element 는 suffix 와 무관(이름이 항상 "title")하므로 항상 적용하고, 자막
+    (Subtitles-{suffix}.*) 주입은 subtitle_element_suffixes 가 비어있거나 None(DEP-S4-06
+    미해소 샘플)이면 조용히 건너뛰어 Creatomate 템플릿 기본값을 유지한다(에러 아님).
     """
     if not subtitle_settings:
         return
@@ -180,7 +191,7 @@ def apply_subtitle_settings_to_variables(
     ts = subtitle_settings.get("title") or {}
     ss = subtitle_settings.get("subtitle") or {}
 
-    # 제목(title element)
+    # 제목(title element) — suffix 와 무관, subtitle_settings 가 있으면 항상 적용
     if ts.get("font_family"):
         variables["title.font_family"] = ts["font_family"]
     if ts.get("fill_color"):
@@ -189,14 +200,17 @@ def apply_subtitle_settings_to_variables(
     if title_size_vmin:  # M 이면 None → 미주입 (auto-fit 유지)
         variables["title.font_size"] = title_size_vmin
 
-    # 자막(Subtitles-* × 5 — 모두 동일 설정)
+    # 자막(Subtitles-* × N — 모두 동일 설정). suffix 목록 미확보 시 스킵.
+    if not subtitle_element_suffixes:
+        return
+
     sub_font = ss.get("font_family") or DEFAULT_SUBTITLE_SETTINGS["font_family"]
     sub_size = SIZE_MAP_SUBTITLE_VMIN.get(
         ss.get("font_size", "M"), "6 vmin"
     )
     sub_color = ss.get("fill_color") or DEFAULT_SUBTITLE_SETTINGS["fill_color"]
 
-    for suffix in SUBTITLE_SUFFIXES:
+    for suffix in subtitle_element_suffixes:
         variables[f"Subtitles-{suffix}.font_family"] = sub_font
         variables[f"Subtitles-{suffix}.font_size"] = sub_size
         variables[f"Subtitles-{suffix}.fill_color"] = sub_color
