@@ -4,21 +4,30 @@ import json
 import time
 from dotenv import load_dotenv
 from .account_service import check_user_credits, deduct_credits, get_current_credits
+from .concept_samples import get_template_id
 
 load_dotenv()
 
 CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
-if os.environ.get("ENV") == "production":
-    CREATOMATE_TEMPLATE_ID = "cab85e50-1e78-41b8-9644-80a061d349f6"
-else:
-    CREATOMATE_TEMPLATE_ID = "eda9d421-b086-4660-9f3c-9236d826226f"
+
+# sprint-4 (B-2): 모듈 레벨 CREATOMATE_TEMPLATE_ID(단일, 폐기된 기존 프로덕션 템플릿) 상수는
+# 완전히 제거됐다 — 더 이상 어떤 샘플도 이 ID 를 참조하지 않는다(data-model.md §3).
+# template_id 는 이제 concept_sample_id 기준으로 concept_samples.get_template_id() 룩업.
 
 ## 네이버 "e78f211a-9e4c-4f5c-a871-36b9d680ee11"
 ## 유튜브 "14457245-7822-48a6-a711-62d15b739b85"
 
-def create_creatomate_video(audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, user_id=None, **kwargs):
+def create_creatomate_video(
+    audio_paths,
+    scripts,
+    concept_sample_id=None,
+    title=None,
+    output_path="creatomate_result.mp4",
+    user_id=None,
+    **kwargs,
+):
     print("create_creatomate_video 호출")
-    
+
     # 크레딧 체크 (1000 크레딧 필요)
     if user_id:
         if not check_user_credits(user_id, 1000):
@@ -29,21 +38,25 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
                 "current_credits": current_credits,
                 "required_credits": 1000
             }
-    
-    variables = {
-        "audio1.source": audio_paths[0],
-        "audio2.source": audio_paths[1],
-        "audio3.source": audio_paths[2],
-        "audio4.source": audio_paths[3],
-        "audio5.source": audio_paths[4],
-    }
-    if video5:
-        variables["video5.source"] = video5
+
+    # sprint-4 (B-2, architecture.md §4-2): concept_sample_id → template_id 룩업.
+    # placeholder(None) 상태면 Creatomate 를 호출하지 않고 명확한 에러로 안내(방어적 설계) —
+    # "확보 전엔 죽는" 게 아니라 "확보 전엔 안내 메시지로 막는다".
+    template_id = get_template_id(concept_sample_id, env=os.environ.get("ENV"))
+    if not template_id:
+        return {
+            "error": "concept_sample_template_not_configured",
+            "message": "선택한 컨셉의 템플릿이 아직 준비되지 않았어요. 다른 컨셉을 선택해 주세요.",
+        }
+
+    # sprint-4 (B-2): audio1~audio5 하드코딩 dict 리터럴 → N(=len(audio_paths)) 가변 처리.
+    scene_count = len(audio_paths)
+    variables = {f"audio{i + 1}.source": audio_paths[i] for i in range(scene_count)}
     if title:
         variables["title.text"] = title
     variables.update(kwargs)
     payload = {
-        "template_id": CREATOMATE_TEMPLATE_ID,
+        "template_id": template_id,
         "modifications": variables
     }
     
@@ -86,20 +99,27 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
             "message": f"영상 생성 API 호출 실패: {str(e)}"
         }
 
-def get_creatomate_vars(durations):
+def get_creatomate_vars(durations, scene_count):
+    """scene_count(N) 기반 composition_1~N + composition_title/logo 타이밍 계산.
+
+    sprint-4 (B-2, architecture.md §4-3/data-model.md §4): N-일반화. 현재 /api/blog/generate-video
+    라이브 경로에서는 호출되지 않는다(F-2 — 기존 단일 템플릿이 Creatomate 자동 타이밍에 의존).
+    신규 템플릿 4종이 자동 타이밍을 지원하지 않을 경우에만 연결 검토 대상(DEP-S4-01/06 실사 후 판단).
+    호출부(scripts/pipeline_blog_to_shorts.py, 오프라인 전용)는 시그니처 변경으로 별도 갱신 필요.
+    """
     print("get_creatomate_vars 호출")
     creatomate_vars = {}
-    for i in range(5):
+    for i in range(scene_count):
         creatomate_vars[f"composition_{i+1}.duration"] = durations[i] if i < len(durations) and durations[i] is not None else 0
     times = [0]
-    for i in range(1, 5):
+    for i in range(1, scene_count):
         prev_time = times[-1] + (durations[i-1] if i-1 < len(durations) and durations[i-1] is not None else 0)
         times.append(prev_time)
-    for i in range(5):
+    for i in range(scene_count):
         creatomate_vars[f"composition_{i+1}.time"] = times[i]
-    comp5_time = creatomate_vars["composition_5.time"]
-    comp5_duration = creatomate_vars["composition_5.duration"]
-    total_duration = comp5_time + comp5_duration
+    last_time = creatomate_vars[f"composition_{scene_count}.time"]
+    last_duration = creatomate_vars[f"composition_{scene_count}.duration"]
+    total_duration = last_time + last_duration
     creatomate_vars["composition_title.time"] = 0
     creatomate_vars["composition_title.duration"] = total_duration
     creatomate_vars["composition_logo.time"] = 0
