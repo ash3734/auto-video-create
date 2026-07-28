@@ -12,6 +12,9 @@ import EditIcon from '@mui/icons-material/Edit';
 import AuthGuard from "../components/AuthGuard";
 import LogoutButton from "../components/LogoutButton";
 import SubtitleStyleEditor, { SubtitleSettings } from "./components/SubtitleStyleEditor";
+import SampleSelector from "./components/SampleSelector";
+import SampleDetailModal from "./components/SampleDetailModal";
+import { ConceptSample } from "./components/SampleCard";
 
 interface MediaList {
   images: string[];
@@ -63,8 +66,13 @@ export default function Home() {
   const isPc = useMediaQuery(theme.breakpoints.up('md'));
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  // sectionMedia: 길이 5, 각 원소는 SectionMedia 또는 null
-  const [sectionMedia, setSectionMedia] = useState<(SectionMedia|null)[]>([null, null, null, null, null]);
+  // sprint-4: 컨셉 영상 샘플 4종 — concept_sample_id 는 input에서 확정되면 select 내내 고정(04-ia.md D9)
+  const [conceptSampleId, setConceptSampleId] = useState<string>("sample_1");
+  const [sampleList, setSampleList] = useState<ConceptSample[]>([]);
+  const [detailModalSample, setDetailModalSample] = useState<ConceptSample | null>(null);
+
+  // sectionMedia: 길이는 항상 현재 샘플의 scene_count(N)와 동일, 각 원소는 SectionMedia 또는 null
+  const [sectionMedia, setSectionMedia] = useState<(SectionMedia|null)[]>([]);
 
   // GPT가 생성한 스크립트 수정 상태 (수정 중인 카드 인덱스 + 임시 텍스트)
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
@@ -80,6 +88,25 @@ export default function Home() {
     if (typeof window !== "undefined") {
       setIsLoggedIn(!!localStorage.getItem("user_id"));
     }
+  }, []);
+
+  // sprint-4: 컨셉 샘플 목록 마운트 시 1회 조회 (재요청 없음 — api-contract.md FE 사용 시점)
+  useEffect(() => {
+    const loadSamples = async () => {
+      try {
+        const res = await authFetch(`${API_BASE_URL}/api/blog/concept-samples`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.status === "success" && Array.isArray(data.samples)) {
+          setSampleList(data.samples);
+          const defaultSample = data.samples.find((s: ConceptSample) => s.is_default);
+          if (defaultSample) setConceptSampleId(defaultSample.concept_sample_id);
+        }
+      } catch {
+        // 조회 실패 시 SampleSelector 는 렌더링하지 않고, concept_sample_id 는 기본값 'sample_1'로 진행
+      }
+    };
+    loadSamples();
   }, []);
 
   // 미디어 클릭 핸들러
@@ -163,7 +190,7 @@ export default function Home() {
     setStep('input');
     setVideoUrl(null);
     setGenerateError(null);
-    setSectionMedia([null, null, null, null, null]);
+    setSectionMedia([]);
     setEditingIdx(null);
     setEditingText("");
     const controller = new AbortController();
@@ -172,7 +199,7 @@ export default function Home() {
       const res = await authFetch(`${API_BASE_URL}/api/blog/extract-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blog_url: blogUrl }),
+        body: JSON.stringify({ blog_url: blogUrl, concept_sample_id: conceptSampleId }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -181,18 +208,20 @@ export default function Home() {
         setMedia({ images: data.images, videos: data.videos, scripts: data.scripts, title: data.title });
         setScripts((data.scripts || []).map((s: { script: string } | string) => typeof s === 'string' ? s : s.script));
         setTitle(data.title || "");
-        // cycle-2: BE 가 default_slot_count 만큼 부족 슬롯을 알려주면 후반부를 AI 기본 배경으로 채움
+        // sprint-4: 슬롯 배열 길이는 항상 현재 샘플의 scene_count(N) 기준 — 하드코딩 5 제거
+        const sceneCount: number = typeof data.scene_count === 'number' && data.scene_count > 0
+          ? data.scene_count
+          : (Array.isArray(data.scripts) ? data.scripts.length : 0);
+        const initialSectionMedia: (SectionMedia | null)[] = Array(sceneCount).fill(null);
+        // cycle-2: BE 가 default_slot_count 만큼 부족 슬롯을 알려주면 후반부를 AI 기본 배경으로 채움 (N 기준)
         const defaultCount: number = typeof data.default_slot_count === 'number' ? data.default_slot_count : 0;
-        if (defaultCount > 0) {
-          setSectionMedia(prev => {
-            const updated = [...prev];
-            const start = Math.max(0, 5 - defaultCount);
-            for (let i = start; i < 5; i++) {
-              updated[i] = { type: 'default', url: null, isDefaultBackground: true };
-            }
-            return updated;
-          });
+        if (defaultCount > 0 && sceneCount > 0) {
+          const start = Math.max(0, sceneCount - defaultCount);
+          for (let i = start; i < sceneCount; i++) {
+            initialSectionMedia[i] = { type: 'default', url: null, isDefaultBackground: true };
+          }
         }
+        setSectionMedia(initialSectionMedia);
         setStep('select');
       } else {
         setError(data.message || "이미지/영상/스크립트 추출에 실패했습니다.");
@@ -220,6 +249,7 @@ export default function Home() {
           scripts,
           sections: sectionMedia,
           subtitle_settings: subtitleSettings,
+          concept_sample_id: conceptSampleId,
         }),
         signal: controller.signal,
       });
@@ -273,9 +303,10 @@ export default function Home() {
     setStep('input');
     setVideoUrl(null);
     setGenerateError(null);
-    setSectionMedia([null, null, null, null, null]);
+    setSectionMedia([]);
     setEditingIdx(null);
     setEditingText("");
+    // sprint-4 D3: concept_sample_id 는 세션 내 유지 — 여기서 초기화하지 않는다.
   };
 
   const handleBetaAlert = (msg: string) => {
@@ -348,7 +379,7 @@ export default function Home() {
         {/* 메인 컨텐츠 */}
         <Box sx={{ flex: 1, minHeight: '100vh', display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", px: 2 }}>
           {step === 'input' && (
-            <Box sx={{ width: "100%", maxWidth: 420, textAlign: "center", mt: 12 }}>
+            <Box sx={{ width: "100%", maxWidth: 560, textAlign: "center", mt: 12 }}>
               <Typography variant="h4" fontWeight={700} gutterBottom sx={{ mt: 6 }}>
                 내 블로그로 숏폼 영상 만들기
               </Typography>
@@ -366,6 +397,13 @@ export default function Home() {
                   sx={{ mb: 2, bgcolor: "#fafbfc" }}
                   inputProps={{ inputMode: "url" }}
                   InputLabelProps={{ shrink: true }}
+                />
+                <SampleSelector
+                  samples={sampleList}
+                  selectedId={conceptSampleId}
+                  disabled={loading}
+                  onSelect={setConceptSampleId}
+                  onViewVideo={(sample) => setDetailModalSample(sample)}
                 />
                 <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={loading} sx={{ fontWeight: 700, fontSize: 18, height: 48 }}>
                   {loading ? <CircularProgress size={24} color="inherit" /> : "숏폼 만들기"}
@@ -420,12 +458,20 @@ export default function Home() {
                       size="large"
                       sx={{ fontWeight: 700, minWidth: 140 }}
                       onClick={handleGenerateVideo}
-                      disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
+                      disabled={sectionMedia.filter(m => m !== null).length !== scripts.length || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
                     >
                       {loading ? <CircularProgress size={24} color="inherit" /> : "숏폼 만들기"}
                     </Button>
                   </Box>
                 </Box>
+                {/* sprint-4: generate-video 실패(예: concept_sample_template_not_configured) 에러 배너 — api-contract.md FE 연동 흐름 */}
+                {generateError && (
+                  <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4 }}>
+                    <Alert severity="error" sx={{ mb: 2 }} onClose={() => setGenerateError(null)}>
+                      {generateError}
+                    </Alert>
+                  </Box>
+                )}
                 {/* cycle-3: 자막 스타일 설정 (Row 1 — 접힘 기본) */}
                 <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4, mt: 2 }}>
                   <SubtitleStyleEditor onSettingsChange={setSubtitleSettings} />
@@ -434,7 +480,7 @@ export default function Home() {
                     variant="body2"
                     sx={{ color: '#666', mb: 2, fontSize: 13 }}
                   >
-                    이미지를 선택해 주세요 — 5개를 모두 고르면 영상 생성하기가 활성화됩니다.
+                    이미지를 선택해 주세요 — {scripts.length}개를 모두 고르면 숏폼 만들기가 활성화돼요
                   </Typography>
                 </Box>
                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 4, px: 4, py: 2, maxWidth: 1200, mx: 'auto', width: '100%' }}>
@@ -815,7 +861,7 @@ export default function Home() {
                   fullWidth
                   size="large"
                   sx={{ mt: 3, mb: 2 }}
-                  disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
+                  disabled={sectionMedia.filter(m => m !== null).length !== scripts.length || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
                   onClick={handleGenerateVideo}
                 >
                   최종 영상 생성하기
@@ -893,6 +939,9 @@ export default function Home() {
             </Box>
           )}
         </Dialog>
+
+        {/* sprint-4: 컨셉 샘플 상세 모달 — input SampleCard "영상 보기" 전용 */}
+        <SampleDetailModal sample={detailModalSample} onClose={() => setDetailModalSample(null)} />
       </Box>
     </AuthGuard>
   );
