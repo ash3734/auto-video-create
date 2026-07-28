@@ -151,23 +151,31 @@ class TestValidateSubtitleSettings(unittest.TestCase):
 
 
 class TestApplySubtitleSettingsToVariables(unittest.TestCase):
+    """
+    sprint-4 (B-2) 갱신: 모듈 레벨 SUBTITLE_SUFFIXES 상수는 폐기되고
+    subtitle_element_suffixes 가 함수 인자로 전달된다(샘플별 룩업).
+    기존 5개 테스트 값(6K5/JTM/MDV/5Z2/D6M, 폐기된 기존 템플릿 전용)은
+    "임의의 suffix 목록" 예시로 그대로 재사용한다 — 검증 대상은 로직이지 이 값 자체가 아니다.
+    """
+
+    LEGACY_SUFFIXES = ["6K5", "JTM", "MDV", "5Z2", "D6M"]
 
     def test_none_settings_does_nothing(self):
         """subtitle_settings=None 이면 variables 변경 없음."""
         from services.subtitle_settings_service import apply_subtitle_settings_to_variables
         variables = {}
-        apply_subtitle_settings_to_variables(variables, None)
+        apply_subtitle_settings_to_variables(variables, None, self.LEGACY_SUFFIXES)
         self.assertEqual(variables, {})
 
     def test_empty_settings_does_nothing(self):
         from services.subtitle_settings_service import apply_subtitle_settings_to_variables
         variables = {}
-        apply_subtitle_settings_to_variables(variables, {})
+        apply_subtitle_settings_to_variables(variables, {}, self.LEGACY_SUFFIXES)
         self.assertEqual(variables, {})
 
     def test_full_settings_injects_all(self):
-        """완전한 설정값 → title + 5개 subtitle 모두 주입."""
-        from services.subtitle_settings_service import apply_subtitle_settings_to_variables, SUBTITLE_SUFFIXES
+        """완전한 설정값 → title + suffix 개수만큼 subtitle 모두 주입."""
+        from services.subtitle_settings_service import apply_subtitle_settings_to_variables
         settings = {
             "title": {
                 "font_family": "Black Han Sans",
@@ -181,15 +189,15 @@ class TestApplySubtitleSettingsToVariables(unittest.TestCase):
             },
         }
         variables = {}
-        apply_subtitle_settings_to_variables(variables, settings)
+        apply_subtitle_settings_to_variables(variables, settings, self.LEGACY_SUFFIXES)
 
         # 제목 검증
         self.assertEqual(variables["title.font_family"], "Black Han Sans")
         self.assertEqual(variables["title.fill_color"], "#fff100")
         self.assertEqual(variables["title.font_size"], "12 vmin")  # L
 
-        # 자막 5개 검증
-        for suffix in SUBTITLE_SUFFIXES:
+        # 자막(suffix 개수만큼) 검증
+        for suffix in self.LEGACY_SUFFIXES:
             self.assertEqual(variables[f"Subtitles-{suffix}.font_family"], "Noto Sans KR")
             self.assertEqual(variables[f"Subtitles-{suffix}.font_size"], "4 vmin")   # S
             self.assertEqual(variables[f"Subtitles-{suffix}.fill_color"], "#ffffff")
@@ -213,43 +221,43 @@ class TestApplySubtitleSettingsToVariables(unittest.TestCase):
             },
         }
         variables = {}
-        apply_subtitle_settings_to_variables(variables, settings)
+        apply_subtitle_settings_to_variables(variables, settings, self.LEGACY_SUFFIXES)
         self.assertNotIn("title.font_size", variables)
 
     def test_subtitle_size_M_is_6vmin(self):
         """자막 font_size=M → 6 vmin (기존 템플릿 기본값과 동일)."""
-        from services.subtitle_settings_service import apply_subtitle_settings_to_variables, SUBTITLE_SUFFIXES
+        from services.subtitle_settings_service import apply_subtitle_settings_to_variables
         settings = {
             "title": {"font_family": "Black Han Sans", "font_size": "M", "fill_color": "#fff100"},
             "subtitle": {"font_family": "Noto Sans KR", "font_size": "M", "fill_color": "#ffffff"},
         }
         variables = {}
-        apply_subtitle_settings_to_variables(variables, settings)
-        for suffix in SUBTITLE_SUFFIXES:
+        apply_subtitle_settings_to_variables(variables, settings, self.LEGACY_SUFFIXES)
+        for suffix in self.LEGACY_SUFFIXES:
             self.assertEqual(variables[f"Subtitles-{suffix}.font_size"], "6 vmin")
 
     def test_subtitle_size_L_is_8vmin(self):
-        from services.subtitle_settings_service import apply_subtitle_settings_to_variables, SUBTITLE_SUFFIXES
+        from services.subtitle_settings_service import apply_subtitle_settings_to_variables
         settings = {
             "title": {"font_family": "Black Han Sans", "font_size": "M", "fill_color": "#fff100"},
             "subtitle": {"font_family": "Noto Sans KR", "font_size": "L", "fill_color": "#ffffff"},
         }
         variables = {}
-        apply_subtitle_settings_to_variables(variables, settings)
-        for suffix in SUBTITLE_SUFFIXES:
+        apply_subtitle_settings_to_variables(variables, settings, self.LEGACY_SUFFIXES)
+        for suffix in self.LEGACY_SUFFIXES:
             self.assertEqual(variables[f"Subtitles-{suffix}.font_size"], "8 vmin")
 
-    def test_5_subtitle_elements_all_set(self):
-        """자막 element 정확히 5개(6K5/JTM/MDV/5Z2/D6M) 모두 키 생성."""
-        from services.subtitle_settings_service import apply_subtitle_settings_to_variables, SUBTITLE_SUFFIXES
+    def test_all_suffix_elements_set(self):
+        """전달된 suffix 목록 전부 키 생성 (개수 무관, N-가변 지원 확인)."""
+        from services.subtitle_settings_service import apply_subtitle_settings_to_variables
         settings = {
             "title": {"font_family": "Noto Sans KR", "font_size": "M", "fill_color": "#fff100"},
             "subtitle": {"font_family": "Noto Sans KR", "font_size": "M", "fill_color": "#ffffff"},
         }
         variables = {}
-        apply_subtitle_settings_to_variables(variables, settings)
-        self.assertEqual(len(SUBTITLE_SUFFIXES), 5)
-        for suffix in SUBTITLE_SUFFIXES:
+        apply_subtitle_settings_to_variables(variables, settings, self.LEGACY_SUFFIXES)
+        self.assertEqual(len(self.LEGACY_SUFFIXES), 5)
+        for suffix in self.LEGACY_SUFFIXES:
             self.assertIn(f"Subtitles-{suffix}.font_family", variables)
             self.assertIn(f"Subtitles-{suffix}.font_size", variables)
             self.assertIn(f"Subtitles-{suffix}.fill_color", variables)
@@ -259,15 +267,44 @@ class TestApplySubtitleSettingsToVariables(unittest.TestCase):
         """settings=None 이면 기존 variables 그대로 유지."""
         from services.subtitle_settings_service import apply_subtitle_settings_to_variables
         variables = {"image1.source": "https://example.com/img.jpg"}
-        apply_subtitle_settings_to_variables(variables, None)
+        apply_subtitle_settings_to_variables(variables, None, self.LEGACY_SUFFIXES)
         self.assertIn("image1.source", variables)
 
+    def test_none_suffixes_skips_subtitle_injection_but_keeps_title(self):
+        """sprint-4: subtitle_element_suffixes=None(DEP-S4-06 미해소) 이면 자막 주입은
+        건너뛰지만 title 은 suffix 와 무관하므로 그대로 적용된다."""
+        from services.subtitle_settings_service import apply_subtitle_settings_to_variables
+        settings = {
+            "title": {"font_family": "Black Han Sans", "font_size": "L", "fill_color": "#fff100"},
+            "subtitle": {"font_family": "Noto Sans KR", "font_size": "M", "fill_color": "#ffffff"},
+        }
+        variables = {}
+        apply_subtitle_settings_to_variables(variables, settings, None)
+        self.assertEqual(variables["title.font_family"], "Black Han Sans")
+        self.assertEqual(variables["title.font_size"], "12 vmin")
+        self.assertEqual(len([k for k in variables if k.startswith("Subtitles-")]), 0)
 
-class TestSubtitleSuffixes(unittest.TestCase):
-    def test_suffix_list_exact(self):
-        """SUBTITLE_SUFFIXES 가 정확히 architecture.md DEP-01 확인값과 일치."""
-        from services.subtitle_settings_service import SUBTITLE_SUFFIXES
-        self.assertEqual(SUBTITLE_SUFFIXES, ["6K5", "JTM", "MDV", "5Z2", "D6M"])
+    def test_empty_suffixes_list_skips_subtitle_injection(self):
+        """subtitle_element_suffixes=[] 도 None 과 동일하게 자막 주입을 건너뛴다."""
+        from services.subtitle_settings_service import apply_subtitle_settings_to_variables
+        settings = {
+            "title": {"font_family": "Black Han Sans", "font_size": "M", "fill_color": "#fff100"},
+            "subtitle": {"font_family": "Noto Sans KR", "font_size": "M", "fill_color": "#ffffff"},
+        }
+        variables = {}
+        apply_subtitle_settings_to_variables(variables, settings, [])
+        self.assertEqual(len([k for k in variables if k.startswith("Subtitles-")]), 0)
+
+    def test_default_suffixes_param_is_none(self):
+        """subtitle_element_suffixes 인자를 생략하면 기본값 None → 자막 주입 스킵."""
+        from services.subtitle_settings_service import apply_subtitle_settings_to_variables
+        settings = {
+            "title": {"font_family": "Black Han Sans", "font_size": "M", "fill_color": "#fff100"},
+            "subtitle": {"font_family": "Noto Sans KR", "font_size": "M", "fill_color": "#ffffff"},
+        }
+        variables = {}
+        apply_subtitle_settings_to_variables(variables, settings)
+        self.assertEqual(len([k for k in variables if k.startswith("Subtitles-")]), 0)
 
 
 class TestSizeMapConstants(unittest.TestCase):

@@ -15,6 +15,8 @@ from services.subtitle_settings_service import (
     validate_subtitle_settings,
     apply_subtitle_settings_to_variables,
 )
+# sprint-4: 컨셉 영상 샘플 4종 (B-2, architecture.md §2-1/data-model.md §1)
+from services.concept_samples import get_sample, list_samples_public
 from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
 import os
@@ -133,6 +135,9 @@ router = APIRouter()
 
 class ExtractMediaRequest(BaseModel):
     blog_url: str
+    # sprint-4 (B-2): optional — 없거나 미인식 값이면 BE 가 sample_1(기본값)로 폴백
+    # (api-contract.md "미선택 통과 허용" 원칙, 절대 400 에러로 막지 않음)
+    concept_sample_id: Optional[str] = None
 
 class ExtractMediaResponse(BaseModel):
     status: str
@@ -142,6 +147,9 @@ class ExtractMediaResponse(BaseModel):
     category: Optional[Literal["restaurant", "general"]] = None
     platform: Optional[Literal["naver", "tistory", "brunch"]] = None
     default_slot_count: Optional[int] = 0
+    # sprint-4 (B-2): concept_sample_id echo(폴백 적용된 값) + scene_count(N)
+    concept_sample_id: Optional[str] = None
+    scene_count: Optional[int] = None
     message: str = None
 
 
@@ -154,6 +162,22 @@ class SectionMedia(BaseModel):
 @router.get("/hello")
 def hello():
     return {"message": "Hello, World!!!!!"}
+
+
+@router.get("/concept-samples")
+def get_concept_samples(user=Depends(require_active_subscription)):
+    """
+    GET /api/blog/concept-samples
+
+    input 단계 SampleSelector(카드 4장) + SampleDetailModal(영상 보기) 렌더에 필요한
+    데이터를 단일 응답으로 제공 (목록 + "상세" 통합, 별도 상세 API 없음).
+    api-contract.md "신규 엔드포인트: 컨셉 샘플 목록 조회" 구현.
+
+    BE 내부 전용 필드(creatomate_template_id, subtitle_element_suffixes, hook_prompt)는
+    응답에 포함하지 않는다 — list_samples_public() 이 필터링.
+    """
+    return {"status": "success", "samples": list_samples_public()}
+
 
 @router.post("/extract-all")
 def extract_all(req: ExtractMediaRequest, user=Depends(require_active_subscription)):
@@ -169,7 +193,9 @@ def extract_all(req: ExtractMediaRequest, user=Depends(require_active_subscripti
                 "message": "등록된 블로그 주소가 아닙니다. 관리자에게 문의해주세요.",
             }
 
-        result = get_blog_media_and_scripts(req.blog_url)
+        # sprint-4 (B-2): concept_sample_id → scene_count(N)/hook_prompt 는
+        # get_blog_media_and_scripts 내부에서 concept_samples.get_sample() 로 조회.
+        result = get_blog_media_and_scripts(req.blog_url, concept_sample_id=req.concept_sample_id)
         print("extract_all 성공")
         return {"status": "success", **result}
     except UnsupportedPlatformError as e:
@@ -215,9 +241,11 @@ class SubtitleSettingsRequest(BaseModel):
 class GenerateVideoRequest(BaseModel):
     title: str
     scripts: List[str]
-    sections: List[SectionMedia]  # 5개
+    sections: List[SectionMedia]  # sprint-4: 길이 = N(고정 아님), scene_count 만큼
     # cycle-3: optional — 없으면 Creatomate 템플릿 기본값 유지
     subtitle_settings: Optional[SubtitleSettingsModel] = None
+    # sprint-4 (B-2): optional — 없거나 미인식 값이면 sample_1(기본값) 폴백 (extract-all과 동일 방어 정책)
+    concept_sample_id: Optional[str] = None
 
 class GenerateVideoResponse(BaseModel):
     status: str
@@ -238,8 +266,9 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
             voice_id=SUPERTONE_VOICE_ID,
             speed=SUPERTONE_SPEED
         )
-        audio_local_paths = audio_local_paths[:5]
-        audio_urls = audio_urls[:5]
+        # sprint-4 (B-2): 하드코딩 [:5] 제거 — scripts 길이(N)만큼만 사용
+        audio_local_paths = audio_local_paths[:len(req.scripts)]
+        audio_urls = audio_urls[:len(req.scripts)]
 
         # 3. 섹션별 미디어 타입에 따라 Creatomate 변수 생성
         # cycle-2: type='default' 슬롯은 AI 배경을 lazy 병렬 생성 (ADR-4).
@@ -278,11 +307,17 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
                 variables[f"image{i}.visible"] = "true"
                 variables[f"video{i}.visible"] = "false"
 
+        # sprint-4 (B-2): concept_sample_id → 샘플 조회 (미인식/None 이면 sample_1 폴백)
+        sample = get_sample(req.concept_sample_id)
+
         # 4. cycle-3: subtitle_settings 가 있으면 Creatomate modifications 에 주입
+        # sprint-4: subtitle_element_suffixes 는 샘플별 룩업 (None 이면 자막 주입 스킵,
+        # 템플릿 기본값 유지 — architecture.md §4-4)
         if req.subtitle_settings:
             apply_subtitle_settings_to_variables(
                 variables,
                 req.subtitle_settings.model_dump(),
+                sample.get("subtitle_element_suffixes"),
             )
             print(
                 f"[generate_video] subtitle_settings 주입 완료 "
@@ -294,17 +329,22 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
         result = create_creatomate_video(
             audio_paths=audio_urls,
             scripts=req.scripts,
+            concept_sample_id=sample["concept_sample_id"],
             title=req.title,
             user_id=user["id"],  # 크레딧 체크/차감을 위해 user_id 전달
             **variables
         )
         # Creatomate 응답 처리
         if isinstance(result, dict) and result.get("error"):
-            # 크레딧 부족 등의 에러 응답
+            # 크레딧 부족 / concept_sample_template_not_configured 등의 에러 응답.
+            # sprint-4: api-contract.md 는 "error_code" 키를 요구 — 기존 FE 호환을 위해
+            # error_type 도 동일 값으로 함께 반환한다.
+            error_code = result.get("error")
             return {
-                "status": "error", 
+                "status": "error",
+                "error_code": error_code,
                 "message": result.get("message", "영상 생성 실패"),
-                "error_type": result.get("error")
+                "error_type": error_code,
             }
         
         # Creatomate 응답에서 render_id 추출
