@@ -1,15 +1,20 @@
 """
-subtitle_settings_service.py — cycle-3 신규
+subtitle_settings_service.py — cycle-3 신규, feat/style-templates 확장
 
 사용자별 자막 스타일 설정을 S3 users.json 에서 읽고 쓴다.
 
 data-model.md §1~§3 스키마 준수.
 기존 deduct_credits / account_service 패턴(S3 read-modify-write)과 동일 방식.
+
+feat/style-templates: 계정당 단일 subtitle_settings 를 이름 붙인 템플릿 최대 5개
+(subtitle_templates)로 확장. 레거시 단일 subtitle_settings 만 있는 계정은 읽을 때
+자동 마이그레이션(첫 조회 시 변환, 다음 저장 시점에 영속화 — lazy).
 """
 
 import json
 import logging
 import re
+import uuid
 from typing import Optional
 
 import boto3
@@ -54,7 +59,26 @@ DEFAULT_SUBTITLE_SETTINGS: dict = {
     "fill_color": "#ffffff",
 }
 
+# feat/style-templates: 계정당 최대 저장 가능한 이름 붙인 템플릿 개수
+MAX_SUBTITLE_TEMPLATES = 5
+
 _s3 = boto3.client("s3", region_name="ap-northeast-2")
+
+
+# ─────────────────────────────────────────────
+# feat/style-templates 전용 예외
+# ─────────────────────────────────────────────
+
+class TemplateLimitReachedError(Exception):
+    """계정당 템플릿 개수(MAX_SUBTITLE_TEMPLATES)를 초과해 생성 시도할 때 발생."""
+
+
+class TemplateNotFoundError(Exception):
+    """지정한 template_id 가 사용자의 템플릿 목록에 없을 때 발생."""
+
+
+class LastTemplateError(Exception):
+    """마지막 남은 1개 템플릿을 삭제하려 할 때 발생 (최소 1개 유지)."""
 
 
 # ─────────────────────────────────────────────
@@ -85,6 +109,15 @@ def _validate_text_style(style: dict, allowed_families: set[str]) -> list[str]:
         errors.append(f"fill_color 는 #RRGGBB 형식이어야 합니다. 받은 값: {fill_color!r}")
 
     return errors
+
+
+def validate_text_style(style: dict, allowed_families: set[str]) -> list[str]:
+    """
+    단일 TextStyle(title 또는 subtitle 섹션 하나) 검증 공개 wrapper.
+    feat/style-templates PUT(부분 수정) 처럼 섹션 하나만 검증해야 할 때 사용.
+    반환: 오류 메시지 목록 (빈 목록 = 통과).
+    """
+    return _validate_text_style(style, allowed_families)
 
 
 def validate_subtitle_settings(settings: dict, allowed_families: set[str]) -> list[str]:
@@ -156,6 +189,228 @@ def save_subtitle_settings(user_id: str, settings: dict) -> bool:
         return True
     except Exception as e:
         logger.error(f"[subtitle_settings] SAVE 실패 user={user_id}: {e}")
+        raise
+
+
+# ─────────────────────────────────────────────
+# feat/style-templates — 이름 붙인 템플릿 CRUD (최대 MAX_SUBTITLE_TEMPLATES 개)
+# ─────────────────────────────────────────────
+
+# 마이그레이션된 legacy 템플릿의 id 를 만들 때 쓰는 고정 네임스페이스.
+# uuid.uuid5 는 (namespace, name) 이 같으면 항상 동일한 UUID 를 반환한다 — 이 성질을
+# 이용해, 아직 영속화되지 않은(=lazy) 상태에서 GET 을 여러 번 호출해도 같은 id 가
+# 나오도록 보장한다. 만약 매번 uuid4() 로 랜덤 생성하면 "GET 으로 id 확인 → 그 id 로
+# DELETE/PUT" 같은 정상 흐름이 두 번째 요청에서 404 로 깨진다(실제로 테스트에서 발견).
+_LEGACY_TEMPLATE_ID_NAMESPACE = uuid.UUID("6a3f6c1e-6b8b-4b8b-9b0a-3a5b6c7d8e9f")
+
+
+def _migrate_legacy_templates(user: dict) -> list[dict]:
+    """
+    user dict 로부터 subtitle_templates 리스트를 얻는다.
+
+    - user["subtitle_templates"] 가 이미 있으면 그대로 반환(정상 경로).
+    - 없고 legacy user["subtitle_settings"](단일 dict) 만 있으면
+      [{id, name:"템플릿 1", title, subtitle}] 로 변환해 반환(마이그레이션).
+      이 반환값은 in-memory 변환일 뿐 여기서 S3 에 저장하지 않는다(lazy 영속화 —
+      다음 CRUD 저장 시점에 실제 write 가 일어남). id 는 user_id 기반 결정적(uuid5)
+      값이라, 영속화 전에 GET 을 여러 번 호출해도 항상 같은 id 가 나온다.
+    - 둘 다 없으면 빈 리스트.
+    """
+    templates = user.get("subtitle_templates")
+    if templates is not None:
+        return templates
+
+    legacy = user.get("subtitle_settings")
+    if isinstance(legacy, dict) and isinstance(legacy.get("title"), dict) and isinstance(legacy.get("subtitle"), dict):
+        user_id = user.get("id", "")
+        deterministic_id = str(uuid.uuid5(_LEGACY_TEMPLATE_ID_NAMESPACE, f"legacy-subtitle-settings-{user_id}"))
+        return [
+            {
+                "id": deterministic_id,
+                "name": "템플릿 1",
+                "title": legacy["title"],
+                "subtitle": legacy["subtitle"],
+            }
+        ]
+
+    return []
+
+
+def get_subtitle_templates(user_id: str) -> list[dict]:
+    """
+    users.json 에서 user_id 에 해당하는 subtitle_templates 목록 반환.
+    레거시 단일 subtitle_settings 만 있으면 마이그레이션된 값을 반환(영속화 안 함).
+    사용자 없으면 빈 리스트.
+    """
+    try:
+        users = load_json_from_s3(BUCKET_USERS, KEY_USERS)
+        for user in users:
+            if user["id"] == user_id:
+                templates = _migrate_legacy_templates(user)
+                logger.info(
+                    f"[subtitle_templates] GET user={user_id} count={len(templates)}"
+                )
+                return templates
+        logger.warning(f"[subtitle_templates] GET user={user_id} — 사용자 없음")
+        return []
+    except Exception as e:
+        logger.error(f"[subtitle_templates] GET 실패 user={user_id}: {e}")
+        raise
+
+
+def create_subtitle_template(user_id: str, name: str, title: dict, subtitle: dict) -> dict:
+    """
+    신규 이름 붙인 템플릿 생성.
+
+    - 사용자 없으면 LookupError.
+    - 기존 템플릿(마이그레이션 포함)이 이미 MAX_SUBTITLE_TEMPLATES 개면 TemplateLimitReachedError.
+    - 성공 시 생성된 템플릿 dict({id, name, title, subtitle}) 반환.
+    - S3 read-modify-write 패턴 (기존 save_subtitle_settings 와 동일 방식).
+    """
+    try:
+        users = load_json_from_s3(BUCKET_USERS, KEY_USERS)
+        target_user = None
+        for user in users:
+            if user["id"] == user_id:
+                target_user = user
+                break
+
+        if target_user is None:
+            logger.warning(f"[subtitle_templates] CREATE user={user_id} — 사용자 없음")
+            raise LookupError(f"사용자를 찾을 수 없습니다: {user_id}")
+
+        templates = _migrate_legacy_templates(target_user)
+        if len(templates) >= MAX_SUBTITLE_TEMPLATES:
+            raise TemplateLimitReachedError(
+                f"템플릿은 최대 {MAX_SUBTITLE_TEMPLATES}개까지 저장할 수 있습니다."
+            )
+
+        new_template = {
+            "id": str(uuid.uuid4()),
+            "name": name,
+            "title": title,
+            "subtitle": subtitle,
+        }
+        target_user["subtitle_templates"] = templates + [new_template]
+
+        _s3.put_object(
+            Bucket=BUCKET_USERS,
+            Key=KEY_USERS,
+            Body=json.dumps(users, ensure_ascii=False, indent=2).encode("utf-8"),
+        )
+        logger.info(f"[subtitle_templates] CREATE user={user_id} template_id={new_template['id']} 완료")
+        return new_template
+    except (LookupError, TemplateLimitReachedError):
+        raise
+    except Exception as e:
+        logger.error(f"[subtitle_templates] CREATE 실패 user={user_id}: {e}")
+        raise
+
+
+def update_subtitle_template(
+    user_id: str,
+    template_id: str,
+    name: Optional[str] = None,
+    title: Optional[dict] = None,
+    subtitle: Optional[dict] = None,
+) -> dict:
+    """
+    기존 템플릿 부분 수정 (name/title/subtitle 중 전달된(None 이 아닌) 값만 반영).
+
+    - 사용자 없으면 LookupError.
+    - template_id 가 목록에 없으면 TemplateNotFoundError.
+    - 성공 시 수정된 템플릿 dict 반환.
+    """
+    try:
+        users = load_json_from_s3(BUCKET_USERS, KEY_USERS)
+        target_user = None
+        for user in users:
+            if user["id"] == user_id:
+                target_user = user
+                break
+
+        if target_user is None:
+            logger.warning(f"[subtitle_templates] UPDATE user={user_id} — 사용자 없음")
+            raise LookupError(f"사용자를 찾을 수 없습니다: {user_id}")
+
+        templates = _migrate_legacy_templates(target_user)
+        updated_template = None
+        new_templates = []
+        for tpl in templates:
+            if tpl.get("id") == template_id:
+                if name is not None:
+                    tpl = {**tpl, "name": name}
+                if title is not None:
+                    tpl = {**tpl, "title": title}
+                if subtitle is not None:
+                    tpl = {**tpl, "subtitle": subtitle}
+                updated_template = tpl
+            new_templates.append(tpl)
+
+        if updated_template is None:
+            logger.warning(f"[subtitle_templates] UPDATE user={user_id} template_id={template_id} — 템플릿 없음")
+            raise TemplateNotFoundError(f"템플릿을 찾을 수 없습니다: {template_id}")
+
+        target_user["subtitle_templates"] = new_templates
+
+        _s3.put_object(
+            Bucket=BUCKET_USERS,
+            Key=KEY_USERS,
+            Body=json.dumps(users, ensure_ascii=False, indent=2).encode("utf-8"),
+        )
+        logger.info(f"[subtitle_templates] UPDATE user={user_id} template_id={template_id} 완료")
+        return updated_template
+    except (LookupError, TemplateNotFoundError):
+        raise
+    except Exception as e:
+        logger.error(f"[subtitle_templates] UPDATE 실패 user={user_id} template_id={template_id}: {e}")
+        raise
+
+
+def delete_subtitle_template(user_id: str, template_id: str) -> None:
+    """
+    템플릿 삭제.
+
+    - 사용자 없으면 LookupError.
+    - template_id 가 목록에 없으면 TemplateNotFoundError.
+    """
+    try:
+        users = load_json_from_s3(BUCKET_USERS, KEY_USERS)
+        target_user = None
+        for user in users:
+            if user["id"] == user_id:
+                target_user = user
+                break
+
+        if target_user is None:
+            logger.warning(f"[subtitle_templates] DELETE user={user_id} — 사용자 없음")
+            raise LookupError(f"사용자를 찾을 수 없습니다: {user_id}")
+
+        templates = _migrate_legacy_templates(target_user)
+        new_templates = [tpl for tpl in templates if tpl.get("id") != template_id]
+
+        if len(new_templates) == len(templates):
+            logger.warning(f"[subtitle_templates] DELETE user={user_id} template_id={template_id} — 템플릿 없음")
+            raise TemplateNotFoundError(f"템플릿을 찾을 수 없습니다: {template_id}")
+
+        # 최소 1개 템플릿 유지 — 마지막 남은 템플릿 삭제 방지 (서버측 강제).
+        # FE 도 버튼을 비활성화하지만, 동시 요청/다른 클라이언트 경로에서 0개가 되는 것을 막는다.
+        if len(new_templates) == 0:
+            logger.warning(f"[subtitle_templates] DELETE user={user_id} template_id={template_id} — 마지막 템플릿 삭제 거부")
+            raise LastTemplateError("마지막 템플릿은 삭제할 수 없습니다.")
+
+        target_user["subtitle_templates"] = new_templates
+
+        _s3.put_object(
+            Bucket=BUCKET_USERS,
+            Key=KEY_USERS,
+            Body=json.dumps(users, ensure_ascii=False, indent=2).encode("utf-8"),
+        )
+        logger.info(f"[subtitle_templates] DELETE user={user_id} template_id={template_id} 완료")
+    except (LookupError, TemplateNotFoundError, LastTemplateError):
+        raise
+    except Exception as e:
+        logger.error(f"[subtitle_templates] DELETE 실패 user={user_id} template_id={template_id}: {e}")
         raise
 
 
