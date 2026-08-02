@@ -9,6 +9,9 @@ import {
   ToggleButton,
   Snackbar,
   Alert,
+  Button,
+  TextField,
+  CircularProgress,
 } from "@mui/material";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
@@ -27,6 +30,14 @@ export interface SubtitleSettings {
   subtitle: StyleSetting;
 }
 
+// VOC: 폰트/색상을 이름 붙여 최대 5개까지 저장·재사용하는 스타일 템플릿
+export interface SubtitleTemplate {
+  id: string;
+  name: string;
+  title: StyleSetting;
+  subtitle: StyleSetting;
+}
+
 interface FontItem {
   family: string;
   category: string;
@@ -34,6 +45,8 @@ interface FontItem {
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
+
+const MAX_TEMPLATES = 5;
 
 const DEFAULT_SETTINGS: SubtitleSettings = {
   title: { font_family: "Black Han Sans", font_size: "M", fill_color: "#fff100" },
@@ -48,6 +61,7 @@ const SIZE_PX: Record<"S" | "M" | "L", { title: number; subtitle: number }> = {
 };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+const TEMPLATES_URL = `${API_BASE_URL}/api/blog/subtitle-templates`;
 
 function authFetch(url: string, options: RequestInit = {}) {
   const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
@@ -55,6 +69,58 @@ function authFetch(url: string, options: RequestInit = {}) {
     ...options,
     headers: { ...(options.headers || {}), "X-USER-ID": userId ?? "" },
   });
+}
+
+// ── Helpers: normalize server payloads defensively ─────────────────────────
+
+function normalizeStyleSetting(raw: unknown, fallback: StyleSetting): StyleSetting {
+  const r = (raw ?? {}) as Partial<StyleSetting>;
+  return {
+    font_family: r.font_family ?? fallback.font_family,
+    font_size: (r.font_size as "S" | "M" | "L") ?? fallback.font_size,
+    fill_color: r.fill_color ?? fallback.fill_color,
+  };
+}
+
+function normalizeTemplate(raw: unknown): SubtitleTemplate | null {
+  const r = raw as { id?: string | number; name?: string; title?: unknown; subtitle?: unknown } | null;
+  if (!r || r.id === undefined || r.id === null) return null;
+  return {
+    id: String(r.id),
+    name: r.name ?? "",
+    title: normalizeStyleSetting(r.title, DEFAULT_SETTINGS.title),
+    subtitle: normalizeStyleSetting(r.subtitle, DEFAULT_SETTINGS.subtitle),
+  };
+}
+
+// POST/PUT 응답이 { template: {...} } 또는 {...} 그대로 올 수 있어 방어적으로 파싱
+function extractTemplate(data: unknown): SubtitleTemplate | null {
+  const wrapped = (data as { template?: unknown } | null)?.template ?? data;
+  return normalizeTemplate(wrapped);
+}
+
+// BE 에러 응답 형식이 두 가지로 섞여 있음: 5개 초과는 { error_code, message } 최상위,
+// 그 외 400/404 는 FastAPI 기본 { detail: "문자열" }. 가능한 한 서버 메시지를 그대로 보여준다.
+function extractErrorMessage(data: unknown, fallback: string): string {
+  const d = data as { error_code?: string; message?: string; detail?: string } | null;
+  if (d?.error_code === "template_limit_reached") {
+    return "템플릿은 최대 5개까지 저장할 수 있어요";
+  }
+  if (typeof d?.detail === "string" && d.detail.trim()) return d.detail;
+  if (typeof d?.message === "string" && d.message.trim()) return d.message;
+  return fallback;
+}
+
+function isSameStyle(a: StyleSetting, b: StyleSetting) {
+  return (
+    a.font_family === b.font_family &&
+    a.font_size === b.font_size &&
+    a.fill_color === b.fill_color
+  );
+}
+
+function isSameSettings(a: SubtitleSettings, b: SubtitleSettings) {
+  return isSameStyle(a.title, b.title) && isSameStyle(a.subtitle, b.subtitle);
 }
 
 // ── MiniChip ──────────────────────────────────────────────────────────────
@@ -414,64 +480,126 @@ function Preview9x16({ settings }: { settings: SubtitleSettings }) {
   );
 }
 
+// ── TemplateChip ──────────────────────────────────────────────────────────
+
+function TemplateChip({
+  template,
+  selected,
+  onClick,
+}: {
+  template: SubtitleTemplate;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Box
+      onClick={onClick}
+      sx={{
+        px: 1.5,
+        py: 0.6,
+        borderRadius: 999,
+        border: selected ? "1.5px solid #1976d2" : "1.5px solid #e3e6ef",
+        bgcolor: selected ? "#1976d2" : "#fff",
+        color: selected ? "#fff" : "#444",
+        fontSize: 13,
+        fontWeight: selected ? 700 : 500,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+        userSelect: "none",
+        transition: "all 0.15s",
+        "&:hover": { borderColor: "#1976d2" },
+      }}
+    >
+      {template.name || "이름 없는 템플릿"}
+    </Box>
+  );
+}
+
 // ── SubtitleStyleEditor (Main) ────────────────────────────────────────────
 
 interface SubtitleStyleEditorProps {
   onSettingsChange: (settings: SubtitleSettings) => void;
 }
 
+type NameDialogMode = "create" | "rename" | null;
+type ActionKind = "save" | "create" | "rename" | "delete" | null;
+
 export default function SubtitleStyleEditor({ onSettingsChange }: SubtitleStyleEditorProps) {
   const [expanded, setExpanded] = useState(false);
+
+  // 템플릿 목록 + 현재 선택된 템플릿
+  const [templates, setTemplates] = useState<SubtitleTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+
+  // 편집 컨트롤(제목/자막)에 반영되는 현재 편집 값 — 선택된 템플릿 값으로 초기화되고,
+  // 사용자가 폰트/크기/색을 바꾸면 여기만 바뀐다 (명시적으로 저장하기 전까지 서버 반영 안 됨)
   const [settings, setSettings] = useState<SubtitleSettings>(DEFAULT_SETTINGS);
+
   const [fonts, setFonts] = useState<FontItem[]>([]);
   const [fontsLoading, setFontsLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTarget, setPickerTarget] = useState<"title" | "subtitle">("title");
-  const [toastOpen, setToastOpen] = useState(false);
-  const [hasChanged, setHasChanged] = useState(false);
 
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isDefaultSettings = useCallback((s: SubtitleSettings) => {
-    return (
-      s.title.font_family === DEFAULT_SETTINGS.title.font_family &&
-      s.title.font_size === DEFAULT_SETTINGS.title.font_size &&
-      s.title.fill_color === DEFAULT_SETTINGS.title.fill_color &&
-      s.subtitle.font_family === DEFAULT_SETTINGS.subtitle.font_family &&
-      s.subtitle.font_size === DEFAULT_SETTINGS.subtitle.font_size &&
-      s.subtitle.fill_color === DEFAULT_SETTINGS.subtitle.fill_color
-    );
+  const [nameDialogMode, setNameDialogMode] = useState<NameDialogMode>(null);
+  const [nameInput, setNameInput] = useState("");
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
+  const [actionLoading, setActionLoading] = useState<ActionKind>(null);
+
+  const [toast, setToast] = useState<{ open: boolean; message: string; severity: "success" | "error" }>({
+    open: false,
+    message: "",
+    severity: "success",
+  });
+
+  const showToast = useCallback((message: string, severity: "success" | "error" = "success") => {
+    setToast({ open: true, message, severity });
   }, []);
 
-  // Load settings on mount
+  const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
+  const baselineSettings: SubtitleSettings = selectedTemplate
+    ? { title: selectedTemplate.title, subtitle: selectedTemplate.subtitle }
+    : DEFAULT_SETTINGS;
+  const hasChanged = !isSameSettings(settings, baselineSettings);
+
+  // Load templates on mount (헤더의 미니 칩 + generate-video 초기값이 펼치기 전에도 맞도록)
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
+      setTemplatesLoading(true);
       try {
-        const res = await authFetch(`${API_BASE_URL}/api/blog/subtitle-settings`);
-        if (!res.ok) return;
+        const res = await authFetch(TEMPLATES_URL);
+        if (!res.ok) {
+          if (!cancelled) onSettingsChange(DEFAULT_SETTINGS);
+          return;
+        }
         const data = await res.json();
-        if (data.settings) {
-          const loaded: SubtitleSettings = {
-            title: {
-              font_family: data.settings.title?.font_family ?? DEFAULT_SETTINGS.title.font_family,
-              font_size: (data.settings.title?.font_size as "S" | "M" | "L") ?? "M",
-              fill_color: data.settings.title?.fill_color ?? DEFAULT_SETTINGS.title.fill_color,
-            },
-            subtitle: {
-              font_family: data.settings.subtitle?.font_family ?? DEFAULT_SETTINGS.subtitle.font_family,
-              font_size: (data.settings.subtitle?.font_size as "S" | "M" | "L") ?? "M",
-              fill_color: data.settings.subtitle?.fill_color ?? DEFAULT_SETTINGS.subtitle.fill_color,
-            },
-          };
+        if (cancelled) return;
+        const rawList = Array.isArray(data?.templates) ? data.templates : [];
+        const list = rawList
+          .map((t: unknown) => normalizeTemplate(t))
+          .filter((t: SubtitleTemplate | null): t is SubtitleTemplate => t !== null);
+        setTemplates(list);
+        if (list.length > 0) {
+          setSelectedTemplateId(list[0].id);
+          const loaded: SubtitleSettings = { title: list[0].title, subtitle: list[0].subtitle };
           setSettings(loaded);
           onSettingsChange(loaded);
-          setHasChanged(!isDefaultSettings(loaded));
+        } else {
+          onSettingsChange(DEFAULT_SETTINGS);
         }
       } catch {
-        // silently fall back to defaults
+        // 네트워크 오류 등 — 기본값으로 폴백, generate-video는 그대로 동작
+        if (!cancelled) onSettingsChange(DEFAULT_SETTINGS);
+      } finally {
+        if (!cancelled) setTemplatesLoading(false);
       }
     };
     load();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load fonts when picker is first opened
@@ -492,22 +620,6 @@ export default function SubtitleStyleEditor({ onSettingsChange }: SubtitleStyleE
     }
   }, [fonts.length]);
 
-  const debouncedSave = useCallback((newSettings: SubtitleSettings) => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(async () => {
-      try {
-        const res = await authFetch(`${API_BASE_URL}/api/blog/subtitle-settings`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(newSettings),
-        });
-        if (res.ok) setToastOpen(true);
-      } catch {
-        // ignore save errors silently
-      }
-    }, 500);
-  }, []);
-
   const updateSection = useCallback(
     (section: "title" | "subtitle", patch: Partial<StyleSetting>) => {
       setSettings((prev) => {
@@ -516,19 +628,15 @@ export default function SubtitleStyleEditor({ onSettingsChange }: SubtitleStyleE
           [section]: { ...prev[section], ...patch },
         };
         onSettingsChange(next);
-        setHasChanged(!isDefaultSettings(next));
-        debouncedSave(next);
         return next;
       });
     },
-    [onSettingsChange, isDefaultSettings, debouncedSave]
+    [onSettingsChange]
   );
 
-  const handleReset = () => {
-    setSettings(DEFAULT_SETTINGS);
-    onSettingsChange(DEFAULT_SETTINGS);
-    setHasChanged(false);
-    debouncedSave(DEFAULT_SETTINGS);
+  const handleRevert = () => {
+    setSettings(baselineSettings);
+    onSettingsChange(baselineSettings);
   };
 
   const handleOpenPicker = (target: "title" | "subtitle") => {
@@ -540,6 +648,158 @@ export default function SubtitleStyleEditor({ onSettingsChange }: SubtitleStyleE
   const handleFontSelect = (fontFamily: string) => {
     updateSection(pickerTarget, { font_family: fontFamily });
     setPickerOpen(false);
+  };
+
+  // ── 템플릿 선택 ──────────────────────────────────────────────────────────
+
+  const handleSelectTemplate = (template: SubtitleTemplate) => {
+    setSelectedTemplateId(template.id);
+    const loaded: SubtitleSettings = { title: template.title, subtitle: template.subtitle };
+    setSettings(loaded);
+    onSettingsChange(loaded);
+    setNameDialogMode(null);
+    setDeleteConfirming(false);
+  };
+
+  // ── 액션: 현재 편집값 저장 (선택된 템플릿에 PUT) ────────────────────────
+
+  const handleSaveCurrent = async () => {
+    if (!selectedTemplateId) return;
+    setActionLoading("save");
+    try {
+      const res = await authFetch(`${TEMPLATES_URL}/${selectedTemplateId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: settings.title, subtitle: settings.subtitle }),
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        const updated = extractTemplate(data);
+        setTemplates((prev) =>
+          prev.map((t) =>
+            t.id === selectedTemplateId
+              ? updated ?? { ...t, title: settings.title, subtitle: settings.subtitle }
+              : t
+          )
+        );
+        showToast("저장했어요");
+      } else {
+        const data = await res.json().catch(() => null);
+        showToast(extractErrorMessage(data, "저장하지 못했어요. 다시 시도해 주세요."), "error");
+      }
+    } catch {
+      showToast("저장하지 못했어요. 다시 시도해 주세요.", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // ── 액션: 새 템플릿으로 저장 (POST) ──────────────────────────────────────
+
+  const openCreate = () => {
+    if (templates.length >= MAX_TEMPLATES) return;
+    setDeleteConfirming(false);
+    setNameDialogMode("create");
+    setNameInput(`템플릿 ${templates.length + 1}`);
+  };
+
+  const handleCreateConfirm = async () => {
+    const name = nameInput.trim();
+    if (!name) return;
+    setActionLoading("create");
+    try {
+      const res = await authFetch(TEMPLATES_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, title: settings.title, subtitle: settings.subtitle }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        const created =
+          extractTemplate(data) ??
+          ({ id: `local-${Date.now()}`, name, title: settings.title, subtitle: settings.subtitle } as SubtitleTemplate);
+        setTemplates((prev) => [...prev, created]);
+        setSelectedTemplateId(created.id);
+        setNameDialogMode(null);
+        showToast("새 템플릿으로 저장했어요");
+      } else {
+        showToast(extractErrorMessage(data, "저장하지 못했어요. 다시 시도해 주세요."), "error");
+      }
+    } catch {
+      showToast("저장하지 못했어요. 다시 시도해 주세요.", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // ── 액션: 이름 변경 (PUT name) ───────────────────────────────────────────
+
+  const openRename = () => {
+    if (!selectedTemplate) return;
+    setDeleteConfirming(false);
+    setNameDialogMode("rename");
+    setNameInput(selectedTemplate.name);
+  };
+
+  const handleRenameConfirm = async () => {
+    if (!selectedTemplateId) return;
+    const name = nameInput.trim();
+    if (!name) return;
+    setActionLoading("rename");
+    try {
+      const res = await authFetch(`${TEMPLATES_URL}/${selectedTemplateId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (res.ok) {
+        setTemplates((prev) => prev.map((t) => (t.id === selectedTemplateId ? { ...t, name } : t)));
+        setNameDialogMode(null);
+        showToast("이름을 변경했어요");
+      } else {
+        const data = await res.json().catch(() => null);
+        showToast(extractErrorMessage(data, "이름을 변경하지 못했어요. 다시 시도해 주세요."), "error");
+      }
+    } catch {
+      showToast("이름을 변경하지 못했어요. 다시 시도해 주세요.", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // ── 액션: 삭제 (DELETE, 최소 1개 유지) ───────────────────────────────────
+
+  const handleDelete = async () => {
+    if (!selectedTemplateId || templates.length <= 1) return;
+    setActionLoading("delete");
+    try {
+      const res = await authFetch(`${TEMPLATES_URL}/${selectedTemplateId}`, { method: "DELETE" });
+      if (res.ok) {
+        const remaining = templates.filter((t) => t.id !== selectedTemplateId);
+        setTemplates(remaining);
+        setDeleteConfirming(false);
+        const next = remaining[0] ?? null;
+        setSelectedTemplateId(next ? next.id : null);
+        const loaded: SubtitleSettings = next
+          ? { title: next.title, subtitle: next.subtitle }
+          : DEFAULT_SETTINGS;
+        setSettings(loaded);
+        onSettingsChange(loaded);
+        showToast("삭제했어요");
+      } else {
+        const data = await res.json().catch(() => null);
+        showToast(extractErrorMessage(data, "삭제하지 못했어요. 다시 시도해 주세요."), "error");
+      }
+    } catch {
+      showToast("삭제하지 못했어요. 다시 시도해 주세요.", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const cancelNameDialog = () => {
+    setNameDialogMode(null);
+    setNameInput("");
   };
 
   return (
@@ -617,6 +877,137 @@ export default function SubtitleStyleEditor({ onSettingsChange }: SubtitleStyleE
 
         {/* Expanded content */}
         <Collapse in={expanded} timeout={250}>
+          {/* 스타일 템플릿 영역 */}
+          <Box sx={{ borderTop: "1.5px solid #f2f4f8", px: 3, py: 2.5 }}>
+            <Typography
+              sx={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: "#1976d2",
+                letterSpacing: 0.2,
+                textTransform: "uppercase",
+                mb: 1,
+              }}
+            >
+              스타일 템플릿
+            </Typography>
+
+            {templatesLoading ? (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 0.5 }}>
+                <CircularProgress size={16} />
+                <Typography sx={{ fontSize: 12, color: "#888" }}>
+                  템플릿을 불러오는 중이에요
+                </Typography>
+              </Box>
+            ) : templates.length === 0 ? (
+              <Typography sx={{ fontSize: 12, color: "#888" }}>
+                아직 저장된 템플릿이 없어요. 편집 후 &apos;새 템플릿으로 저장&apos;을 눌러보세요.
+              </Typography>
+            ) : (
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+                {templates.map((t) => (
+                  <TemplateChip
+                    key={t.id}
+                    template={t}
+                    selected={t.id === selectedTemplateId}
+                    onClick={() => handleSelectTemplate(t)}
+                  />
+                ))}
+              </Box>
+            )}
+
+            {/* 액션 버튼 또는 이름 입력/삭제 확인 폼 */}
+            {nameDialogMode ? (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1.5, flexWrap: "wrap" }}>
+                <TextField
+                  size="small"
+                  autoFocus
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  placeholder="템플릿 이름"
+                  inputProps={{ maxLength: 20 }}
+                  sx={{ maxWidth: 220 }}
+                />
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={!nameInput.trim() || actionLoading !== null}
+                  onClick={nameDialogMode === "create" ? handleCreateConfirm : handleRenameConfirm}
+                >
+                  {actionLoading === "create" || actionLoading === "rename" ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    "확인"
+                  )}
+                </Button>
+                <Button size="small" onClick={cancelNameDialog} disabled={actionLoading !== null}>
+                  취소
+                </Button>
+              </Box>
+            ) : deleteConfirming ? (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1.5, flexWrap: "wrap" }}>
+                <Typography sx={{ fontSize: 12.5, color: "#d32f2f" }}>
+                  &apos;{selectedTemplate?.name}&apos; 템플릿을 삭제할까요?
+                </Typography>
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="error"
+                  onClick={handleDelete}
+                  disabled={actionLoading !== null}
+                >
+                  {actionLoading === "delete" ? <CircularProgress size={16} color="inherit" /> : "삭제"}
+                </Button>
+                <Button size="small" onClick={() => setDeleteConfirming(false)} disabled={actionLoading !== null}>
+                  취소
+                </Button>
+              </Box>
+            ) : (
+              <>
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mt: 1.5 }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    disabled={!selectedTemplateId || !hasChanged || actionLoading !== null}
+                    onClick={handleSaveCurrent}
+                  >
+                    {actionLoading === "save" ? <CircularProgress size={16} /> : "현재 편집값 저장"}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    disabled={templates.length >= MAX_TEMPLATES || actionLoading !== null}
+                    onClick={openCreate}
+                  >
+                    새 템플릿으로 저장
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="text"
+                    disabled={!selectedTemplateId || actionLoading !== null}
+                    onClick={openRename}
+                  >
+                    이름 변경
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="text"
+                    color="error"
+                    disabled={!selectedTemplateId || templates.length <= 1 || actionLoading !== null}
+                    onClick={() => setDeleteConfirming(true)}
+                  >
+                    삭제
+                  </Button>
+                </Box>
+                {templates.length >= MAX_TEMPLATES && (
+                  <Typography sx={{ fontSize: 11, color: "#d32f2f", mt: 0.5 }}>
+                    템플릿은 최대 5개까지 저장할 수 있어요
+                  </Typography>
+                )}
+              </>
+            )}
+          </Box>
+
           <Box
             sx={{
               borderTop: "1.5px solid #f2f4f8",
@@ -655,11 +1046,11 @@ export default function SubtitleStyleEditor({ onSettingsChange }: SubtitleStyleE
                 onOpenFontPicker={() => handleOpenPicker("subtitle")}
               />
 
-              {/* Reset button */}
+              {/* Revert button — 선택된 템플릿(또는 기본값)으로 되돌리기 */}
               {hasChanged && (
                 <Box sx={{ mt: 3 }}>
                   <Typography
-                    onClick={handleReset}
+                    onClick={handleRevert}
                     sx={{
                       fontSize: 13,
                       color: "text.secondary",
@@ -669,7 +1060,7 @@ export default function SubtitleStyleEditor({ onSettingsChange }: SubtitleStyleE
                       "&:hover": { color: "#1976d2" },
                     }}
                   >
-                    기본값으로 초기화
+                    변경 내용 되돌리기
                   </Typography>
                 </Box>
               )}
@@ -696,19 +1087,19 @@ export default function SubtitleStyleEditor({ onSettingsChange }: SubtitleStyleE
         onClose={() => setPickerOpen(false)}
       />
 
-      {/* Save toast */}
+      {/* Action toast */}
       <Snackbar
-        open={toastOpen}
-        autoHideDuration={1500}
-        onClose={() => setToastOpen(false)}
+        open={toast.open}
+        autoHideDuration={2000}
+        onClose={() => setToast((prev) => ({ ...prev, open: false }))}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
         <Alert
-          onClose={() => setToastOpen(false)}
-          severity="success"
+          onClose={() => setToast((prev) => ({ ...prev, open: false }))}
+          severity={toast.severity}
           sx={{ width: "100%" }}
         >
-          저장됐어요
+          {toast.message}
         </Alert>
       </Snackbar>
 
