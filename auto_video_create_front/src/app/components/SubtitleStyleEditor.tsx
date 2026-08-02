@@ -544,6 +544,8 @@ export default function SubtitleStyleEditor({ onSettingsChange }: SubtitleStyleE
   const [nameDialogMode, setNameDialogMode] = useState<NameDialogMode>(null);
   const [nameInput, setNameInput] = useState("");
   const [deleteConfirming, setDeleteConfirming] = useState(false);
+  // 미저장 편집이 있는 상태에서 다른 템플릿으로 전환 시도 시, 확인 대기 중인 대상 템플릿.
+  const [pendingSwitch, setPendingSwitch] = useState<SubtitleTemplate | null>(null);
   const [actionLoading, setActionLoading] = useState<ActionKind>(null);
 
   const [toast, setToast] = useState<{ open: boolean; message: string; severity: "success" | "error" }>({
@@ -652,13 +654,24 @@ export default function SubtitleStyleEditor({ onSettingsChange }: SubtitleStyleE
 
   // ── 템플릿 선택 ──────────────────────────────────────────────────────────
 
-  const handleSelectTemplate = (template: SubtitleTemplate) => {
+  const doSelectTemplate = (template: SubtitleTemplate) => {
     setSelectedTemplateId(template.id);
     const loaded: SubtitleSettings = { title: template.title, subtitle: template.subtitle };
     setSettings(loaded);
     onSettingsChange(loaded);
     setNameDialogMode(null);
     setDeleteConfirming(false);
+    setPendingSwitch(null);
+  };
+
+  const handleSelectTemplate = (template: SubtitleTemplate) => {
+    if (template.id === selectedTemplateId) return;
+    // 미저장 편집이 있으면 바로 덮어쓰지 않고 전환 확인을 먼저 받는다 (편집 유실 방지).
+    if (hasChanged) {
+      setPendingSwitch(template);
+      return;
+    }
+    doSelectTemplate(template);
   };
 
   // ── 액션: 현재 편집값 저장 (선택된 템플릿에 PUT) ────────────────────────
@@ -916,8 +929,26 @@ export default function SubtitleStyleEditor({ onSettingsChange }: SubtitleStyleE
               </Box>
             )}
 
-            {/* 액션 버튼 또는 이름 입력/삭제 확인 폼 */}
-            {nameDialogMode ? (
+            {/* 액션 버튼 또는 전환 경고/이름 입력/삭제 확인 폼 */}
+            {pendingSwitch ? (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1.5, flexWrap: "wrap" }}>
+                <Typography sx={{ fontSize: 12.5, color: "#d32f2f" }}>
+                  저장하지 않은 변경이 있어요. &apos;{pendingSwitch.name}&apos;(으)로 전환하면 변경 내용이 사라져요.
+                </Typography>
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="error"
+                  onClick={() => doSelectTemplate(pendingSwitch)}
+                  disabled={actionLoading !== null}
+                >
+                  전환
+                </Button>
+                <Button size="small" onClick={() => setPendingSwitch(null)} disabled={actionLoading !== null}>
+                  취소
+                </Button>
+              </Box>
+            ) : nameDialogMode ? (
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1.5, flexWrap: "wrap" }}>
                 <TextField
                   size="small"
