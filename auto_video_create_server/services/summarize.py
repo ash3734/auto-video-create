@@ -27,6 +27,54 @@ SHORTS_OUTPUT_SCHEMA = {
     "additionalProperties": False,
 }
 
+# VOC-2 (이미지 자동 매칭): 이미지 목록이 있을 때 쓰는 확장 스키마 —
+# 스크립트별로 어울리는 이미지 번호(1-based)를 함께 받는다.
+SHORTS_OUTPUT_SCHEMA_WITH_IMAGES = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "scripts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "script": {"type": "string"},
+                    "image_index": {"type": ["integer", "null"]},
+                },
+                "required": ["script", "image_index"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["title", "scripts"],
+    "additionalProperties": False,
+}
+
+# VOC-2: 기존 카테고리 프롬프트 뒤에 붙이는 이미지 매칭 부록.
+# 기존 스크립트 생성 호출에 피기백 — 추가 API 호출 없음 (30초 타임아웃 안전).
+IMAGE_MATCHING_ADDENDUM = """
+
+- 이미지 자동 매칭 (추가 작업):
+아래는 블로그 본문에서 추출한 이미지 목록이야. 번호는 1부터 시작해.
+각 스크립트 내용에 가장 잘 어울리는 이미지 번호를 각 스크립트의 "image_index" 로 함께 반환해줘.
+규칙:
+1) 같은 번호를 두 번 이상 쓰지 마 (스크립트마다 서로 다른 이미지).
+2) 어울리는 이미지가 정말 없으면 null 을 넣어.
+3) scripts 의 각 원소는 {{"script": "...", "image_index": 번호 또는 null}} 형태여야 해.
+
+이미지 목록:
+{image_list}
+"""
+
+
+def _format_image_list_for_prompt(image_infos, limit=20):
+    """image_infos → 프롬프트용 번호 목록 텍스트 (1-based, 최대 limit개)."""
+    lines = []
+    for i, info in enumerate(image_infos[:limit], start=1):
+        desc = (info.get("caption") or "").strip() or (info.get("context") or "").strip() or "(설명 없음)"
+        lines.append(f"[{i}] {desc[:80]}")
+    return "\n".join(lines)
+
 def extract_json_from_codeblock(content):
     match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", content)
     if match:
@@ -121,7 +169,7 @@ GENERAL_PROMPT = """
 """
 
 
-def _generate_with_claude(prompt):
+def _generate_with_claude(prompt, schema=None):
     """Claude Sonnet 으로 title+scripts JSON 텍스트 생성. refusal 시 None."""
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     # Sonnet 5 는 adaptive thinking 이 기본이라 max_tokens 에 사고 토큰 여유가 필요.
@@ -131,7 +179,7 @@ def _generate_with_claude(prompt):
         max_tokens=4000,
         output_config={
             "effort": "low",
-            "format": {"type": "json_schema", "schema": SHORTS_OUTPUT_SCHEMA},
+            "format": {"type": "json_schema", "schema": schema or SHORTS_OUTPUT_SCHEMA},
         },
         system="당신은 유능한 영상 스크립트 작가입니다.",
         messages=[{"role": "user", "content": prompt}],
@@ -159,20 +207,36 @@ def _generate_with_openai(prompt):
     return response.choices[0].message.content.strip()
 
 
-def summarize_for_shorts_sets(text, category: str = "restaurant"):
+def summarize_for_shorts_sets(text, category: str = "restaurant", image_infos=None):
     """카테고리에 따라 다른 프롬프트로 쇼츠용 title+scripts(5개) 생성.
 
     ANTHROPIC_API_KEY 가 있으면 Claude Sonnet, 없으면 기존 OpenAI 로 동작.
 
+    VOC-2: image_infos 가 있으면 이미지 매칭 부록을 피기백 —
+    scripts 각 원소에 image_index(1-based 또는 null) 가 포함될 수 있다.
+    호출부(blog_shorts)가 꺼내 쓰고 FE 응답에서는 제거한다.
+
     Args:
         text: 블로그 본문
         category: 'restaurant' (맛집, 기존) 또는 'general' (일반 블로그)
+        image_infos: [{"url","caption","context"}, ...] 또는 None
     """
     template = RESTAURANT_PROMPT if category == "restaurant" else GENERAL_PROMPT
     prompt = template.format(text=text)
+    schema = SHORTS_OUTPUT_SCHEMA
+    if image_infos:
+        try:
+            prompt += IMAGE_MATCHING_ADDENDUM.format(
+                image_list=_format_image_list_for_prompt(image_infos)
+            )
+            schema = SHORTS_OUTPUT_SCHEMA_WITH_IMAGES
+        except Exception as e:
+            # 이미지 부록 구성 실패 시 매칭 없이 기존 동작 (방어적)
+            print(f"[summarize] 이미지 매칭 부록 구성 실패 — 매칭 없이 진행: {e}")
+            schema = SHORTS_OUTPUT_SCHEMA
     try:
         if os.environ.get("ANTHROPIC_API_KEY"):
-            content = _generate_with_claude(prompt)
+            content = _generate_with_claude(prompt, schema=schema)
         else:
             print("[summarize] ANTHROPIC_API_KEY 미설정 — OpenAI fallback 사용")
             content = _generate_with_openai(prompt)

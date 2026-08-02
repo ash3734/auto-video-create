@@ -31,6 +31,28 @@ interface SectionMedia {
   isDefaultBackground?: boolean;
 }
 
+// VOC-2: extract-all 응답의 suggested_sections 원소 타입 (BE 계약)
+type SuggestedSection = { type: 'image'; url: string } | { type: 'default'; url: null };
+
+// VOC-2: BE 응답의 suggested_sections 를 방어적으로 파싱한다.
+// 형식이 계약과 조금이라도 다르면(구버전 BE 포함) null 을 반환해 기존 동작(빈 슬롯)으로 폴백한다.
+function parseSuggestedSections(raw: unknown, expectedLength: number): SuggestedSection[] | null {
+  if (!Array.isArray(raw) || expectedLength <= 0 || raw.length !== expectedLength) return null;
+  const parsed: SuggestedSection[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") return null;
+    const { type, url } = item as { type?: unknown; url?: unknown };
+    if (type === "image" && typeof url === "string" && url.length > 0) {
+      parsed.push({ type: "image", url });
+    } else if (type === "default" && (url === null || url === undefined)) {
+      parsed.push({ type: "default", url: null });
+    } else {
+      return null;
+    }
+  }
+  return parsed;
+}
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
 const getProxiedImageUrl = (url: string) => `/api/image-proxy?url=${encodeURIComponent(url)}`;
@@ -65,6 +87,10 @@ export default function Home() {
 
   // sectionMedia: 길이 5, 각 원소는 SectionMedia 또는 null
   const [sectionMedia, setSectionMedia] = useState<(SectionMedia|null)[]>([null, null, null, null, null]);
+
+  // VOC-2: extract-all 응답의 suggested_sections 로 자동 채워진 이미지 슬롯 수.
+  // 1개 이상일 때만 select 진입 안내 문구를 노출한다.
+  const [autoFilledImageCount, setAutoFilledImageCount] = useState(0);
 
   // GPT가 생성한 스크립트 수정 상태 (수정 중인 카드 인덱스 + 임시 텍스트)
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
@@ -164,6 +190,7 @@ export default function Home() {
     setVideoUrl(null);
     setGenerateError(null);
     setSectionMedia([null, null, null, null, null]);
+    setAutoFilledImageCount(0);
     setEditingIdx(null);
     setEditingText("");
     const controller = new AbortController();
@@ -179,19 +206,41 @@ export default function Home() {
       const data = await res.json();
       if (data.status === "success") {
         setMedia({ images: data.images, videos: data.videos, scripts: data.scripts, title: data.title });
-        setScripts((data.scripts || []).map((s: { script: string } | string) => typeof s === 'string' ? s : s.script));
+        const scriptList: string[] = (data.scripts || []).map((s: { script: string } | string) => typeof s === 'string' ? s : s.script);
+        setScripts(scriptList);
         setTitle(data.title || "");
-        // cycle-2: BE 가 default_slot_count 만큼 부족 슬롯을 알려주면 후반부를 AI 기본 배경으로 채움
-        const defaultCount: number = typeof data.default_slot_count === 'number' ? data.default_slot_count : 0;
-        if (defaultCount > 0) {
-          setSectionMedia(prev => {
-            const updated = [...prev];
-            const start = Math.max(0, 5 - defaultCount);
-            for (let i = start; i < 5; i++) {
-              updated[i] = { type: 'default', url: null, isDefaultBackground: true };
+
+        // VOC-2: extract-all 응답의 suggested_sections 로 sectionMedia 초기값을 자동 채움 (default 제안, 강제 아님).
+        // 형식이 계약과 다르면(필드 없음/구버전 BE 포함) null 반환 → 기존 default_slot_count 폴백 동작 유지.
+        const suggested = parseSuggestedSections(data.suggested_sections, scriptList.length);
+        if (suggested) {
+          const filled: (SectionMedia | null)[] = [null, null, null, null, null];
+          let imageCount = 0;
+          suggested.forEach((item, i) => {
+            if (i >= filled.length) return;
+            if (item.type === 'image') {
+              filled[i] = { type: 'image', url: item.url };
+              imageCount++;
+            } else {
+              filled[i] = { type: 'default', url: null, isDefaultBackground: true };
             }
-            return updated;
           });
+          setSectionMedia(filled);
+          setAutoFilledImageCount(imageCount);
+        } else {
+          setAutoFilledImageCount(0);
+          // cycle-2: BE 가 default_slot_count 만큼 부족 슬롯을 알려주면 후반부를 AI 기본 배경으로 채움
+          const defaultCount: number = typeof data.default_slot_count === 'number' ? data.default_slot_count : 0;
+          if (defaultCount > 0) {
+            setSectionMedia(prev => {
+              const updated = [...prev];
+              const start = Math.max(0, 5 - defaultCount);
+              for (let i = start; i < 5; i++) {
+                updated[i] = { type: 'default', url: null, isDefaultBackground: true };
+              }
+              return updated;
+            });
+          }
         }
         setStep('select');
       } else {
@@ -274,6 +323,7 @@ export default function Home() {
     setVideoUrl(null);
     setGenerateError(null);
     setSectionMedia([null, null, null, null, null]);
+    setAutoFilledImageCount(0);
     setEditingIdx(null);
     setEditingText("");
   };
@@ -436,6 +486,15 @@ export default function Home() {
                   >
                     이미지를 선택해 주세요 — 5개를 모두 고르면 영상 생성하기가 활성화됩니다.
                   </Typography>
+                  {/* VOC-2: suggested_sections 로 자동 채워진 슬롯이 있을 때만 안내 */}
+                  {autoFilledImageCount > 0 && (
+                    <Typography
+                      variant="body2"
+                      sx={{ color: '#666', mb: 2, fontSize: 13, wordBreak: 'keep-all' }}
+                    >
+                      글 내용에 맞춰 이미지를 자동으로 넣어드렸어요. 눌러서 바꿀 수 있어요.
+                    </Typography>
+                  )}
                 </Box>
                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 4, px: 4, py: 2, maxWidth: 1200, mx: 'auto', width: '100%' }}>
                   {/* 왼쪽: 스크립트 */}
@@ -639,6 +698,12 @@ export default function Home() {
             ) : (
               <Box sx={{ width: "100%", mb: 4 }}>
                 <Typography variant="h6" gutterBottom>생성된 스크립트</Typography>
+                {/* VOC-2: suggested_sections 로 자동 채워진 슬롯이 있을 때만 안내 */}
+                {autoFilledImageCount > 0 && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2, wordBreak: 'keep-all' }}>
+                    글 내용에 맞춰 이미지를 자동으로 넣어드렸어요. 눌러서 바꿀 수 있어요.
+                  </Typography>
+                )}
                 <TextField
                   label="영상 제목"
                   value={title}

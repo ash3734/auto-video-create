@@ -71,11 +71,48 @@ def _extract_image_candidates(img_tag) -> List[str]:
     return candidates
 
 
-def extract_blog_content(url):
+def _extract_caption_and_context(img_tag) -> tuple:
+    """이미지 태그의 캡션(se-caption/alt)과 직후 본문 텍스트 일부를 추출한다.
+
+    VOC-2 (이미지 자동 매칭): LLM 이 '글 맥락에 맞는 이미지'를 고를 수 있도록
+    이미지별 텍스트 단서를 수집한다. 실패해도 빈 문자열로 조용히 처리 (방어적).
     """
-    네이버 블로그 글에서 본문 텍스트, 이미지 URL 리스트, 비디오 URL 리스트를 추출
-    :param url: 네이버 블로그 글 URL
-    :return: (본문 텍스트, 이미지 URL 리스트, 비디오 URL 리스트)
+    caption = (img_tag.get("alt") or "").strip()
+    try:
+        comp = img_tag.find_parent(class_=lambda c: c and "se-component" in c)
+        if comp is not None:
+            cap_el = comp.find(class_=lambda c: c and "se-caption" in c)
+            if cap_el is not None:
+                cap_text = cap_el.get_text(" ", strip=True)
+                if cap_text:
+                    caption = cap_text
+    except Exception:
+        pass
+
+    context = ""
+    try:
+        parts = []
+        total = 0
+        for s in img_tag.find_all_next(string=True):
+            t = s.strip()
+            if not t:
+                continue
+            parts.append(t)
+            total += len(t)
+            if total >= 80:
+                break
+        context = " ".join(parts)[:80]
+    except Exception:
+        context = ""
+    return caption[:60], context
+
+
+def extract_blog_content_rich(url):
+    """네이버 블로그 글에서 본문/이미지/비디오 + 이미지별 컨텍스트를 추출.
+
+    VOC-2 (이미지 자동 매칭) 신규.
+    :return: (text, images, videos, image_infos)
+             image_infos = [{"url", "caption", "context"}, ...] — images 와 같은 순서/길이
     """
     resp = requests.get(url)
     resp.raise_for_status()
@@ -104,19 +141,25 @@ def extract_blog_content(url):
     # https://postfiles.pstatic.net/MjAyNTA1MDlfMTYg/MDAxNzQ2NzkyNjgyNTc2.ier0FJ-ccb5aPRgLALg5MdbadK33W8m6cgh0jeoMIJQg.wZof1W8HIwiECHl_uHAURh0PmzUBzq3rrP7vOHLRdwQg.JPEG/IMG_2224.JPG?type=w966
     # https://postfiles.pstatic.net/MjAyNTA1MDlfMTYg/MDAxNzQ2NzkyNjgyNTc2.ier0FJ-ccb5aPRgLALg5MdbadK33W8m6cgh0jeoMIJQg.wZof1W8HIwiECHl_uHAURh0PmzUBzq3rrP7vOHLRdwQg.JPEG/IMG_2224.JPG?type=w80_blur
 
-    # 이미지 링크 추출
+    # 이미지 링크 추출 (+ VOC-2: 이미지별 캡션/주변 텍스트)
     images = []
+    image_infos = []
     seen_images = set()
     img_count = 0
     for img in main_area.find_all('img'):
+        caption = None  # 태그당 1회만 계산 (lazy)
+        context = None
         for candidate in _extract_image_candidates(img):
             full_url = _normalize_image_url(url, candidate)
             if not _is_valid_naver_image_url(full_url):
                 continue
             if full_url in seen_images:
                 continue
+            if caption is None:
+                caption, context = _extract_caption_and_context(img)
             seen_images.add(full_url)
             images.append(full_url)
+            image_infos.append({"url": full_url, "caption": caption, "context": context})
             img_count += 1
             print(f"[이미지 {img_count}] {full_url}")
 
@@ -137,6 +180,16 @@ def extract_blog_content(url):
                 video_count += 1
                 print(f"[비디오 {video_count}] {urljoin(url, src)}")
 
+    return text, images, videos, image_infos
+
+
+def extract_blog_content(url):
+    """
+    네이버 블로그 글에서 본문 텍스트, 이미지 URL 리스트, 비디오 URL 리스트를 추출
+    (하위호환 시그니처 유지 — rich 버전 extract_blog_content_rich 위임)
+    :return: (본문 텍스트, 이미지 URL 리스트, 비디오 URL 리스트)
+    """
+    text, images, videos, _ = extract_blog_content_rich(url)
     return text, images, videos
 
 # 콘솔에서만 사용할 선택 함수 (API에서는 사용하지 않음)
