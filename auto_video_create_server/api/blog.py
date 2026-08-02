@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from services.blog_shorts import extract_blog_content, get_blog_media_and_scripts
 from services.summarize import summarize_for_shorts_sets
@@ -13,7 +14,15 @@ from services.subtitle_settings_service import (
     get_subtitle_settings,
     save_subtitle_settings,
     validate_subtitle_settings,
+    validate_text_style,
     apply_subtitle_settings_to_variables,
+    # feat/style-templates: 이름 붙인 템플릿 CRUD (최대 5개)
+    get_subtitle_templates,
+    create_subtitle_template,
+    update_subtitle_template,
+    delete_subtitle_template,
+    TemplateLimitReachedError,
+    TemplateNotFoundError,
 )
 from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
@@ -209,6 +218,19 @@ class SubtitleSettingsModel(BaseModel):
 class SubtitleSettingsRequest(BaseModel):
     title: TextStyleModel
     subtitle: TextStyleModel
+
+
+# feat/style-templates: 이름 붙인 템플릿(최대 5개) 요청 모델
+class SubtitleTemplateCreateRequest(BaseModel):
+    name: str
+    title: TextStyleModel
+    subtitle: TextStyleModel
+
+
+class SubtitleTemplateUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    title: Optional[TextStyleModel] = None
+    subtitle: Optional[TextStyleModel] = None
 
 
 # --- 최종 영상 생성 API ---
@@ -431,3 +453,184 @@ def put_subtitle_settings_endpoint(
         print(f"[put_subtitle_settings 에러] user={user_id} {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="설정을 저장할 수 없습니다.")
+
+
+# ─────────────────────────────────────────────
+# feat/style-templates 신규 엔드포인트
+#
+# 계정당 단일 subtitle_settings 를 대체하는 것이 아니라, 이름 붙인 템플릿
+# 최대 5개(subtitle_templates)를 저장/재사용할 수 있게 하는 편의 계층.
+# generate-video 는 변경 없음 — FE 가 선택한 템플릿의 {title, subtitle} 을
+# 그대로 subtitle_settings 로 보낸다.
+#
+# 기존 GET/PUT /subtitle-settings 엔드포인트는 하위 호환을 위해 그대로 유지한다
+# (제거하지 않음). 신규 FE 는 아래 CRUD 를 사용한다.
+# ─────────────────────────────────────────────
+
+@router.get("/subtitle-templates")
+def get_subtitle_templates_endpoint(user=Depends(require_active_subscription)):
+    """
+    GET /api/blog/subtitle-templates
+
+    이름 붙인 자막 스타일 템플릿 목록 조회 (계정당 최대 5개).
+    레거시 단일 subtitle_settings 만 있는 계정은 자동 마이그레이션되어
+    [{id, name:"템플릿 1", title, subtitle}] 형태로 반환된다(영속화는 다음
+    저장/수정/삭제 시점에 lazy 하게 이뤄짐 — 조회만으로는 S3 에 쓰지 않음).
+
+    응답: { "templates": [{id, name, title, subtitle}, ...] }
+    """
+    user_id = user["id"]
+    try:
+        templates = get_subtitle_templates(user_id)
+        return {"templates": templates}
+    except Exception as e:
+        print(f"[get_subtitle_templates 에러] user={user_id} {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="템플릿 목록을 불러올 수 없습니다.")
+
+
+@router.post("/subtitle-templates")
+def create_subtitle_template_endpoint(
+    req: SubtitleTemplateCreateRequest,
+    user=Depends(require_active_subscription),
+):
+    """
+    POST /api/blog/subtitle-templates
+
+    신규 이름 붙인 자막 스타일 템플릿 생성. 계정당 최대 5개.
+    이미 5개면 400 + {"error_code": "template_limit_reached"}.
+    스타일 검증 실패 시 400 + 메시지.
+
+    응답(성공): 생성된 템플릿 {id, name, title, subtitle}
+    """
+    user_id = user["id"]
+
+    if not req.name or not req.name.strip():
+        raise HTTPException(status_code=400, detail="템플릿 이름은 비어있을 수 없습니다.")
+
+    style_dict = {"title": req.title.model_dump(), "subtitle": req.subtitle.model_dump()}
+
+    try:
+        allowed_families = get_allowed_font_families()
+    except Exception:
+        allowed_families = set()
+        print("[create_subtitle_template] font 허용 목록 로드 실패 — 검증 완화")
+
+    errors = validate_subtitle_settings(style_dict, allowed_families)
+    if errors:
+        raise HTTPException(
+            status_code=400,
+            detail="유효하지 않은 설정값입니다.: " + " | ".join(errors),
+        )
+
+    try:
+        template = create_subtitle_template(
+            user_id, req.name.strip(), style_dict["title"], style_dict["subtitle"]
+        )
+        return template
+    except TemplateLimitReachedError:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error_code": "template_limit_reached",
+                "message": "템플릿은 최대 5개까지 저장할 수 있습니다.",
+            },
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[create_subtitle_template 에러] user={user_id} {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="템플릿을 생성할 수 없습니다.")
+
+
+@router.put("/subtitle-templates/{template_id}")
+def update_subtitle_template_endpoint(
+    template_id: str,
+    req: SubtitleTemplateUpdateRequest,
+    user=Depends(require_active_subscription),
+):
+    """
+    PUT /api/blog/subtitle-templates/{template_id}
+
+    기존 템플릿 부분 수정 — name/title/subtitle 중 요청에 포함된(None 이 아닌)
+    필드만 반영. 없는 template_id 면 404. 검증 실패 시 400.
+
+    응답(성공): 수정된 템플릿 {id, name, title, subtitle}
+    """
+    user_id = user["id"]
+
+    if req.name is not None and not req.name.strip():
+        raise HTTPException(status_code=400, detail="템플릿 이름은 비어있을 수 없습니다.")
+
+    title_dict = req.title.model_dump() if req.title is not None else None
+    subtitle_dict = req.subtitle.model_dump() if req.subtitle is not None else None
+
+    if title_dict is not None or subtitle_dict is not None:
+        try:
+            allowed_families = get_allowed_font_families()
+        except Exception:
+            allowed_families = set()
+            print("[update_subtitle_template] font 허용 목록 로드 실패 — 검증 완화")
+
+        errors: List[str] = []
+        if title_dict is not None:
+            errors.extend(f"[title] {e}" for e in validate_text_style(title_dict, allowed_families))
+        if subtitle_dict is not None:
+            errors.extend(f"[subtitle] {e}" for e in validate_text_style(subtitle_dict, allowed_families))
+
+        if errors:
+            raise HTTPException(
+                status_code=400,
+                detail="유효하지 않은 설정값입니다.: " + " | ".join(errors),
+            )
+
+    try:
+        template = update_subtitle_template(
+            user_id,
+            template_id,
+            name=req.name.strip() if req.name is not None else None,
+            title=title_dict,
+            subtitle=subtitle_dict,
+        )
+        return template
+    except TemplateNotFoundError:
+        raise HTTPException(status_code=404, detail="템플릿을 찾을 수 없습니다.")
+    except LookupError:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[update_subtitle_template 에러] user={user_id} {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="템플릿을 수정할 수 없습니다.")
+
+
+@router.delete("/subtitle-templates/{template_id}")
+def delete_subtitle_template_endpoint(
+    template_id: str,
+    user=Depends(require_active_subscription),
+):
+    """
+    DELETE /api/blog/subtitle-templates/{template_id}
+
+    템플릿 삭제. 없으면 404.
+
+    응답(성공): { "status": "success" }
+    """
+    user_id = user["id"]
+    try:
+        delete_subtitle_template(user_id, template_id)
+        return {"status": "success"}
+    except TemplateNotFoundError:
+        raise HTTPException(status_code=404, detail="템플릿을 찾을 수 없습니다.")
+    except LookupError:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[delete_subtitle_template 에러] user={user_id} {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="템플릿을 삭제할 수 없습니다.")
