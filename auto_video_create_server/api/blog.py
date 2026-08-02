@@ -23,6 +23,7 @@ from services.subtitle_settings_service import (
     delete_subtitle_template,
     TemplateLimitReachedError,
     TemplateNotFoundError,
+    LastTemplateError,
 )
 from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
@@ -624,6 +625,14 @@ def delete_subtitle_template_endpoint(
     try:
         delete_subtitle_template(user_id, template_id)
         return {"status": "success"}
+    except LastTemplateError:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error_code": "cannot_delete_last_template",
+                "message": "마지막 템플릿은 삭제할 수 없어요.",
+            },
+        )
     except TemplateNotFoundError:
         raise HTTPException(status_code=404, detail="템플릿을 찾을 수 없습니다.")
     except LookupError:

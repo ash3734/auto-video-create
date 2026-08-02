@@ -77,6 +77,10 @@ class TemplateNotFoundError(Exception):
     """지정한 template_id 가 사용자의 템플릿 목록에 없을 때 발생."""
 
 
+class LastTemplateError(Exception):
+    """마지막 남은 1개 템플릿을 삭제하려 할 때 발생 (최소 1개 유지)."""
+
+
 # ─────────────────────────────────────────────
 # 유효성 검증 헬퍼
 # ─────────────────────────────────────────────
@@ -389,6 +393,12 @@ def delete_subtitle_template(user_id: str, template_id: str) -> None:
             logger.warning(f"[subtitle_templates] DELETE user={user_id} template_id={template_id} — 템플릿 없음")
             raise TemplateNotFoundError(f"템플릿을 찾을 수 없습니다: {template_id}")
 
+        # 최소 1개 템플릿 유지 — 마지막 남은 템플릿 삭제 방지 (서버측 강제).
+        # FE 도 버튼을 비활성화하지만, 동시 요청/다른 클라이언트 경로에서 0개가 되는 것을 막는다.
+        if len(new_templates) == 0:
+            logger.warning(f"[subtitle_templates] DELETE user={user_id} template_id={template_id} — 마지막 템플릿 삭제 거부")
+            raise LastTemplateError("마지막 템플릿은 삭제할 수 없습니다.")
+
         target_user["subtitle_templates"] = new_templates
 
         _s3.put_object(
@@ -397,7 +407,7 @@ def delete_subtitle_template(user_id: str, template_id: str) -> None:
             Body=json.dumps(users, ensure_ascii=False, indent=2).encode("utf-8"),
         )
         logger.info(f"[subtitle_templates] DELETE user={user_id} template_id={template_id} 완료")
-    except (LookupError, TemplateNotFoundError):
+    except (LookupError, TemplateNotFoundError, LastTemplateError):
         raise
     except Exception as e:
         logger.error(f"[subtitle_templates] DELETE 실패 user={user_id} template_id={template_id}: {e}")
