@@ -250,10 +250,20 @@ class TestUpdateSubtitleTemplate(StyleTemplatesTestCase):
 class TestDeleteSubtitleTemplate(StyleTemplatesTestCase):
 
     def test_delete_success(self):
-        self.svc.delete_subtitle_template("templated_user", "tpl-1")
+        # 2개 이상인 유저(five_templates_user)에서 삭제 — 마지막 1개 아님
+        templates = self.svc.get_subtitle_templates("five_templates_user")
+        target_id = templates[0]["id"]
+        self.svc.delete_subtitle_template("five_templates_user", target_id)
         saved_users = self._put_object_body()
-        saved_user = self._find_user(saved_users, "templated_user")
-        self.assertEqual(saved_user["subtitle_templates"], [])
+        saved_user = self._find_user(saved_users, "five_templates_user")
+        self.assertEqual(len(saved_user["subtitle_templates"]), 4)
+        self.assertNotIn(target_id, [t["id"] for t in saved_user["subtitle_templates"]])
+
+    def test_delete_last_template_blocked(self):
+        """마지막 남은 1개 템플릿 삭제는 서버가 차단 (최소 1개 유지 — PO 확정 2026-08-02)."""
+        with self.assertRaises(self.svc.LastTemplateError):
+            self.svc.delete_subtitle_template("templated_user", "tpl-1")
+        self.mock_s3.put_object.assert_not_called()
 
     def test_delete_missing_template_raises_not_found(self):
         with self.assertRaises(self.svc.TemplateNotFoundError):
@@ -265,11 +275,14 @@ class TestDeleteSubtitleTemplate(StyleTemplatesTestCase):
             self.svc.delete_subtitle_template("nonexistent_user", "tpl-1")
 
     def test_delete_from_legacy_migrated_list(self):
-        """legacy 유저도 마이그레이션된 항목을 삭제할 수 있어야 함(lazy 영속화 확인 포함).
+        """legacy 유저의 마이그레이션 id 가 결정적(uuid5)인지 + DELETE 가 그 id 를 인식하는지.
 
         GET 과 DELETE 는 각각 별도로 load_json_from_s3 를 호출(=별도로 마이그레이션)
         하므로, id 가 결정적(uuid5)이지 않으면 GET 에서 받은 id 로 DELETE 가 404 나는
         회귀가 발생한다 — 이 테스트는 그 회귀를 방지한다.
+
+        (갱신) 마지막 1개 삭제는 이제 LastTemplateError 로 차단되므로, "id 를 인식했다"는
+        것은 TemplateNotFoundError(404)가 아니라 LastTemplateError 가 나오는 것으로 검증.
         """
         templates = self.svc.get_subtitle_templates("legacy_user")
         migrated_id = templates[0]["id"]
@@ -278,10 +291,9 @@ class TestDeleteSubtitleTemplate(StyleTemplatesTestCase):
         templates_again = self.svc.get_subtitle_templates("legacy_user")
         self.assertEqual(templates_again[0]["id"], migrated_id)
 
-        self.svc.delete_subtitle_template("legacy_user", migrated_id)
-        saved_users = self._put_object_body()
-        saved_user = self._find_user(saved_users, "legacy_user")
-        self.assertEqual(saved_user["subtitle_templates"], [])
+        # 결정적 id 가 인식됨 → NotFound(회귀)가 아니라 마지막 1개 차단 에러
+        with self.assertRaises(self.svc.LastTemplateError):
+            self.svc.delete_subtitle_template("legacy_user", migrated_id)
 
 
 # ─────────────────────────────────────────────
