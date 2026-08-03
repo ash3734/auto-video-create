@@ -421,16 +421,22 @@ def delete_subtitle_template(user_id: str, template_id: str) -> None:
 def apply_subtitle_settings_to_variables(
     variables: dict,
     subtitle_settings: Optional[dict],
+    subtitle_suffixes: Optional[list] = None,
 ) -> None:
     """
     subtitle_settings 를 Creatomate modifications dict (variables) 에 주입.
     subtitle_settings 가 None/비어있으면 아무것도 주입 안 함 (기존 동작 유지).
+
+    subtitle_suffixes: 장면 수별 자막 element suffix 목록 (scene_counts 에서 룩업).
+        None 이면 기본(5장면) suffix 사용 — 기존 동작 유지.
+        빈 목록이면 자막 주입을 건너뛴다 (템플릿 suffix 미확보 상태).
 
     api-contract.md "BE 처리 로직 — Creatomate modifications 주입" 구현.
     변수는 in-place 수정.
     """
     if not subtitle_settings:
         return
+    suffixes = SUBTITLE_SUFFIXES if subtitle_suffixes is None else subtitle_suffixes
 
     ts = subtitle_settings.get("title") or {}
     ss = subtitle_settings.get("subtitle") or {}
@@ -451,7 +457,7 @@ def apply_subtitle_settings_to_variables(
     )
     sub_color = ss.get("fill_color") or DEFAULT_SUBTITLE_SETTINGS["fill_color"]
 
-    for suffix in SUBTITLE_SUFFIXES:
+    for suffix in suffixes:
         variables[f"Subtitles-{suffix}.font_family"] = sub_font
         variables[f"Subtitles-{suffix}.font_size"] = sub_size
         variables[f"Subtitles-{suffix}.fill_color"] = sub_color

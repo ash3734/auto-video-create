@@ -17,6 +17,7 @@ from crawler.dispatcher import UnsupportedPlatformError  # noqa: F401  (re-expor
 from crawler.naver import extract_blog_content  # noqa: F401  (backward-compat re-export)
 from .summarize import summarize_for_shorts_sets
 from .classifier import classify_blog
+from .scene_counts import normalize_scene_count
 
 
 def _normalize_image_indices(scripts, image_count):
@@ -59,15 +60,19 @@ def _build_suggested_sections(indices, images):
     return sections
 
 
-def get_blog_media_and_scripts(blog_url: str) -> dict:
-    """블로그 URL 1개 → 추출 + 분류 + 스크립트 생성 + 슬롯 부족 카운트 + 자동 배정 제안."""
+def get_blog_media_and_scripts(blog_url: str, scene_count: int = 5) -> dict:
+    """블로그 URL 1개 → 추출 + 분류 + 스크립트 생성 + 슬롯 부족 카운트 + 자동 배정 제안.
+
+    scene_count: 유저가 고른 장면 수(4~8). 스크립트/슬롯 개수가 이 값을 따른다.
+    """
+    scene_count = normalize_scene_count(scene_count)
     text, images, videos, platform, image_infos = dispatcher_extract_rich(blog_url)
     category = classify_blog(text)
     title, scripts = summarize_for_shorts_sets(
-        text, category=category, image_infos=image_infos or None
+        text, category=category, image_infos=image_infos or None, scene_count=scene_count
     )
-    # 5개 슬롯 중 이미지+영상으로 채워지지 않는 슬롯 수
-    default_slot_count = max(0, 5 - (len(images) + len(videos)))
+    # N개 슬롯 중 이미지+영상으로 채워지지 않는 슬롯 수
+    default_slot_count = max(0, scene_count - (len(images) + len(videos)))
     result = {
         "text": text,
         "images": images,
@@ -77,6 +82,7 @@ def get_blog_media_and_scripts(blog_url: str) -> dict:
         "category": category,
         "platform": platform,
         "default_slot_count": default_slot_count,
+        "scene_count": scene_count,
     }
     # VOC-2: 자동 배정 제안. 실패해도 전체 응답은 정상 (필드 생략 → FE 가 기존 폴백).
     try:

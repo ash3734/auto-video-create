@@ -4,21 +4,32 @@ import json
 import time
 from dotenv import load_dotenv
 from .account_service import check_user_credits, deduct_credits, get_current_credits
+from .scene_counts import get_template_id, normalize_scene_count
 
 load_dotenv()
 
 CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
-if os.environ.get("ENV") == "production":
-    CREATOMATE_TEMPLATE_ID = "cab85e50-1e78-41b8-9644-80a061d349f6"
-else:
-    CREATOMATE_TEMPLATE_ID = "5e530b01-2f3d-428e-b6d6-70a001703550"
+
+# 장면 수별 템플릿 ID 는 services/scene_counts.py 에서 관리한다 (ENV 분기 포함).
+# 하위호환: 기존 코드가 참조하던 모듈 상수는 기본 장면 수(5) 기준으로 유지.
+CREATOMATE_TEMPLATE_ID = get_template_id(5)
 
 ## 네이버 "e78f211a-9e4c-4f5c-a871-36b9d680ee11"
 ## 유튜브 "14457245-7822-48a6-a711-62d15b739b85"
 
-def create_creatomate_video(audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, user_id=None, **kwargs):
+def create_creatomate_video(audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, user_id=None, scene_count=5, **kwargs):
     print("create_creatomate_video 호출")
-    
+
+    scene_count = normalize_scene_count(scene_count)
+    template_id = get_template_id(scene_count)
+    if not template_id:
+        # 해당 장면 수의 Creatomate 템플릿이 아직 등록되지 않음 — 크래시 대신 안전한 에러 응답
+        print(f"[create_creatomate_video] scene_count={scene_count} 템플릿 미등록")
+        return {
+            "error": "scene_count_template_not_configured",
+            "message": f"{scene_count}장면 템플릿이 아직 준비되지 않았어요. 다른 장면 수로 시도해주세요.",
+        }
+
     # 크레딧 체크 (1000 크레딧 필요)
     if user_id:
         if not check_user_credits(user_id, 1000):
@@ -29,21 +40,19 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
                 "current_credits": current_credits,
                 "required_credits": 1000
             }
-    
-    variables = {
-        "audio1.source": audio_paths[0],
-        "audio2.source": audio_paths[1],
-        "audio3.source": audio_paths[2],
-        "audio4.source": audio_paths[3],
-        "audio5.source": audio_paths[4],
-    }
+
+    # 오디오는 장면 수(N)만큼 주입 — 기존 고정 5개 딕셔너리 대체
+    variables = {}
+    for i in range(scene_count):
+        if i < len(audio_paths):
+            variables[f"audio{i + 1}.source"] = audio_paths[i]
     if video5:
         variables["video5.source"] = video5
     if title:
         variables["title.text"] = title
     variables.update(kwargs)
     payload = {
-        "template_id": CREATOMATE_TEMPLATE_ID,
+        "template_id": template_id,
         "modifications": variables
     }
     

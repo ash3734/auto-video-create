@@ -25,6 +25,12 @@ from services.subtitle_settings_service import (
     TemplateNotFoundError,
     LastTemplateError,
 )
+from services.scene_counts import (
+    normalize_scene_count,
+    get_subtitle_suffixes,
+    available_scene_counts,
+    DEFAULT_SCENE_COUNT,
+)
 from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
 import os
@@ -143,6 +149,8 @@ router = APIRouter()
 
 class ExtractMediaRequest(BaseModel):
     blog_url: str
+    # 장면 수 선택 (4~8). 미전송/무효 시 기본 5 — 기존 동작 유지.
+    scene_count: Optional[int] = None
 
 class ExtractMediaResponse(BaseModel):
     status: str
@@ -165,6 +173,21 @@ class SectionMedia(BaseModel):
 def hello():
     return {"message": "Hello, World!!!!!"}
 
+
+@router.get("/scene-counts")
+def get_scene_counts():
+    """GET /api/blog/scene-counts
+
+    선택 가능한 장면 수 목록. available=false 면 템플릿 미등록(선택 불가).
+
+    응답: {"scene_counts": [{"scene_count": 4, "available": false, "is_default": false}, ...],
+           "default_scene_count": 5}
+    """
+    return {
+        "scene_counts": available_scene_counts(),
+        "default_scene_count": DEFAULT_SCENE_COUNT,
+    }
+
 @router.post("/extract-all")
 def extract_all(req: ExtractMediaRequest, user=Depends(require_active_subscription)):
     try:
@@ -179,7 +202,9 @@ def extract_all(req: ExtractMediaRequest, user=Depends(require_active_subscripti
                 "message": "등록된 블로그 주소가 아닙니다. 관리자에게 문의해주세요.",
             }
 
-        result = get_blog_media_and_scripts(req.blog_url)
+        result = get_blog_media_and_scripts(
+            req.blog_url, scene_count=normalize_scene_count(req.scene_count)
+        )
         print("extract_all 성공")
         return {"status": "success", **result}
     except UnsupportedPlatformError as e:
@@ -238,9 +263,11 @@ class SubtitleTemplateUpdateRequest(BaseModel):
 class GenerateVideoRequest(BaseModel):
     title: str
     scripts: List[str]
-    sections: List[SectionMedia]  # 5개
+    sections: List[SectionMedia]  # scene_count 개 (기본 5)
     # cycle-3: optional — 없으면 Creatomate 템플릿 기본값 유지
     subtitle_settings: Optional[SubtitleSettingsModel] = None
+    # 장면 수 선택 (4~8). 미전송 시 scripts 길이에서 추론, 그것도 무효면 기본 5.
+    scene_count: Optional[int] = None
 
 class GenerateVideoResponse(BaseModel):
     status: str
@@ -251,6 +278,11 @@ class GenerateVideoResponse(BaseModel):
 def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscription_and_credits)):
     print("generate_video 호출")
     try:
+        # 장면 수: 명시값 우선, 없으면 scripts 길이에서 추론 (무효 시 기본 5)
+        scene_count = normalize_scene_count(
+            req.scene_count if req.scene_count is not None else len(req.scripts)
+        )
+
         # 1. TTS 변환 (scripts → mp3 url)
         SUPERTONE_API_KEY = os.environ.get("SUPERTONE_API_KEY")
         SUPERTONE_VOICE_ID = "c9220df3a5a70647d7b022"
@@ -261,8 +293,8 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
             voice_id=SUPERTONE_VOICE_ID,
             speed=SUPERTONE_SPEED
         )
-        audio_local_paths = audio_local_paths[:5]
-        audio_urls = audio_urls[:5]
+        audio_local_paths = audio_local_paths[:scene_count]
+        audio_urls = audio_urls[:scene_count]
 
         # 3. 섹션별 미디어 타입에 따라 Creatomate 변수 생성
         # cycle-2: type='default' 슬롯은 AI 배경을 lazy 병렬 생성 (ADR-4).
@@ -306,6 +338,7 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
             apply_subtitle_settings_to_variables(
                 variables,
                 req.subtitle_settings.model_dump(),
+                get_subtitle_suffixes(scene_count),
             )
             print(
                 f"[generate_video] subtitle_settings 주입 완료 "
@@ -319,6 +352,7 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
             scripts=req.scripts,
             title=req.title,
             user_id=user["id"],  # 크레딧 체크/차감을 위해 user_id 전달
+            scene_count=scene_count,
             **variables
         )
         # Creatomate 응답 처리
