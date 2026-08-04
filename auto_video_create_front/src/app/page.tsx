@@ -193,6 +193,20 @@ export default function Home() {
     setEditingText("");
   };
 
+  // 스크립트 슬롯에 배정된 이미지가 로드 실패했을 때 그 슬롯을 비운다.
+  // 자동 배정(VOC-2)이 깨진 이미지 URL(404 등)을 고르면, 이전에는 미리보기 영역만
+  // 숨겨져서 "파란색으로 선택된 것처럼 보이는데 이미지도 없고 해제 버튼(X)도 없는"
+  // 막다른 상태가 됐다. 슬롯을 비워 사용자가 직접 다시 고를 수 있게 한다.
+  const handleSectionImageError = (idx: number) => {
+    setSectionMedia(prev => {
+      if (!prev[idx]) return prev;
+      const updated = [...prev];
+      updated[idx] = null;
+      return updated;
+    });
+    setAutoFilledImageCount(prev => (prev > 0 ? prev - 1 : 0));
+  };
+
   // 섹션 미디어 해제 핸들러 (스크립트별 미리보기에서 X 클릭)
   const handleSectionMediaDeselect = (idx: number) => {
     setSectionMedia(prev => {
@@ -644,7 +658,7 @@ export default function Home() {
                                 <img
                                   src={getProxiedImageUrl(section.url as string)}
                                   alt={`스크립트 ${idx + 1} 이미지`}
-                                  onError={handleImgError}
+                                  onError={() => handleSectionImageError(idx)}
                                   style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 8 }}
                                 />
                               ) : (
