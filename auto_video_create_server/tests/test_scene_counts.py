@@ -43,10 +43,15 @@ class TestTemplateLookup(unittest.TestCase):
         self.assertTrue(sc.is_configured(5))
         self.assertIsNotNone(sc.get_template_id(5))
 
-    def test_unconfigured_counts_return_none(self):
-        for n in [4, 6, 7, 8]:
-            self.assertIsNone(sc.get_template_id(n), f"{n}장면은 아직 placeholder여야 함")
-            self.assertFalse(sc.is_configured(n))
+    def test_all_counts_configured(self):
+        """PO 템플릿 제공(2026-08-04) 이후 4~8 전부 사용 가능해야 한다."""
+        for n in [4, 5, 6, 7, 8]:
+            self.assertTrue(sc.is_configured(n), f"{n}장면 템플릿 미등록")
+
+    def test_template_ids_unique_per_count(self):
+        """장면 수마다 서로 다른 템플릿이어야 한다 (복붙 실수 방지)."""
+        ids = [sc.get_template_id(n) for n in [4, 5, 6, 7, 8]]
+        self.assertEqual(len(set(ids)), len(ids), f"중복 템플릿 ID: {ids}")
 
     def test_env_switches_template_id(self):
         with mock.patch.dict(os.environ, {"ENV": "production"}):
@@ -65,18 +70,26 @@ class TestSubtitleSuffixes(unittest.TestCase):
     def test_5_has_suffixes_matching_count(self):
         suffixes = sc.get_subtitle_suffixes(5)
         self.assertIsNotNone(suffixes)
-        self.assertEqual(len(suffixes), 5, "자막 suffix 개수는 장면 수와 같아야 함")
+        self.assertEqual(len(suffixes), 5, "5장면(기존 템플릿)은 장면 수와 같아야 함")
 
-    def test_unconfigured_returns_none(self):
-        for n in [4, 6, 7, 8]:
-            self.assertIsNone(sc.get_subtitle_suffixes(n))
+    def test_all_counts_have_suffixes(self):
+        for n in [4, 5, 6, 7, 8]:
+            self.assertTrue(sc.get_subtitle_suffixes(n), f"{n}장면 suffix 미등록")
 
-    def test_configured_counts_have_matching_suffix_length(self):
-        """템플릿을 채울 때 suffix 개수를 장면 수와 맞추라는 계약을 강제."""
+    def test_suffix_count_never_exceeds_scene_count(self):
+        """suffix 는 장면 수를 넘을 수 없다 (넘으면 존재하지 않는 element 주입).
+
+        신규 템플릿 4종(4/6/7/8)은 3번 슬롯에 자막 element 가 없어 N-1 개다 —
+        의도된 상태인지는 PO 확인 대상이나, 초과만 아니면 주입은 안전하다.
+        """
         for n, config in sc.SCENE_COUNT_CONFIG.items():
-            suffixes = config.get("subtitle_suffixes")
-            if suffixes is not None:
-                self.assertEqual(len(suffixes), n, f"{n}장면 suffix 개수 불일치")
+            suffixes = config.get("subtitle_suffixes") or []
+            self.assertLessEqual(len(suffixes), n, f"{n}장면 suffix 가 장면 수 초과")
+
+    def test_suffixes_unique_within_template(self):
+        for n, config in sc.SCENE_COUNT_CONFIG.items():
+            suffixes = config.get("subtitle_suffixes") or []
+            self.assertEqual(len(set(suffixes)), len(suffixes), f"{n}장면 suffix 중복")
 
 
 class TestAvailableSceneCounts(unittest.TestCase):
@@ -92,8 +105,8 @@ class TestAvailableSceneCounts(unittest.TestCase):
 
     def test_availability_reflects_config(self):
         options = {o["scene_count"]: o["available"] for o in sc.available_scene_counts()}
-        self.assertTrue(options[5])
-        self.assertFalse(options[4])
+        for n in [4, 5, 6, 7, 8]:
+            self.assertTrue(options[n], f"{n}장면이 available=False")
 
 
 class TestBuildSchema(unittest.TestCase):

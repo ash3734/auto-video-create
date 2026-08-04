@@ -21,32 +21,39 @@ DEFAULT_SCENE_COUNT = 5
 #   template_id_prod / template_id_test: Creatomate 템플릿 ID (ENV 분기)
 #   subtitle_suffixes: 자막 element ID suffix — 반드시 장면 수와 같은 개수여야 한다.
 #                      템플릿마다 다르므로 템플릿과 함께 확보한다.
+# NOTE (2026-08-04, PO 템플릿 제공): 4/6/7/8 템플릿은 prod/test 구분 없이 동일 ID 를 사용한다
+# (PO 가 장면 수당 템플릿 1개씩 제공). 5장면만 기존처럼 prod/test 가 분리돼 있다.
+#
+# NOTE (자막 suffix): 신규 템플릿 4종은 모두 **3번 슬롯에 자막 element 가 없다**
+# (6K5=1번, JTM=2번, 5Z2=4번, D6M=5번, 3KT=6번, 6PM=7번, 3P6=8번).
+# 따라서 suffix 개수는 장면 수보다 1 적다. 자막 스타일 주입은 존재하는 element 에만
+# 적용되므로 동작에는 문제가 없으나, 3번 장면 자막이 의도된 것인지는 PO 확인 대상.
 SCENE_COUNT_CONFIG: dict = {
     4: {
-        "template_id_prod": None,   # ⬜ PO 템플릿 제작 후 입력
-        "template_id_test": None,   # ⬜
-        "subtitle_suffixes": None,  # ⬜ 4개
+        "template_id_prod": "0e8036d2-04d3-436c-8c02-7b8708a85f06",
+        "template_id_test": "0e8036d2-04d3-436c-8c02-7b8708a85f06",
+        "subtitle_suffixes": ["6K5", "JTM", "5Z2"],  # 3번 슬롯 자막 element 없음
     },
     5: {
         # 현행 운영 템플릿 (기존 동작 100% 유지)
         "template_id_prod": "cab85e50-1e78-41b8-9644-80a061d349f6",
-        "template_id_test": "5e530b01-2f3d-428e-b6d6-70a001703550",
+        "template_id_test": "eda9d421-b086-4660-9f3c-9236d826226f",
         "subtitle_suffixes": ["6K5", "JTM", "MDV", "5Z2", "D6M"],
     },
     6: {
-        "template_id_prod": None,   # ⬜
-        "template_id_test": None,   # ⬜
-        "subtitle_suffixes": None,  # ⬜ 6개
+        "template_id_prod": "5e530b01-2f3d-428e-b6d6-70a001703550",
+        "template_id_test": "5e530b01-2f3d-428e-b6d6-70a001703550",
+        "subtitle_suffixes": ["6K5", "JTM", "5Z2", "D6M", "3KT"],  # 3번 슬롯 없음
     },
     7: {
-        "template_id_prod": None,   # ⬜
-        "template_id_test": None,   # ⬜
-        "subtitle_suffixes": None,  # ⬜ 7개
+        "template_id_prod": "ffcddeb1-55da-4276-8998-b67fc2f92a82",
+        "template_id_test": "ffcddeb1-55da-4276-8998-b67fc2f92a82",
+        "subtitle_suffixes": ["6K5", "JTM", "5Z2", "D6M", "3KT", "6PM"],  # 3번 슬롯 없음
     },
     8: {
-        "template_id_prod": None,   # ⬜
-        "template_id_test": None,   # ⬜
-        "subtitle_suffixes": None,  # ⬜ 8개
+        "template_id_prod": "37229115-682d-41d5-b1f1-20953367b416",
+        "template_id_test": "37229115-682d-41d5-b1f1-20953367b416",
+        "subtitle_suffixes": ["6K5", "JTM", "5Z2", "D6M", "3KT", "6PM", "3P6"],  # 3번 슬롯 없음
     },
 }
 
