@@ -18,13 +18,19 @@ def _is_valid_naver_image_url(full_url: str) -> bool:
 
     cycle-2.2 BUG-008: OGQ 스티커 (`storep-phinf.pstatic.net/ogq_*`) 는 본문 사진이 아니라
     네이버 이모티콘/스티커. URL 자체가 404 응답하는 경우가 다수 → 갤러리 엑박 / 영상 합성 실패 원인.
+
+    2026-08-04 확대: `storep-phinf.pstatic.net` 은 스티커/이모티콘 스토어 CDN 전체가
+    본문 사진이 아니다. BUG-008 은 `/ogq_` 경로만 막아서 `cafe_001/` 같은 다른 경로가
+    그대로 통과했고, Creatomate 렌더 단계에서 다운로드 실패로 터졌다
+    (예: storep-phinf.pstatic.net/cafe_001/original_9.gif?type=w966 → 404).
+    경로가 아니라 **도메인 단위로** 제외한다.
     """
     if not full_url.startswith(("http://", "https://")):
         return False
     if "pstatic.net" not in full_url:
         return False
-    # OGQ 스티커 제외
-    if "storep-phinf.pstatic.net/ogq_" in full_url:
+    # 스티커/이모티콘 스토어 CDN 전체 제외 (본문 사진이 아님)
+    if "storep-phinf.pstatic.net" in full_url:
         return False
     return True
 
