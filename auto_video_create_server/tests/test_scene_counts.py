@@ -76,15 +76,22 @@ class TestSubtitleSuffixes(unittest.TestCase):
         for n in [4, 5, 6, 7, 8]:
             self.assertTrue(sc.get_subtitle_suffixes(n), f"{n}장면 suffix 미등록")
 
-    def test_suffix_count_never_exceeds_scene_count(self):
-        """suffix 는 장면 수를 넘을 수 없다 (넘으면 존재하지 않는 element 주입).
+    def test_suffix_count_equals_scene_count(self):
+        """모든 장면에 자막 스타일이 주입되도록 suffix 개수 = 장면 수 여야 한다.
 
-        신규 템플릿 4종(4/6/7/8)은 3번 슬롯에 자막 element 가 없어 N-1 개다 —
-        의도된 상태인지는 PO 확인 대상이나, 초과만 아니면 주입은 안전하다.
+        회귀 방지: 3번 슬롯(MDV)이 빠져 있어 3번 장면만 템플릿 기본 스타일
+        (Montserrat/흰색)로 렌더되던 버그(2026-08-04).
         """
         for n, config in sc.SCENE_COUNT_CONFIG.items():
             suffixes = config.get("subtitle_suffixes") or []
-            self.assertLessEqual(len(suffixes), n, f"{n}장면 suffix 가 장면 수 초과")
+            self.assertEqual(len(suffixes), n, f"{n}장면 suffix 개수 불일치: {suffixes}")
+
+    def test_third_slot_subtitle_present(self):
+        """3번 슬롯 자막(MDV)이 모든 장면 수에 포함돼야 한다 (위 버그 직접 고정)."""
+        for n in sc.ALLOWED_SCENE_COUNTS:
+            suffixes = sc.get_subtitle_suffixes(n) or []
+            self.assertIn("MDV", suffixes, f"{n}장면에 3번 슬롯 자막(MDV) 누락")
+            self.assertEqual(suffixes[2], "MDV", f"{n}장면 MDV 위치가 3번이 아님")
 
     def test_suffixes_unique_within_template(self):
         for n, config in sc.SCENE_COUNT_CONFIG.items():

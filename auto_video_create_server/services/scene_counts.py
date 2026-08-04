@@ -24,15 +24,17 @@ DEFAULT_SCENE_COUNT = 5
 # NOTE (2026-08-04, PO 템플릿 제공): 4/6/7/8 템플릿은 prod/test 구분 없이 동일 ID 를 사용한다
 # (PO 가 장면 수당 템플릿 1개씩 제공). 5장면만 기존처럼 prod/test 가 분리돼 있다.
 #
-# NOTE (자막 suffix): 신규 템플릿 4종은 모두 **3번 슬롯에 자막 element 가 없다**
-# (6K5=1번, JTM=2번, 5Z2=4번, D6M=5번, 3KT=6번, 6PM=7번, 3P6=8번).
-# 따라서 suffix 개수는 장면 수보다 1 적다. 자막 스타일 주입은 존재하는 element 에만
-# 적용되므로 동작에는 문제가 없으나, 3번 장면 자막이 의도된 것인지는 PO 확인 대상.
+# NOTE (자막 suffix, 2026-08-04 정정): 3번 슬롯 자막은 `Subtitles-MDV` 로 **존재한다**.
+# 최초 등록 시 참고한 Creatomate "API 사용" 예시(curl)에 MDV 가 빠져 있어 없는 줄 알았는데,
+# 실제 템플릿 JSON 을 보니 composition_3 의 Subtitles-MDV 만 `"dynamic": true` 가 누락돼
+# 예시에서 제외됐던 것이다. 그 결과 3번 장면에만 자막 스타일(폰트/색)이 주입되지 않아
+# 템플릿 기본값(Montserrat/흰색)으로 렌더되는 버그가 있었다.
+# → 전 장면 수에 MDV 를 포함한다. 슬롯 순서: 1=6K5 2=JTM 3=MDV 4=5Z2 5=D6M 6=3KT 7=6PM 8=3P6
 SCENE_COUNT_CONFIG: dict = {
     4: {
         "template_id_prod": "0e8036d2-04d3-436c-8c02-7b8708a85f06",
         "template_id_test": "0e8036d2-04d3-436c-8c02-7b8708a85f06",
-        "subtitle_suffixes": ["6K5", "JTM", "5Z2"],  # 3번 슬롯 자막 element 없음
+        "subtitle_suffixes": ["6K5", "JTM", "MDV", "5Z2"],
     },
     5: {
         # 현행 운영 템플릿 (기존 동작 100% 유지)
@@ -43,17 +45,17 @@ SCENE_COUNT_CONFIG: dict = {
     6: {
         "template_id_prod": "5e530b01-2f3d-428e-b6d6-70a001703550",
         "template_id_test": "5e530b01-2f3d-428e-b6d6-70a001703550",
-        "subtitle_suffixes": ["6K5", "JTM", "5Z2", "D6M", "3KT"],  # 3번 슬롯 없음
+        "subtitle_suffixes": ["6K5", "JTM", "MDV", "5Z2", "D6M", "3KT"],
     },
     7: {
         "template_id_prod": "ffcddeb1-55da-4276-8998-b67fc2f92a82",
         "template_id_test": "ffcddeb1-55da-4276-8998-b67fc2f92a82",
-        "subtitle_suffixes": ["6K5", "JTM", "5Z2", "D6M", "3KT", "6PM"],  # 3번 슬롯 없음
+        "subtitle_suffixes": ["6K5", "JTM", "MDV", "5Z2", "D6M", "3KT", "6PM"],
     },
     8: {
         "template_id_prod": "37229115-682d-41d5-b1f1-20953367b416",
         "template_id_test": "37229115-682d-41d5-b1f1-20953367b416",
-        "subtitle_suffixes": ["6K5", "JTM", "5Z2", "D6M", "3KT", "6PM", "3P6"],  # 3번 슬롯 없음
+        "subtitle_suffixes": ["6K5", "JTM", "MDV", "5Z2", "D6M", "3KT", "6PM", "3P6"],
     },
 }
 
