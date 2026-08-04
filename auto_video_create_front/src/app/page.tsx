@@ -193,6 +193,56 @@ export default function Home() {
     setEditingText("");
   };
 
+  // ── 드래그 앤 드롭 ──────────────────────────────────────────────────────
+  // 갤러리에서 스크립트 카드로 끌어다 놓으면 그 슬롯에 정확히 배정된다.
+  // (클릭 방식은 폴백으로 유지 — 모바일은 HTML5 드래그가 동작하지 않음)
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+  type DragPayload =
+    | { kind: 'gallery'; type: 'image' | 'video'; url: string }
+    | { kind: 'slot'; from: number };
+
+  const handleDragStartMedia = (e: React.DragEvent, type: 'image' | 'video', url: string) => {
+    const payload: DragPayload = { kind: 'gallery', type, url };
+    e.dataTransfer.setData('application/json', JSON.stringify(payload));
+    e.dataTransfer.effectAllowed = 'copyMove';
+  };
+
+  const handleDragStartSlot = (e: React.DragEvent, from: number) => {
+    const payload: DragPayload = { kind: 'slot', from };
+    e.dataTransfer.setData('application/json', JSON.stringify(payload));
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDropOnSlot = (e: React.DragEvent, targetIdx: number) => {
+    e.preventDefault();
+    setDragOverIdx(null);
+    let payload: DragPayload;
+    try {
+      payload = JSON.parse(e.dataTransfer.getData('application/json')) as DragPayload;
+    } catch {
+      return;
+    }
+    setSectionMedia(prev => {
+      const updated = [...prev];
+      if (payload.kind === 'slot') {
+        // 슬롯끼리 자리 바꾸기 (순서 조정)
+        if (payload.from === targetIdx) return prev;
+        const tmp = updated[targetIdx];
+        updated[targetIdx] = updated[payload.from];
+        updated[payload.from] = tmp;
+        return updated;
+      }
+      // 갤러리 → 슬롯. 이미 다른 슬롯에 있던 미디어면 그 슬롯은 비운다 (중복 방지).
+      const existingIdx = updated.findIndex(m => m && m.url === payload.url);
+      updated[targetIdx] = { type: payload.type, url: payload.url };
+      if (existingIdx !== -1 && existingIdx !== targetIdx) {
+        updated[existingIdx] = null;
+      }
+      return updated;
+    });
+  };
+
   // 스크립트 슬롯에 배정된 이미지가 로드 실패했을 때 그 슬롯을 비운다.
   // 자동 배정(VOC-2)이 깨진 이미지 URL(404 등)을 고르면, 이전에는 미리보기 영역만
   // 숨겨져서 "파란색으로 선택된 것처럼 보이는데 이미지도 없고 해제 버튼(X)도 없는"
@@ -566,11 +616,17 @@ export default function Home() {
                   {autoFilledImageCount > 0 && (
                     <Typography
                       variant="body2"
-                      sx={{ color: '#666', mb: 2, fontSize: 13, wordBreak: 'keep-all' }}
+                      sx={{ color: '#666', mb: 0.5, fontSize: 13, wordBreak: 'keep-all' }}
                     >
-                      글 내용에 맞춰 이미지를 자동으로 넣어드렸어요. 눌러서 바꿀 수 있어요.
+                      글 내용에 맞춰 이미지를 자동으로 넣어드렸어요.
                     </Typography>
                   )}
+                  <Typography
+                    variant="body2"
+                    sx={{ color: '#666', mb: 2, fontSize: 13, wordBreak: 'keep-all' }}
+                  >
+                    오른쪽 이미지를 원하는 스크립트로 끌어다 놓아 보세요. 스크립트끼리 끌어서 순서도 바꿀 수 있어요.
+                  </Typography>
                 </Box>
                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 4, px: 4, py: 2, maxWidth: 1200, mx: 'auto', width: '100%' }}>
                   {/* 왼쪽: 스크립트 */}
@@ -590,16 +646,26 @@ export default function Home() {
                       const section = sectionMedia[idx];
                       // cycle-2: 사용자가 직접 고른 슬롯만 강조. AI 기본 배경 슬롯은 강조 X.
                       const isUserSelected = !!section && section.type !== 'default';
+                      const isDragOver = dragOverIdx === idx;
                       return (
                         <Paper
                           key={idx}
+                          onDragOver={e => { e.preventDefault(); if (dragOverIdx !== idx) setDragOverIdx(idx); }}
+                          onDragLeave={() => setDragOverIdx(prev => (prev === idx ? null : prev))}
+                          onDrop={e => handleDropOnSlot(e, idx)}
                           sx={{
                             mb: 2,
                             p: 2,
                             borderRadius: 2,
-                            boxShadow: isUserSelected ? '0 0 0 3px #1976d2, 0 2px 8px rgba(0,0,0,0.06)' : '0 2px 8px rgba(0,0,0,0.03)',
-                            border: isUserSelected ? '2px solid #1976d2' : '1.5px solid #e3e6ef',
-                            bgcolor: isUserSelected ? 'rgba(25, 118, 210, 0.07)' : '#fff',
+                            boxShadow: isDragOver
+                              ? '0 0 0 3px #43a047, 0 2px 8px rgba(0,0,0,0.06)'
+                              : isUserSelected ? '0 0 0 3px #1976d2, 0 2px 8px rgba(0,0,0,0.06)' : '0 2px 8px rgba(0,0,0,0.03)',
+                            border: isDragOver
+                              ? '2px dashed #43a047'
+                              : isUserSelected ? '2px solid #1976d2' : '1.5px solid #e3e6ef',
+                            bgcolor: isDragOver
+                              ? 'rgba(67, 160, 71, 0.08)'
+                              : isUserSelected ? 'rgba(25, 118, 210, 0.07)' : '#fff',
                             transition: 'all 0.2s',
                           }}
                         >
@@ -629,9 +695,13 @@ export default function Home() {
                               </IconButton>
                             </Box>
                           )}
-                          {/* 미디어 미리보기 */}
+                          {/* 미디어 미리보기 — 다른 스크립트 카드로 끌어다 놓으면 자리 바꾸기 */}
                           {section && (
-                            <Box sx={{ mt: 2, position: 'relative' }}>
+                            <Box
+                              draggable
+                              onDragStart={e => handleDragStartSlot(e, idx)}
+                              sx={{ mt: 2, position: 'relative', cursor: 'grab' }}
+                            >
                               {section.type === 'default' ? (
                                 <>
                                   <Box sx={{
@@ -726,9 +796,11 @@ export default function Home() {
                         {media.images.map((url) => {
                           const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
                           return (
-                            <ImageListItem key={url} sx={{ position: 'relative', cursor: 'pointer', transition: 'opacity 0.2s' }}>
+                            <ImageListItem key={url} sx={{ position: 'relative', cursor: 'grab', transition: 'opacity 0.2s' }}>
                               <img
                                 onClick={() => handleMediaClick('image', url)}
+                                draggable
+                                onDragStart={e => handleDragStartMedia(e, 'image', url)}
                                 src={getProxiedImageUrl(url)}
                                 alt=""
                                 loading="lazy"
@@ -759,8 +831,10 @@ export default function Home() {
                             <Box key={url} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
                               <video
                                 onClick={() => handleMediaClick('video', url)}
+                                draggable
+                                onDragStart={e => handleDragStartMedia(e, 'video', url)}
                                 src={url}
-                                style={{ width: '100%', height: 350, objectFit: 'contain', borderRadius: 8, border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent' }}
+                                style={{ width: '100%', height: 350, objectFit: 'contain', borderRadius: 8, border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent', cursor: 'grab' }}
                                 controls
                               />
                             </Box>
