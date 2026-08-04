@@ -75,6 +75,43 @@ def _format_image_list_for_prompt(image_infos, limit=20):
         lines.append(f"[{i}] {desc[:80]}")
     return "\n".join(lines)
 
+def build_shorts_output_schema(scene_count: int, with_images: bool = False) -> dict:
+    """장면 수(N)에 맞춰 scripts 배열 길이를 강제하는 구조화 출력 스키마 생성.
+
+    scene_count 선택 기능: 배열 길이가 더 이상 고정 5가 아니므로
+    minItems/maxItems 를 N 으로 주입해 모델이 정확히 N개를 반환하게 한다.
+    """
+    import copy
+
+    base = SHORTS_OUTPUT_SCHEMA_WITH_IMAGES if with_images else SHORTS_OUTPUT_SCHEMA
+    schema = copy.deepcopy(base)
+    schema["properties"]["scripts"]["minItems"] = scene_count
+    schema["properties"]["scripts"]["maxItems"] = scene_count
+    return schema
+
+
+def _normalize_scripts(scripts, scene_count: int):
+    """scripts 배열 길이를 scene_count(N)에 정확히 맞춘다.
+
+    - N개 초과: 앞 N개만 사용 (단 N+1개면 마지막 원소를 버리는 대신 마무리 문장을 살림)
+    - N개 미만: 빈 스크립트로 채움
+    """
+    if not isinstance(scripts, list):
+        return [{"script": ""} for _ in range(scene_count)]
+
+    if len(scripts) == scene_count + 1:
+        # 기존 동작 계승: 하나 더 왔을 때는 마지막(마무리 멘트)을 살리고 직전 것을 버린다.
+        print(f"[경고] 모델이 {len(scripts)}개를 반환했습니다. 끝에서 두 번째를 제외합니다.")
+        scripts = scripts[: scene_count - 1] + [scripts[-1]]
+    elif len(scripts) > scene_count:
+        print(f"[경고] 모델이 {len(scripts)}개를 반환했습니다. 앞 {scene_count}개만 사용합니다.")
+        scripts = scripts[:scene_count]
+
+    while len(scripts) < scene_count:
+        scripts.append({"script": ""})
+    return scripts
+
+
 def extract_json_from_codeblock(content):
     match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", content)
     if match:
@@ -108,10 +145,10 @@ RESTAURANT_PROMPT = """
 
 - 출력 형식
 아래는 예시이고, 반드시 예시와 같이 JSON 객체 형태로 반환해줘. 설명이나 코드블록 없이 JSON만 반환해줘.
-**scripts 배열은 반드시 5개만 포함해야 하며, 5개보다 많거나 적으면 안 돼. 6개 이상, 4개 이하로 반환하면 안 되고, 반드시 5개만 반환해야 해. 예시와 개수가 다르면 잘못된 응답이야.**
-**scripts 배열의 원소 개수는 반드시 5개여야 하며, 5개가 아니면 잘못된 응답이야. 반드시 예시와 개수, 구조가 일치해야 해.**
+**scripts 배열은 반드시 {scene_count}개만 포함해야 하며, {scene_count}개보다 많거나 적으면 안 돼. 아래 예시는 형식 참고용일 뿐이고, 실제 개수는 반드시 {scene_count}개여야 해.**
+**scripts 배열의 원소 개수는 반드시 {scene_count}개여야 하며, {scene_count}개가 아니면 잘못된 응답이야.**
 
-예시:
+예시(형식 참고용 — 개수는 {scene_count}개로 맞출 것):
 {{
   "title": "교대역 스키당",
   "scripts": [
@@ -137,7 +174,7 @@ GENERAL_PROMPT = """
 
 - 스크립트 작성 Tip :
 첫번째 스크립트는 가장 강렬한 한 마디로 시작해서 이목을 끌어야 해.
-중간 3개는 본문의 핵심 정보 또는 인상 깊은 포인트 위주로.
+중간 스크립트들은 본문의 핵심 정보 또는 인상 깊은 포인트 위주로.
 마지막 스크립트는 깔끔하게 마무리하는 말투로.
 
 - 주의 사항 :
@@ -149,9 +186,9 @@ GENERAL_PROMPT = """
 
 - 출력 형식
 아래는 예시이고, 반드시 예시와 같이 JSON 객체 형태로 반환해줘. 설명이나 코드블록 없이 JSON만 반환해줘.
-**scripts 배열은 반드시 5개만 포함해야 하며, 5개보다 많거나 적으면 안 돼. 6개 이상, 4개 이하로 반환하면 안 되고, 반드시 5개만 반환해야 해. 예시와 개수가 다르면 잘못된 응답이야.**
+**scripts 배열은 반드시 {scene_count}개만 포함해야 하며, {scene_count}개보다 많거나 적으면 안 돼. 아래 예시는 형식 참고용일 뿐이고, 실제 개수는 반드시 {scene_count}개여야 해.**
 
-예시:
+예시(형식 참고용 — 개수는 {scene_count}개로 맞출 것):
 {{
   "title": "양양 서핑 후기",
   "scripts": [
@@ -207,8 +244,9 @@ def _generate_with_openai(prompt):
     return response.choices[0].message.content.strip()
 
 
-def summarize_for_shorts_sets(text, category: str = "restaurant", image_infos=None):
-    """카테고리에 따라 다른 프롬프트로 쇼츠용 title+scripts(5개) 생성.
+def summarize_for_shorts_sets(text, category: str = "restaurant", image_infos=None,
+                              scene_count: int = 5):
+    """카테고리에 따라 다른 프롬프트로 쇼츠용 title+scripts(scene_count개) 생성.
 
     ANTHROPIC_API_KEY 가 있으면 Claude Sonnet, 없으면 기존 OpenAI 로 동작.
 
@@ -216,24 +254,27 @@ def summarize_for_shorts_sets(text, category: str = "restaurant", image_infos=No
     scripts 각 원소에 image_index(1-based 또는 null) 가 포함될 수 있다.
     호출부(blog_shorts)가 꺼내 쓰고 FE 응답에서는 제거한다.
 
+    scene_count: 유저가 고른 장면 수(4~8). 프롬프트/스키마/후처리 모두 이 값에 맞춘다.
+
     Args:
         text: 블로그 본문
         category: 'restaurant' (맛집, 기존) 또는 'general' (일반 블로그)
         image_infos: [{"url","caption","context"}, ...] 또는 None
+        scene_count: 생성할 스크립트 개수 (기본 5 — 기존 동작)
     """
     template = RESTAURANT_PROMPT if category == "restaurant" else GENERAL_PROMPT
-    prompt = template.format(text=text)
-    schema = SHORTS_OUTPUT_SCHEMA
+    prompt = template.format(text=text, scene_count=scene_count)
+    with_images = False
     if image_infos:
         try:
             prompt += IMAGE_MATCHING_ADDENDUM.format(
                 image_list=_format_image_list_for_prompt(image_infos)
             )
-            schema = SHORTS_OUTPUT_SCHEMA_WITH_IMAGES
+            with_images = True
         except Exception as e:
             # 이미지 부록 구성 실패 시 매칭 없이 기존 동작 (방어적)
             print(f"[summarize] 이미지 매칭 부록 구성 실패 — 매칭 없이 진행: {e}")
-            schema = SHORTS_OUTPUT_SCHEMA
+    schema = build_shorts_output_schema(scene_count, with_images=with_images)
     try:
         if os.environ.get("ANTHROPIC_API_KEY"):
             content = _generate_with_claude(prompt, schema=schema)
@@ -251,19 +292,7 @@ def summarize_for_shorts_sets(text, category: str = "restaurant", image_infos=No
     try:
         obj = json.loads(content)
         title = obj.get("title", "")
-        scripts = obj.get("scripts", [])
-
-        # scripts가 6개면 마지막(5번 인덱스)을 빼고 0~4번(총 5개)만 남김
-        if len(scripts) == 6:
-            print(f"[경고] 모델이 6개의 스크립트를 반환했습니다. 5번째(인덱스 4) 스크립트를 제외합니다.")
-            scripts = [scripts[0], scripts[1], scripts[2], scripts[3], scripts[5]]
-        # 5개 초과(7개 이상)면 앞 5개만 사용
-        elif len(scripts) > 5:
-            print(f"[경고] 모델이 {len(scripts)}개의 스크립트를 반환했습니다. 앞 5개만 사용합니다.")
-            scripts = scripts[:5]
-        # 5개 미만이면 빈 문자열로 채움
-        while len(scripts) < 5:
-            scripts.append({"script": ""})
+        scripts = _normalize_scripts(obj.get("scripts", []), scene_count)
     except Exception:
         try:
             json_str = extract_json_from_codeblock(content)
@@ -271,19 +300,7 @@ def summarize_for_shorts_sets(text, category: str = "restaurant", image_infos=No
             fixed_content = fix_json_keys(fixed_content)
             obj = json.loads(fixed_content)
             title = obj.get("title", "")
-            scripts = obj.get("scripts", [])
-
-            # scripts가 6개면 마지막(5번 인덱스)을 빼고 0~4번(총 5개)만 남김
-            if len(scripts) == 6:
-                print(f"[경고] 모델이 6개의 스크립트를 반환했습니다. 5번째(인덱스 4) 스크립트를 제외합니다.")
-                scripts = [scripts[0], scripts[1], scripts[2], scripts[3], scripts[5]]
-            # 5개 초과(7개 이상)면 앞 5개만 사용
-            elif len(scripts) > 5:
-                print(f"[경고] 모델이 {len(scripts)}개의 스크립트를 반환했습니다. 앞 5개만 사용합니다.")
-                scripts = scripts[:5]
-            # 5개 미만이면 빈 문자열로 채움
-            while len(scripts) < 5:
-                scripts.append({"script": ""})
+            scripts = _normalize_scripts(obj.get("scripts", []), scene_count)
         except Exception as e:
             print(f"Claude 응답 파싱 실패: {e}")
             title = ""

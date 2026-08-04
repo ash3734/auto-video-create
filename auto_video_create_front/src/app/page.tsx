@@ -87,6 +87,9 @@ export default function Home() {
 
   // sectionMedia: 길이 5, 각 원소는 SectionMedia 또는 null
   const [sectionMedia, setSectionMedia] = useState<(SectionMedia|null)[]>([null, null, null, null, null]);
+  // 장면 수 선택 (4~8). 스크립트/이미지 슬롯 개수가 이 값을 따른다. 기본 5 = 기존 동작.
+  const [sceneCount, setSceneCount] = useState<number>(5);
+  const [availableSceneCounts, setAvailableSceneCounts] = useState<{ scene_count: number; available: boolean }[]>([]);
 
   // VOC-2: extract-all 응답의 suggested_sections 로 자동 채워진 이미지 슬롯 수.
   // 1개 이상일 때만 select 진입 안내 문구를 노출한다.
@@ -106,6 +109,26 @@ export default function Home() {
     if (typeof window !== "undefined") {
       setIsLoggedIn(!!localStorage.getItem("user_id"));
     }
+  }, []);
+
+  // 선택 가능한 장면 수 목록 로드 (실패 시 5만 선택 가능하게 폴백)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch(`${API_BASE_URL}/api/blog/scene-counts`);
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data?.scene_counts)) {
+          setAvailableSceneCounts(data.scene_counts);
+          if (typeof data.default_scene_count === "number") {
+            setSceneCount(data.default_scene_count);
+          }
+        }
+      } catch {
+        if (!cancelled) setAvailableSceneCounts([]);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // 미디어 클릭 핸들러
@@ -189,7 +212,7 @@ export default function Home() {
     setStep('input');
     setVideoUrl(null);
     setGenerateError(null);
-    setSectionMedia([null, null, null, null, null]);
+    setSectionMedia(Array(sceneCount).fill(null));
     setAutoFilledImageCount(0);
     setEditingIdx(null);
     setEditingText("");
@@ -199,7 +222,7 @@ export default function Home() {
       const res = await authFetch(`${API_BASE_URL}/api/blog/extract-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blog_url: blogUrl }),
+        body: JSON.stringify({ blog_url: blogUrl, scene_count: sceneCount }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -212,9 +235,14 @@ export default function Home() {
 
         // VOC-2: extract-all 응답의 suggested_sections 로 sectionMedia 초기값을 자동 채움 (default 제안, 강제 아님).
         // 형식이 계약과 다르면(필드 없음/구버전 BE 포함) null 반환 → 기존 default_slot_count 폴백 동작 유지.
+        // 장면 수는 BE 응답을 신뢰 소스로 (없으면 요청값 → 스크립트 길이 순)
+        const effectiveCount: number =
+          typeof data.scene_count === 'number' ? data.scene_count : (scriptList.length || sceneCount);
+        setSceneCount(effectiveCount);
+
         const suggested = parseSuggestedSections(data.suggested_sections, scriptList.length);
         if (suggested) {
-          const filled: (SectionMedia | null)[] = [null, null, null, null, null];
+          const filled: (SectionMedia | null)[] = Array(effectiveCount).fill(null);
           let imageCount = 0;
           suggested.forEach((item, i) => {
             if (i >= filled.length) return;
@@ -231,16 +259,14 @@ export default function Home() {
           setAutoFilledImageCount(0);
           // cycle-2: BE 가 default_slot_count 만큼 부족 슬롯을 알려주면 후반부를 AI 기본 배경으로 채움
           const defaultCount: number = typeof data.default_slot_count === 'number' ? data.default_slot_count : 0;
+          const base: (SectionMedia | null)[] = Array(effectiveCount).fill(null);
           if (defaultCount > 0) {
-            setSectionMedia(prev => {
-              const updated = [...prev];
-              const start = Math.max(0, 5 - defaultCount);
-              for (let i = start; i < 5; i++) {
-                updated[i] = { type: 'default', url: null, isDefaultBackground: true };
-              }
-              return updated;
-            });
+            const start = Math.max(0, effectiveCount - defaultCount);
+            for (let i = start; i < effectiveCount; i++) {
+              base[i] = { type: 'default', url: null, isDefaultBackground: true };
+            }
           }
+          setSectionMedia(base);
         }
         setStep('select');
       } else {
@@ -269,6 +295,7 @@ export default function Home() {
           scripts,
           sections: sectionMedia,
           subtitle_settings: subtitleSettings,
+          scene_count: sceneCount,
         }),
         signal: controller.signal,
       });
@@ -322,7 +349,7 @@ export default function Home() {
     setStep('input');
     setVideoUrl(null);
     setGenerateError(null);
-    setSectionMedia([null, null, null, null, null]);
+    setSectionMedia(Array(sceneCount).fill(null));
     setAutoFilledImageCount(0);
     setEditingIdx(null);
     setEditingText("");
@@ -417,6 +444,41 @@ export default function Home() {
                   inputProps={{ inputMode: "url" }}
                   InputLabelProps={{ shrink: true }}
                 />
+
+                {/* 장면 수 선택 — 스크립트/이미지 개수가 이 값을 따른다 */}
+                <Box sx={{ mb: 2, textAlign: "left" }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 700, mb: 0.5 }}>
+                    장면 수
+                    <Box component="span" sx={{ fontSize: 11, fontWeight: 500, color: "#888", ml: 1 }}>
+                      스크립트와 이미지 개수예요
+                    </Box>
+                  </Typography>
+                  <Box sx={{ display: "flex", gap: 1 }}>
+                    {[4, 5, 6, 7, 8].map(n => {
+                      const info = availableSceneCounts.find(o => o.scene_count === n);
+                      // 목록을 못 받았으면 기본값(5)만 허용 — 미확보 템플릿 선택 방지
+                      const enabled = info ? info.available : n === 5;
+                      const selected = sceneCount === n;
+                      return (
+                        <Button
+                          key={n}
+                          onClick={() => enabled && setSceneCount(n)}
+                          disabled={!enabled || loading}
+                          variant={selected ? "contained" : "outlined"}
+                          sx={{ minWidth: 0, flex: 1, fontWeight: 700, py: 1 }}
+                        >
+                          {n}
+                        </Button>
+                      );
+                    })}
+                  </Box>
+                  {availableSceneCounts.some(o => !o.available) && (
+                    <Typography sx={{ fontSize: 11, color: "#888", mt: 0.5 }}>
+                      비활성 장면 수는 준비 중이에요.
+                    </Typography>
+                  )}
+                </Box>
+
                 <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={loading} sx={{ fontWeight: 700, fontSize: 18, height: 48 }}>
                   {loading ? <CircularProgress size={24} color="inherit" /> : "숏폼 만들기"}
                 </Button>
@@ -470,7 +532,7 @@ export default function Home() {
                       size="large"
                       sx={{ fontWeight: 700, minWidth: 140 }}
                       onClick={handleGenerateVideo}
-                      disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
+                      disabled={sectionMedia.filter(m => m !== null).length !== sceneCount || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
                     >
                       {loading ? <CircularProgress size={24} color="inherit" /> : "숏폼 만들기"}
                     </Button>
@@ -880,7 +942,7 @@ export default function Home() {
                   fullWidth
                   size="large"
                   sx={{ mt: 3, mb: 2 }}
-                  disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
+                  disabled={sectionMedia.filter(m => m !== null).length !== sceneCount || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
                   onClick={handleGenerateVideo}
                 >
                   최종 영상 생성하기
