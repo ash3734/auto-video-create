@@ -11,6 +11,7 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import EditIcon from '@mui/icons-material/Edit';
 import AuthGuard from "../components/AuthGuard";
 import LogoutButton from "../components/LogoutButton";
+import ChangePasswordButton from "../components/ChangePasswordButton";
 import SubtitleStyleEditor, { SubtitleSettings } from "./components/SubtitleStyleEditor";
 
 interface MediaList {
@@ -468,7 +469,10 @@ export default function Home() {
           </Box>
           <Box sx={{ display: "flex", gap: 1, alignItems: 'center' }}>
             {isLoggedIn ? (
-              <LogoutButton />
+              <>
+                <ChangePasswordButton />
+                <LogoutButton />
+              </>
             ) : (
               <>
                 <Button variant="outlined" color="inherit" size="small" sx={{ fontWeight: 600 }} onClick={() => handleBetaAlert("Beta 버전에서는 로그인 기능이 지원되지 않습니다.")}>로그인</Button>

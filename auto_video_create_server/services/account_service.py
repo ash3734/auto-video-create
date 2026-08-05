@@ -1,3 +1,8 @@
+# PEP 604 (`dict | str | None`) 어노테이션이 Python 3.9 에서도 import 가능하도록
+# 어노테이션을 지연 평가한다. Lambda 는 3.11 이라 동작 영향 없고, 로컬(3.9)에서
+# 단위 테스트를 돌릴 수 있게 된다.
+from __future__ import annotations
+
 from utils.s3_utils import load_json_from_s3
 from datetime import datetime
 import boto3
@@ -16,6 +21,52 @@ def authenticate_user(user_id: str, pw: str) -> dict | str | None:
                 return "expired"
             return user
     return None
+
+MIN_PASSWORD_LENGTH = 8
+
+
+def change_password(user_id: str, current_pw: str, new_pw: str) -> str:
+    """비밀번호 변경. 현재 비밀번호가 맞아야 한다.
+
+    반환값:
+        "success"      변경 완료
+        "invalid"      사용자 없음 또는 현재 비밀번호 불일치 (구분해서 알려주지 않는다 — 계정 존재 여부 노출 방지)
+        "same"         새 비밀번호가 현재와 동일
+        "too_short"    새 비밀번호가 최소 길이 미만
+        "error"        S3 등 내부 오류
+
+    NOTE: 비밀번호는 현재 users.json 에 평문으로 저장된다(기존 구조 유지).
+    추후 해싱 도입 시 이 함수에서 해시 저장으로 바꾸고, authenticate_user 에서
+    "저장값이 해시면 해시 검증, 아니면 평문 비교 후 해시로 승격"하는 lazy migration
+    을 붙이면 기존 유저 영향 없이 전환할 수 있다.
+    비밀번호 값 자체는 절대 로그에 남기지 않는다.
+    """
+    if not isinstance(new_pw, str) or len(new_pw) < MIN_PASSWORD_LENGTH:
+        return "too_short"
+    if current_pw == new_pw:
+        return "same"
+
+    try:
+        users = load_json_from_s3(BUCKET_USERS, KEY_USERS)
+        for user in users:
+            if user["id"] == user_id:
+                if user.get("pw") != current_pw:
+                    print(f"[change_password] 현재 비밀번호 불일치 (user={user_id})")
+                    return "invalid"
+                user["pw"] = new_pw
+                s3.put_object(
+                    Bucket=BUCKET_USERS,
+                    Key=KEY_USERS,
+                    Body=json.dumps(users, ensure_ascii=False, indent=2).encode("utf-8"),
+                )
+                print(f"[change_password] 변경 완료 (user={user_id})")
+                return "success"
+        print(f"[change_password] 사용자 없음 (user={user_id})")
+        return "invalid"
+    except Exception as e:
+        print(f"[change_password] 실패 (user={user_id}): {e}")
+        return "error"
+
 
 def get_user_if_active(user_id: str) -> dict | None:
     """사용자 존재 + 구독 활성 여부 확인.
