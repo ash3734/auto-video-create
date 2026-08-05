@@ -21,8 +21,10 @@ DEFAULT_SCENE_COUNT = 5
 #   template_id_prod / template_id_test: Creatomate 템플릿 ID (ENV 분기)
 #   subtitle_suffixes: 자막 element ID suffix — 반드시 장면 수와 같은 개수여야 한다.
 #                      템플릿마다 다르므로 템플릿과 함께 확보한다.
-# NOTE (2026-08-04, PO 템플릿 제공): 4/6/7/8 템플릿은 prod/test 구분 없이 동일 ID 를 사용한다
-# (PO 가 장면 수당 템플릿 1개씩 제공). 5장면만 기존처럼 prod/test 가 분리돼 있다.
+# NOTE (2026-08-05, PO 제공): prod 는 **워터마크 없는 전용 템플릿**을 쓴다.
+# 전 장면 수(4~8)에 대해 prod/test 템플릿이 서로 다른 ID 로 분리돼 있다.
+# prod 에 test 템플릿이 들어가면 워터마크가 찍힌 영상이 고객에게 나가므로,
+# 아래 두 값을 같은 ID 로 두지 말 것 (test_prod_and_test_templates_differ 로 강제).
 #
 # NOTE (자막 suffix, 2026-08-04 정정): 3번 슬롯 자막은 `Subtitles-MDV` 로 **존재한다**.
 # 최초 등록 시 참고한 Creatomate "API 사용" 예시(curl)에 MDV 가 빠져 있어 없는 줄 알았는데,
@@ -32,28 +34,28 @@ DEFAULT_SCENE_COUNT = 5
 # → 전 장면 수에 MDV 를 포함한다. 슬롯 순서: 1=6K5 2=JTM 3=MDV 4=5Z2 5=D6M 6=3KT 7=6PM 8=3P6
 SCENE_COUNT_CONFIG: dict = {
     4: {
-        "template_id_prod": "0e8036d2-04d3-436c-8c02-7b8708a85f06",
+        "template_id_prod": "6707f308-d77f-49bd-ad5e-d3011b1f4cab",
         "template_id_test": "0e8036d2-04d3-436c-8c02-7b8708a85f06",
         "subtitle_suffixes": ["6K5", "JTM", "MDV", "5Z2"],
     },
     5: {
         # 현행 운영 템플릿 (기존 동작 100% 유지)
-        "template_id_prod": "cab85e50-1e78-41b8-9644-80a061d349f6",
+        "template_id_prod": "8971a2e5-3875-4d2d-9983-eefe9a76b476",
         "template_id_test": "eda9d421-b086-4660-9f3c-9236d826226f",
         "subtitle_suffixes": ["6K5", "JTM", "MDV", "5Z2", "D6M"],
     },
     6: {
-        "template_id_prod": "5e530b01-2f3d-428e-b6d6-70a001703550",
+        "template_id_prod": "7ce3586a-1ad1-4d9c-bbb7-a6e229460f9a",
         "template_id_test": "5e530b01-2f3d-428e-b6d6-70a001703550",
         "subtitle_suffixes": ["6K5", "JTM", "MDV", "5Z2", "D6M", "3KT"],
     },
     7: {
-        "template_id_prod": "ffcddeb1-55da-4276-8998-b67fc2f92a82",
+        "template_id_prod": "81cddf37-9e94-4210-99f4-28f4e245d9fb",
         "template_id_test": "ffcddeb1-55da-4276-8998-b67fc2f92a82",
         "subtitle_suffixes": ["6K5", "JTM", "MDV", "5Z2", "D6M", "3KT", "6PM"],
     },
     8: {
-        "template_id_prod": "37229115-682d-41d5-b1f1-20953367b416",
+        "template_id_prod": "5461fe24-1d67-44b4-ba37-f7195db2f79f",
         "template_id_test": "37229115-682d-41d5-b1f1-20953367b416",
         "subtitle_suffixes": ["6K5", "JTM", "MDV", "5Z2", "D6M", "3KT", "6PM", "3P6"],
     },
