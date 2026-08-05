@@ -87,6 +87,9 @@ export default function Home() {
 
   // sectionMedia: 길이 5, 각 원소는 SectionMedia 또는 null
   const [sectionMedia, setSectionMedia] = useState<(SectionMedia|null)[]>([null, null, null, null, null]);
+  // 장면 수 선택 (4~8). 스크립트/이미지 슬롯 개수가 이 값을 따른다. 기본 5 = 기존 동작.
+  const [sceneCount, setSceneCount] = useState<number>(5);
+  const [availableSceneCounts, setAvailableSceneCounts] = useState<{ scene_count: number; available: boolean }[]>([]);
 
   // VOC-2: extract-all 응답의 suggested_sections 로 자동 채워진 이미지 슬롯 수.
   // 1개 이상일 때만 select 진입 안내 문구를 노출한다.
@@ -106,6 +109,26 @@ export default function Home() {
     if (typeof window !== "undefined") {
       setIsLoggedIn(!!localStorage.getItem("user_id"));
     }
+  }, []);
+
+  // 선택 가능한 장면 수 목록 로드 (실패 시 5만 선택 가능하게 폴백)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch(`${API_BASE_URL}/api/blog/scene-counts`);
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data?.scene_counts)) {
+          setAvailableSceneCounts(data.scene_counts);
+          if (typeof data.default_scene_count === "number") {
+            setSceneCount(data.default_scene_count);
+          }
+        }
+      } catch {
+        if (!cancelled) setAvailableSceneCounts([]);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // 미디어 클릭 핸들러
@@ -170,6 +193,70 @@ export default function Home() {
     setEditingText("");
   };
 
+  // ── 드래그 앤 드롭 ──────────────────────────────────────────────────────
+  // 갤러리에서 스크립트 카드로 끌어다 놓으면 그 슬롯에 정확히 배정된다.
+  // (클릭 방식은 폴백으로 유지 — 모바일은 HTML5 드래그가 동작하지 않음)
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+  type DragPayload =
+    | { kind: 'gallery'; type: 'image' | 'video'; url: string }
+    | { kind: 'slot'; from: number };
+
+  const handleDragStartMedia = (e: React.DragEvent, type: 'image' | 'video', url: string) => {
+    const payload: DragPayload = { kind: 'gallery', type, url };
+    e.dataTransfer.setData('application/json', JSON.stringify(payload));
+    e.dataTransfer.effectAllowed = 'copyMove';
+  };
+
+  const handleDragStartSlot = (e: React.DragEvent, from: number) => {
+    const payload: DragPayload = { kind: 'slot', from };
+    e.dataTransfer.setData('application/json', JSON.stringify(payload));
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDropOnSlot = (e: React.DragEvent, targetIdx: number) => {
+    e.preventDefault();
+    setDragOverIdx(null);
+    let payload: DragPayload;
+    try {
+      payload = JSON.parse(e.dataTransfer.getData('application/json')) as DragPayload;
+    } catch {
+      return;
+    }
+    setSectionMedia(prev => {
+      const updated = [...prev];
+      if (payload.kind === 'slot') {
+        // 슬롯끼리 자리 바꾸기 (순서 조정)
+        if (payload.from === targetIdx) return prev;
+        const tmp = updated[targetIdx];
+        updated[targetIdx] = updated[payload.from];
+        updated[payload.from] = tmp;
+        return updated;
+      }
+      // 갤러리 → 슬롯. 이미 다른 슬롯에 있던 미디어면 그 슬롯은 비운다 (중복 방지).
+      const existingIdx = updated.findIndex(m => m && m.url === payload.url);
+      updated[targetIdx] = { type: payload.type, url: payload.url };
+      if (existingIdx !== -1 && existingIdx !== targetIdx) {
+        updated[existingIdx] = null;
+      }
+      return updated;
+    });
+  };
+
+  // 스크립트 슬롯에 배정된 이미지가 로드 실패했을 때 그 슬롯을 비운다.
+  // 자동 배정(VOC-2)이 깨진 이미지 URL(404 등)을 고르면, 이전에는 미리보기 영역만
+  // 숨겨져서 "파란색으로 선택된 것처럼 보이는데 이미지도 없고 해제 버튼(X)도 없는"
+  // 막다른 상태가 됐다. 슬롯을 비워 사용자가 직접 다시 고를 수 있게 한다.
+  const handleSectionImageError = (idx: number) => {
+    setSectionMedia(prev => {
+      if (!prev[idx]) return prev;
+      const updated = [...prev];
+      updated[idx] = null;
+      return updated;
+    });
+    setAutoFilledImageCount(prev => (prev > 0 ? prev - 1 : 0));
+  };
+
   // 섹션 미디어 해제 핸들러 (스크립트별 미리보기에서 X 클릭)
   const handleSectionMediaDeselect = (idx: number) => {
     setSectionMedia(prev => {
@@ -189,7 +276,7 @@ export default function Home() {
     setStep('input');
     setVideoUrl(null);
     setGenerateError(null);
-    setSectionMedia([null, null, null, null, null]);
+    setSectionMedia(Array(sceneCount).fill(null));
     setAutoFilledImageCount(0);
     setEditingIdx(null);
     setEditingText("");
@@ -199,7 +286,7 @@ export default function Home() {
       const res = await authFetch(`${API_BASE_URL}/api/blog/extract-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blog_url: blogUrl }),
+        body: JSON.stringify({ blog_url: blogUrl, scene_count: sceneCount }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -212,9 +299,14 @@ export default function Home() {
 
         // VOC-2: extract-all 응답의 suggested_sections 로 sectionMedia 초기값을 자동 채움 (default 제안, 강제 아님).
         // 형식이 계약과 다르면(필드 없음/구버전 BE 포함) null 반환 → 기존 default_slot_count 폴백 동작 유지.
+        // 장면 수는 BE 응답을 신뢰 소스로 (없으면 요청값 → 스크립트 길이 순)
+        const effectiveCount: number =
+          typeof data.scene_count === 'number' ? data.scene_count : (scriptList.length || sceneCount);
+        setSceneCount(effectiveCount);
+
         const suggested = parseSuggestedSections(data.suggested_sections, scriptList.length);
         if (suggested) {
-          const filled: (SectionMedia | null)[] = [null, null, null, null, null];
+          const filled: (SectionMedia | null)[] = Array(effectiveCount).fill(null);
           let imageCount = 0;
           suggested.forEach((item, i) => {
             if (i >= filled.length) return;
@@ -231,16 +323,14 @@ export default function Home() {
           setAutoFilledImageCount(0);
           // cycle-2: BE 가 default_slot_count 만큼 부족 슬롯을 알려주면 후반부를 AI 기본 배경으로 채움
           const defaultCount: number = typeof data.default_slot_count === 'number' ? data.default_slot_count : 0;
+          const base: (SectionMedia | null)[] = Array(effectiveCount).fill(null);
           if (defaultCount > 0) {
-            setSectionMedia(prev => {
-              const updated = [...prev];
-              const start = Math.max(0, 5 - defaultCount);
-              for (let i = start; i < 5; i++) {
-                updated[i] = { type: 'default', url: null, isDefaultBackground: true };
-              }
-              return updated;
-            });
+            const start = Math.max(0, effectiveCount - defaultCount);
+            for (let i = start; i < effectiveCount; i++) {
+              base[i] = { type: 'default', url: null, isDefaultBackground: true };
+            }
           }
+          setSectionMedia(base);
         }
         setStep('select');
       } else {
@@ -269,6 +359,7 @@ export default function Home() {
           scripts,
           sections: sectionMedia,
           subtitle_settings: subtitleSettings,
+          scene_count: sceneCount,
         }),
         signal: controller.signal,
       });
@@ -322,7 +413,7 @@ export default function Home() {
     setStep('input');
     setVideoUrl(null);
     setGenerateError(null);
-    setSectionMedia([null, null, null, null, null]);
+    setSectionMedia(Array(sceneCount).fill(null));
     setAutoFilledImageCount(0);
     setEditingIdx(null);
     setEditingText("");
@@ -417,6 +508,41 @@ export default function Home() {
                   inputProps={{ inputMode: "url" }}
                   InputLabelProps={{ shrink: true }}
                 />
+
+                {/* 장면 수 선택 — 스크립트/이미지 개수가 이 값을 따른다 */}
+                <Box sx={{ mb: 2, textAlign: "left" }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 700, mb: 0.5 }}>
+                    장면 수
+                    <Box component="span" sx={{ fontSize: 11, fontWeight: 500, color: "#888", ml: 1 }}>
+                      스크립트와 이미지 개수예요
+                    </Box>
+                  </Typography>
+                  <Box sx={{ display: "flex", gap: 1 }}>
+                    {[4, 5, 6, 7, 8].map(n => {
+                      const info = availableSceneCounts.find(o => o.scene_count === n);
+                      // 목록을 못 받았으면 기본값(5)만 허용 — 미확보 템플릿 선택 방지
+                      const enabled = info ? info.available : n === 5;
+                      const selected = sceneCount === n;
+                      return (
+                        <Button
+                          key={n}
+                          onClick={() => enabled && setSceneCount(n)}
+                          disabled={!enabled || loading}
+                          variant={selected ? "contained" : "outlined"}
+                          sx={{ minWidth: 0, flex: 1, fontWeight: 700, py: 1 }}
+                        >
+                          {n}
+                        </Button>
+                      );
+                    })}
+                  </Box>
+                  {availableSceneCounts.some(o => !o.available) && (
+                    <Typography sx={{ fontSize: 11, color: "#888", mt: 0.5 }}>
+                      비활성 장면 수는 준비 중이에요.
+                    </Typography>
+                  )}
+                </Box>
+
                 <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={loading} sx={{ fontWeight: 700, fontSize: 18, height: 48 }}>
                   {loading ? <CircularProgress size={24} color="inherit" /> : "숏폼 만들기"}
                 </Button>
@@ -470,7 +596,7 @@ export default function Home() {
                       size="large"
                       sx={{ fontWeight: 700, minWidth: 140 }}
                       onClick={handleGenerateVideo}
-                      disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
+                      disabled={sectionMedia.filter(m => m !== null).length !== sceneCount || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
                     >
                       {loading ? <CircularProgress size={24} color="inherit" /> : "숏폼 만들기"}
                     </Button>
@@ -490,11 +616,17 @@ export default function Home() {
                   {autoFilledImageCount > 0 && (
                     <Typography
                       variant="body2"
-                      sx={{ color: '#666', mb: 2, fontSize: 13, wordBreak: 'keep-all' }}
+                      sx={{ color: '#666', mb: 0.5, fontSize: 13, wordBreak: 'keep-all' }}
                     >
-                      글 내용에 맞춰 이미지를 자동으로 넣어드렸어요. 눌러서 바꿀 수 있어요.
+                      글 내용에 맞춰 이미지를 자동으로 넣어드렸어요.
                     </Typography>
                   )}
+                  <Typography
+                    variant="body2"
+                    sx={{ color: '#666', mb: 2, fontSize: 13, wordBreak: 'keep-all' }}
+                  >
+                    오른쪽 이미지를 원하는 스크립트로 끌어다 놓아 보세요. 스크립트끼리 끌어서 순서도 바꿀 수 있어요.
+                  </Typography>
                 </Box>
                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 4, px: 4, py: 2, maxWidth: 1200, mx: 'auto', width: '100%' }}>
                   {/* 왼쪽: 스크립트 */}
@@ -514,16 +646,26 @@ export default function Home() {
                       const section = sectionMedia[idx];
                       // cycle-2: 사용자가 직접 고른 슬롯만 강조. AI 기본 배경 슬롯은 강조 X.
                       const isUserSelected = !!section && section.type !== 'default';
+                      const isDragOver = dragOverIdx === idx;
                       return (
                         <Paper
                           key={idx}
+                          onDragOver={e => { e.preventDefault(); if (dragOverIdx !== idx) setDragOverIdx(idx); }}
+                          onDragLeave={() => setDragOverIdx(prev => (prev === idx ? null : prev))}
+                          onDrop={e => handleDropOnSlot(e, idx)}
                           sx={{
                             mb: 2,
                             p: 2,
                             borderRadius: 2,
-                            boxShadow: isUserSelected ? '0 0 0 3px #1976d2, 0 2px 8px rgba(0,0,0,0.06)' : '0 2px 8px rgba(0,0,0,0.03)',
-                            border: isUserSelected ? '2px solid #1976d2' : '1.5px solid #e3e6ef',
-                            bgcolor: isUserSelected ? 'rgba(25, 118, 210, 0.07)' : '#fff',
+                            boxShadow: isDragOver
+                              ? '0 0 0 3px #43a047, 0 2px 8px rgba(0,0,0,0.06)'
+                              : isUserSelected ? '0 0 0 3px #1976d2, 0 2px 8px rgba(0,0,0,0.06)' : '0 2px 8px rgba(0,0,0,0.03)',
+                            border: isDragOver
+                              ? '2px dashed #43a047'
+                              : isUserSelected ? '2px solid #1976d2' : '1.5px solid #e3e6ef',
+                            bgcolor: isDragOver
+                              ? 'rgba(67, 160, 71, 0.08)'
+                              : isUserSelected ? 'rgba(25, 118, 210, 0.07)' : '#fff',
                             transition: 'all 0.2s',
                           }}
                         >
@@ -553,9 +695,13 @@ export default function Home() {
                               </IconButton>
                             </Box>
                           )}
-                          {/* 미디어 미리보기 */}
+                          {/* 미디어 미리보기 — 다른 스크립트 카드로 끌어다 놓으면 자리 바꾸기 */}
                           {section && (
-                            <Box sx={{ mt: 2, position: 'relative' }}>
+                            <Box
+                              draggable
+                              onDragStart={e => handleDragStartSlot(e, idx)}
+                              sx={{ mt: 2, position: 'relative', cursor: 'grab' }}
+                            >
                               {section.type === 'default' ? (
                                 <>
                                   <Box sx={{
@@ -582,7 +728,7 @@ export default function Home() {
                                 <img
                                   src={getProxiedImageUrl(section.url as string)}
                                   alt={`스크립트 ${idx + 1} 이미지`}
-                                  onError={handleImgError}
+                                  onError={() => handleSectionImageError(idx)}
                                   style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 8 }}
                                 />
                               ) : (
@@ -650,9 +796,11 @@ export default function Home() {
                         {media.images.map((url) => {
                           const selectedIdx = sectionMedia.findIndex(section => section && section.url === url);
                           return (
-                            <ImageListItem key={url} sx={{ position: 'relative', cursor: 'pointer', transition: 'opacity 0.2s' }}>
+                            <ImageListItem key={url} sx={{ position: 'relative', cursor: 'grab', transition: 'opacity 0.2s' }}>
                               <img
                                 onClick={() => handleMediaClick('image', url)}
+                                draggable
+                                onDragStart={e => handleDragStartMedia(e, 'image', url)}
                                 src={getProxiedImageUrl(url)}
                                 alt=""
                                 loading="lazy"
@@ -683,8 +831,10 @@ export default function Home() {
                             <Box key={url} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
                               <video
                                 onClick={() => handleMediaClick('video', url)}
+                                draggable
+                                onDragStart={e => handleDragStartMedia(e, 'video', url)}
                                 src={url}
-                                style={{ width: '100%', height: 350, objectFit: 'contain', borderRadius: 8, border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent' }}
+                                style={{ width: '100%', height: 350, objectFit: 'contain', borderRadius: 8, border: selectedIdx !== -1 ? '2px solid #1976d2' : '2px solid transparent', cursor: 'grab' }}
                                 controls
                               />
                             </Box>
@@ -880,7 +1030,7 @@ export default function Home() {
                   fullWidth
                   size="large"
                   sx={{ mt: 3, mb: 2 }}
-                  disabled={sectionMedia.filter(m => m !== null).length !== 5 || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
+                  disabled={sectionMedia.filter(m => m !== null).length !== sceneCount || loading || editingIdx !== null || !title.trim() || scripts.some(s => !s.trim())}
                   onClick={handleGenerateVideo}
                 >
                   최종 영상 생성하기

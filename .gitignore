@@ -18,3 +18,6 @@ terraform.tfvars
 *.auto.tfvars
 infra/terraform.tfvars
 infra/*.auto.tfvars
+
+.DS_Store
+**/.DS_Store
