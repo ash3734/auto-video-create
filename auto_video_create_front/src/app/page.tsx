@@ -56,6 +56,12 @@ function parseSuggestedSections(raw: unknown, expectedLength: number): Suggested
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
+// 영상 생성이 실패했을 때 사용자가 다음에 뭘 해야 할지 알려준다.
+// (외부 서비스 장애·결제 문제 등은 사용자가 스스로 해결할 수 없으므로 관리자 문의로 안내)
+const ADMIN_CONTACT_GUIDE = "잠시 후 다시 시도해보시고, 계속 안 되면 관리자에게 문의해주세요.";
+const withContactGuide = (message?: string | null) =>
+  `${(message || "").trim() || "영상 생성에 실패했어요."} ${ADMIN_CONTACT_GUIDE}`;
+
 const getProxiedImageUrl = (url: string) => `/api/image-proxy?url=${encodeURIComponent(url)}`;
 
 // 공통 fetch wrapper 함수 추가
@@ -338,7 +344,7 @@ export default function Home() {
         setError(data.message || "이미지/영상/스크립트 추출에 실패했습니다.");
       }
     } catch {
-      setError("서버 요청 중 오류가 발생했습니다.");
+      setError(withContactGuide("서버 요청 중 오류가 생겼어요."));
     } finally {
       setLoading(false);
     }
@@ -380,7 +386,7 @@ export default function Home() {
             videoUrl = pollData.url;
             break;
           } else if (pollData.status === "failed") {
-            setGenerateError("영상 생성에 실패했습니다.");
+            setGenerateError(withContactGuide("영상 합성 중 문제가 생겼어요."));
             setStep('select');
             return;
           }
@@ -391,15 +397,17 @@ export default function Home() {
           setVideoUrl(videoUrl);
           setStep('done');
         } else {
-          setGenerateError("영상 생성이 제한 시간 내에 완료되지 않았습니다.");
+          setGenerateError(withContactGuide("영상 생성이 제한 시간 내에 끝나지 않았어요."));
           setStep('select');
         }
       } else {
-        setGenerateError(data.message || "영상 생성에 실패했습니다.");
+        // BE 가 내려준 사유(예: 음성 생성 실패, 템플릿 미설정)를 그대로 보여주고
+        // 사용자가 할 수 있는 다음 행동을 덧붙인다.
+        setGenerateError(withContactGuide(data.message));
         setStep('select');
       }
     } catch {
-      setGenerateError("서버 요청 중 오류가 발생했습니다.");
+      setGenerateError(withContactGuide("서버 요청 중 오류가 생겼어요."));
       setStep('select');
     }
   };
@@ -606,6 +614,16 @@ export default function Home() {
                     </Button>
                   </Box>
                 </Box>
+                {/* 영상 생성 실패 안내 (PC).
+                    기존에는 이 배너가 모바일 분기에만 있어, PC 에서는 실패해도
+                    아무 설명 없이 select 화면으로 돌아와 "반응 없음"처럼 보였다. */}
+                {generateError && (
+                  <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4, mt: 2 }}>
+                    <Alert severity="error" onClose={() => setGenerateError(null)}>
+                      {generateError}
+                    </Alert>
+                  </Box>
+                )}
                 {/* cycle-3: 자막 스타일 설정 (Row 1 — 접힘 기본) */}
                 <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4, mt: 2 }}>
                   <SubtitleStyleEditor onSettingsChange={setSubtitleSettings} />
@@ -1039,7 +1057,11 @@ export default function Home() {
                 >
                   최종 영상 생성하기
                 </Button>
-                {generateError && <Typography color="error" sx={{ mb: 2 }}>{generateError}</Typography>}
+                {generateError && (
+                  <Alert severity="error" sx={{ mb: 2 }} onClose={() => setGenerateError(null)}>
+                    {generateError}
+                  </Alert>
+                )}
               </Box>
             )
           )}
