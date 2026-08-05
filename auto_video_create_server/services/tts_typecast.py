@@ -1,0 +1,139 @@
+"""Typecast TTS — Supertone 대체 (2026-08-05).
+
+Typecast API 는 Supertone 과 마찬가지로 **동기식**이며 오디오 바이트를 바로 반환하므로
+호출부 인터페이스(tts_with_*_multi)를 그대로 유지한다.
+
+API 요약 (https://typecast.ai/docs/ko/api-reference/text-to-speech/text-to-speech):
+    POST https://api.typecast.ai/v1/text-to-speech
+    헤더: X-API-KEY
+    본문: voice_id(tc_/uc_ 접두), text(1~2000자), model(ssfm-v30|ssfm-v21),
+          output.audio_format(wav|mp3), output.audio_tempo(0.5~2.0)
+    응답: 원본 오디오 바이트 (mp3 요청 시 audio/mpeg)
+"""
+import os
+import time
+
+import boto3
+import requests
+
+TYPECAST_URL = "https://api.typecast.ai/v1/text-to-speech"
+DEFAULT_MODEL = "ssfm-v30"
+DEFAULT_VOICE_ID = "tc_62e8f21e979b3860fe2f6a24"
+
+# Typecast text 제약: 1~2000자
+MAX_TEXT_LENGTH = 2000
+# audio_tempo 허용 범위
+MIN_TEMPO, MAX_TEMPO = 0.5, 2.0
+
+# Lambda 전체 예산이 30초라 한 호출이 오래 붙잡히면 안 된다. (연결, 응답) 초.
+REQUEST_TIMEOUT = (5, 15)
+# 일시적 오류(429/5xx)만 1회 재시도 — 예산을 크게 넘기지 않는 선에서.
+RETRY_STATUSES = {429, 500, 502, 503, 504}
+RETRY_BACKOFF_SEC = 1.0
+
+S3_BUCKET = "auto-video-tts-files"
+
+
+class TypecastError(Exception):
+    """Typecast TTS 실패. 메시지는 사용자에게 노출될 수 있으므로 키를 담지 않는다."""
+
+
+def upload_to_s3(local_path, bucket, s3_key):
+    s3 = boto3.client("s3")
+    s3.upload_file(local_path, bucket, s3_key)
+    return f"https://{bucket}.s3.amazonaws.com/{s3_key}"
+
+
+def _clamp_tempo(speed):
+    try:
+        tempo = float(speed)
+    except (TypeError, ValueError):
+        return 1.0
+    return max(MIN_TEMPO, min(MAX_TEMPO, tempo))
+
+
+def tts_with_typecast(text, output_path, api_key, voice_id=None, speed=1.4,
+                      model=DEFAULT_MODEL, language="kor"):
+    """텍스트 1건 → mp3 파일. 성공 시 (output_path, None) 반환."""
+    if not api_key:
+        raise TypecastError("TYPECAST_API_KEY 가 설정되지 않았습니다.")
+
+    text = (text or "").strip()
+    if not text:
+        # 빈 스크립트는 Typecast 가 422 로 거절한다(최소 1자). 장면↔오디오 인덱스가
+        # 어긋나면 영상이 통째로 망가지므로, 조용히 넘기지 않고 명확히 실패시킨다.
+        raise TypecastError("스크립트가 비어 있어 음성을 만들 수 없어요. 해당 스크립트를 채워주세요.")
+    if len(text) > MAX_TEXT_LENGTH:
+        text = text[:MAX_TEXT_LENGTH]
+
+    payload = {
+        "voice_id": voice_id or DEFAULT_VOICE_ID,
+        "text": text,
+        "model": model,
+        "language": language,
+        "output": {
+            "audio_format": "mp3",
+            "audio_tempo": _clamp_tempo(speed),
+        },
+    }
+    headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
+
+    last_error = None
+    for attempt in range(2):  # 최초 1회 + 재시도 1회
+        try:
+            response = requests.post(
+                TYPECAST_URL, headers=headers, json=payload, timeout=REQUEST_TIMEOUT
+            )
+        except requests.RequestException as e:
+            last_error = f"Typecast 요청 실패: {e}"
+            if attempt == 0:
+                time.sleep(RETRY_BACKOFF_SEC)
+                continue
+            raise TypecastError(last_error)
+
+        if response.status_code == 200:
+            with open(output_path, "wb") as f:
+                f.write(response.content)
+            return output_path, None
+
+        # 실패 — 본문에서 사유만 뽑아 로그/에러에 남긴다 (키는 절대 남기지 않음)
+        detail = ""
+        try:
+            body = response.json()
+            detail = body.get("detail") or body.get("message") or body.get("error_code") or ""
+        except Exception:
+            detail = (response.text or "")[:200]
+        last_error = f"Typecast {response.status_code}: {detail}".strip()
+        print(f"[tts_typecast] {last_error}")
+
+        if response.status_code in RETRY_STATUSES and attempt == 0:
+            time.sleep(RETRY_BACKOFF_SEC)
+            continue
+        raise TypecastError(last_error)
+
+    raise TypecastError(last_error or "Typecast 호출 실패")
+
+
+def tts_with_typecast_multi(scripts, api_key, voice_id=None, speed=1.4,
+                            output_dir="/tmp/tts_outputs"):
+    """스크립트 N개 → mp3 N개 생성 후 S3 업로드.
+
+    반환: (로컬 경로 리스트, S3 URL 리스트) — 기존 Supertone 함수와 동일 시그니처.
+    """
+    print(f"tts_with_typecast_multi 호출 (scripts={len(scripts)})")
+    os.makedirs(output_dir, exist_ok=True)
+    audio_local_paths = []
+    audio_urls = []
+
+    for idx, item in enumerate(scripts, 1):
+        text = item["script"] if isinstance(item, dict) else item
+        output_path = os.path.join(output_dir, f"shorts_script_{idx}.mp3")
+        local_path, _ = tts_with_typecast(
+            text, output_path, api_key, voice_id=voice_id, speed=speed
+        )
+        audio_local_paths.append(local_path)
+        ms = int(time.time() * 1000)
+        s3_key = f"shorts_script_{idx}_{ms}.mp3"
+        audio_urls.append(upload_to_s3(local_path, S3_BUCKET, s3_key))
+
+    return audio_local_paths, audio_urls

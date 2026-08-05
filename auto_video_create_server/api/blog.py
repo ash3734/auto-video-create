@@ -3,7 +3,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from services.blog_shorts import extract_blog_content, get_blog_media_and_scripts
 from services.summarize import summarize_for_shorts_sets
-from services.tts_supertone import tts_with_supertone_multi
+from services.tts_typecast import (
+    tts_with_typecast_multi,
+    TypecastError,
+    DEFAULT_VOICE_ID as DEFAULT_TYPECAST_VOICE_ID,
+)
 from services.create_creatomate_video import create_creatomate_video, get_creatomate_vars, poll_creatomate_video_url
 from services.account_service import get_user_if_active, check_user_credits, get_current_credits
 from services.ai_background import generate_backgrounds_parallel, FALLBACK_URL as DEFAULT_BG_FALLBACK_URL
@@ -283,15 +287,15 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
             req.scene_count if req.scene_count is not None else len(req.scripts)
         )
 
-        # 1. TTS 변환 (scripts → mp3 url)
-        SUPERTONE_API_KEY = os.environ.get("SUPERTONE_API_KEY")
-        SUPERTONE_VOICE_ID = "c9220df3a5a70647d7b022"
-        SUPERTONE_SPEED = 1.4
-        audio_local_paths, audio_urls = tts_with_supertone_multi(
+        # 1. TTS 변환 (scripts → mp3 url) — 2026-08-05 Supertone → Typecast 전환
+        TYPECAST_API_KEY = os.environ.get("TYPECAST_API_KEY")
+        TYPECAST_VOICE_ID = os.environ.get("TYPECAST_VOICE_ID", DEFAULT_TYPECAST_VOICE_ID)
+        TTS_SPEED = 1.4
+        audio_local_paths, audio_urls = tts_with_typecast_multi(
             req.scripts,
-            api_key=SUPERTONE_API_KEY,
-            voice_id=SUPERTONE_VOICE_ID,
-            speed=SUPERTONE_SPEED
+            api_key=TYPECAST_API_KEY,
+            voice_id=TYPECAST_VOICE_ID,
+            speed=TTS_SPEED,
         )
         audio_local_paths = audio_local_paths[:scene_count]
         audio_urls = audio_urls[:scene_count]
@@ -375,6 +379,16 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
 
         poll_url = f"https://api.creatomate.com/v1/renders/{render_id}"
         return {"status": "started", "render_id": render_id, "poll_url": poll_url}
+    except TypecastError as e:
+        # 음성 생성 실패 — 사용자에게 보여줄 수 있는 메시지를 그대로 전달.
+        # (API 키 잔액 소진/한도 초과 등이 여기로 온다)
+        print("[generate_video] TTS 실패:", e)
+        return {
+            "status": "error",
+            "error_code": "tts_failed",
+            "message": f"음성을 만들지 못했어요. {e}",
+            "error_type": "tts_failed",
+        }
     except Exception as e:
         print("[generate_video 에러]", e)
         return {"status": "error", "message": str(e)}
