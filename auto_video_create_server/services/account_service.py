@@ -1,8 +1,52 @@
+# PEP 604 (`dict | str | None`) 어노테이션이 Python 3.9 에서도 import 가능하도록
+# 어노테이션을 지연 평가한다. Lambda 는 3.11 이라 동작에 영향 없고, 로컬(3.9)에서
+# 단위 테스트를 돌릴 수 있게 된다.
+from __future__ import annotations
+
 from utils.s3_utils import load_json_from_s3
 from datetime import datetime
 import boto3
 import json
 import os
+
+def _parse_date(value):
+    """YYYY-MM-DD 문자열 → date. 형식이 아니면 None (기존 구독 검증과 동일 포맷)."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def is_unlimited_active(user: dict) -> bool:
+    """무제한 플랜 기간 중인지 판정 (user dict 기준, S3 재조회 없음).
+
+    무제한 플랜: `unlimited_start` ~ `unlimited_end` (YYYY-MM-DD, 양끝 포함) 사이에는
+    크레딧 잔액과 무관하게 영상을 생성할 수 있고 차감도 하지 않는다.
+
+    - 구독 기간과는 **별개로 관리**한다 (PO 확정 2026-08-05). 단 구독이 만료되면
+      로그인 자체가 막히므로, 무제한을 부여할 때 구독 기간도 함께 열어둬야 한다.
+    - 두 날짜 중 하나라도 없거나 형식이 잘못되면 무제한 아님(False)으로 안전 처리.
+    """
+    if not isinstance(user, dict):
+        return False
+    start = _parse_date(user.get("unlimited_start"))
+    end = _parse_date(user.get("unlimited_end"))
+    if start is None or end is None:
+        return False
+    today = datetime.utcnow().date()
+    return start <= today <= end
+
+
+def is_unlimited_active_by_id(user_id: str) -> bool:
+    """user_id 로 무제한 여부 조회 (S3 조회 포함)."""
+    users = load_json_from_s3("blog-to-short-form-users", "users.json")
+    for user in users:
+        if user["id"] == user_id:
+            return is_unlimited_active(user)
+    return False
+
 
 def authenticate_user(user_id: str, pw: str) -> dict | str | None:
     users = load_json_from_s3("blog-to-short-form-users", "users.json")
@@ -16,6 +60,52 @@ def authenticate_user(user_id: str, pw: str) -> dict | str | None:
                 return "expired"
             return user
     return None
+
+MIN_PASSWORD_LENGTH = 8
+
+
+def change_password(user_id: str, current_pw: str, new_pw: str) -> str:
+    """비밀번호 변경. 현재 비밀번호가 맞아야 한다.
+
+    반환값:
+        "success"      변경 완료
+        "invalid"      사용자 없음 또는 현재 비밀번호 불일치 (구분해서 알려주지 않는다 — 계정 존재 여부 노출 방지)
+        "same"         새 비밀번호가 현재와 동일
+        "too_short"    새 비밀번호가 최소 길이 미만
+        "error"        S3 등 내부 오류
+
+    NOTE: 비밀번호는 현재 users.json 에 평문으로 저장된다(기존 구조 유지).
+    추후 해싱 도입 시 이 함수에서 해시 저장으로 바꾸고, authenticate_user 에서
+    "저장값이 해시면 해시 검증, 아니면 평문 비교 후 해시로 승격"하는 lazy migration
+    을 붙이면 기존 유저 영향 없이 전환할 수 있다.
+    비밀번호 값 자체는 절대 로그에 남기지 않는다.
+    """
+    if not isinstance(new_pw, str) or len(new_pw) < MIN_PASSWORD_LENGTH:
+        return "too_short"
+    if current_pw == new_pw:
+        return "same"
+
+    try:
+        users = load_json_from_s3(BUCKET_USERS, KEY_USERS)
+        for user in users:
+            if user["id"] == user_id:
+                if user.get("pw") != current_pw:
+                    print(f"[change_password] 현재 비밀번호 불일치 (user={user_id})")
+                    return "invalid"
+                user["pw"] = new_pw
+                s3.put_object(
+                    Bucket=BUCKET_USERS,
+                    Key=KEY_USERS,
+                    Body=json.dumps(users, ensure_ascii=False, indent=2).encode("utf-8"),
+                )
+                print(f"[change_password] 변경 완료 (user={user_id})")
+                return "success"
+        print(f"[change_password] 사용자 없음 (user={user_id})")
+        return "invalid"
+    except Exception as e:
+        print(f"[change_password] 실패 (user={user_id}): {e}")
+        return "error"
+
 
 def get_user_if_active(user_id: str) -> dict | None:
     """사용자 존재 + 구독 활성 여부 확인.
@@ -64,8 +154,12 @@ def check_user_credits(user_id: str, required_credits: int = 1000) -> bool:
     """사용자의 크레딧이 충분한지 체크.
 
     cycle-2 (ADR-6): ENV=test 환경에서는 항상 True (deduct_credits 와 일관).
+    무제한 플랜 기간 중이면 잔액과 무관하게 True (deduct_credits 와 일관).
     """
     if os.environ.get("ENV", "").lower() == "test":
+        return True
+    if is_unlimited_active_by_id(user_id):
+        print(f"[check_user_credits] 무제한 플랜 기간 — 잔액 무시 (user={user_id})")
         return True
     current_credits = get_current_credits(user_id)
     return current_credits >= required_credits
@@ -95,11 +189,30 @@ def deduct_credits(user_id: str, amount: int = 1000, reason: str = "video_genera
     try:
         users = load_json_from_s3(BUCKET_USERS, KEY_USERS)
         user_found = False
-        
+
+        # 무제한 플랜 기간이면 잔액을 건드리지 않는다.
+        # 단 사용량 추적(KPI/정산)을 위해 이력은 amount=0 으로 남긴다.
+        for user in users:
+            if user["id"] == user_id and is_unlimited_active(user):
+                print(f"[deduct_credits] 무제한 플랜 기간 — 차감 건너뜀 (user={user_id}, reason={reason})")
+                try:
+                    save_credit_record({
+                        "user_id": user_id,
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "change_type": "unlimited_use",
+                        "amount": 0,
+                        "reason": reason,
+                        "unlimited_end": user.get("unlimited_end"),
+                    })
+                except Exception as e:
+                    # 이력 저장 실패가 영상 생성을 막으면 안 된다
+                    print(f"[deduct_credits] 무제한 이력 저장 실패(무시): {e}")
+                return True
+
         for user in users:
             if user["id"] == user_id:
                 current_credits = user.get("credits", 0)
-                
+
                 if current_credits < amount:
                     print(f"[!] 크레딧 부족. 현재: {current_credits}, 필요: {amount}")
                     return False
