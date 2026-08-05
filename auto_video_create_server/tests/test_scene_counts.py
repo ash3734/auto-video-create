@@ -53,6 +53,22 @@ class TestTemplateLookup(unittest.TestCase):
         ids = [sc.get_template_id(n) for n in [4, 5, 6, 7, 8]]
         self.assertEqual(len(set(ids)), len(ids), f"중복 템플릿 ID: {ids}")
 
+    def test_prod_and_test_templates_differ(self):
+        """prod 는 워터마크 없는 전용 템플릿을 써야 한다 (2026-08-05).
+
+        prod 에 test 템플릿 ID 가 들어가면 워터마크가 찍힌 영상이 고객에게 나간다.
+        """
+        for n, config in sc.SCENE_COUNT_CONFIG.items():
+            prod, test = config.get("template_id_prod"), config.get("template_id_test")
+            self.assertTrue(prod, f"{n}장면 prod 템플릿 미등록")
+            self.assertTrue(test, f"{n}장면 test 템플릿 미등록")
+            self.assertNotEqual(prod, test, f"{n}장면 prod/test 템플릿이 동일 — 워터마크 위험")
+
+    def test_prod_template_ids_unique(self):
+        """prod 템플릿끼리도 중복이 없어야 한다 (붙여넣기 실수 방지)."""
+        prod_ids = [c["template_id_prod"] for c in sc.SCENE_COUNT_CONFIG.values()]
+        self.assertEqual(len(set(prod_ids)), len(prod_ids), f"prod 템플릿 중복: {prod_ids}")
+
     def test_env_switches_template_id(self):
         with mock.patch.dict(os.environ, {"ENV": "production"}):
             prod_id = sc.get_template_id(5)
