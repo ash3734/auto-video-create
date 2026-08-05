@@ -189,6 +189,86 @@ def set_initial_credits(user_id, amount, reason="initial_setup"):
         print(f"[!] 초기 크레딧 설정 실패: {e}")
         return False
 
+def _unlimited_status(user):
+    """무제한 플랜 상태 문자열. (BE is_unlimited_active 와 동일 규칙)"""
+    start, end = user.get("unlimited_start"), user.get("unlimited_end")
+    if not start or not end:
+        return "-"
+    try:
+        today = datetime.utcnow().date()
+        s = datetime.strptime(start, "%Y-%m-%d").date()
+        e = datetime.strptime(end, "%Y-%m-%d").date()
+    except ValueError:
+        return "형식오류"
+    if today < s:
+        return f"예정({start}~{end})"
+    if today > e:
+        return f"만료({end})"
+    return f"무제한중(~{end})"
+
+
+def set_unlimited_plan(user_id, start, end):
+    """무제한 플랜 기간 설정. 기간 중에는 크레딧 차감 없이 무제한 생성."""
+    try:
+        s = datetime.strptime(start, "%Y-%m-%d").date()
+        e = datetime.strptime(end, "%Y-%m-%d").date()
+    except ValueError:
+        print("[!] 날짜는 YYYY-MM-DD 형식으로 입력해주세요.")
+        return
+    if e < s:
+        print("[!] 종료일이 시작일보다 빠릅니다.")
+        return
+
+    users = download_users()
+    for user in users:
+        if user["id"] == user_id:
+            user["unlimited_start"] = start
+            user["unlimited_end"] = end
+            upload_users(users)
+            print(f"[*] {user_id} 무제한 플랜 설정: {start} ~ {end}")
+            # 구독 기간과는 별도 관리 — 구독이 만료돼 있으면 로그인 자체가 막히므로 경고만 한다.
+            sub_end = user.get("subscription_end")
+            try:
+                if sub_end and datetime.strptime(sub_end, "%Y-%m-%d").date() < e:
+                    print(f"[!] 주의: 구독 종료일({sub_end})이 무제한 종료일({end})보다 빠릅니다.")
+                    print("    구독이 만료되면 로그인 자체가 막혀 무제한도 쓸 수 없습니다.")
+                    print("    edit_users_json.py 의 '4. 구독일 변경' 으로 구독 기간을 함께 늘려주세요.")
+            except ValueError:
+                pass
+            save_credit_record({
+                "user_id": user_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "change_type": "unlimited_set",
+                "amount": 0,
+                "reason": f"unlimited_plan {start}~{end}",
+            })
+            return
+    print(f"[!] 사용자 {user_id}를 찾을 수 없습니다.")
+
+
+def clear_unlimited_plan(user_id):
+    """무제한 플랜 해제 (일반 크레딧 정책으로 복귀)."""
+    users = download_users()
+    for user in users:
+        if user["id"] == user_id:
+            if not user.get("unlimited_start") and not user.get("unlimited_end"):
+                print(f"[!] {user_id}는 무제한 플랜이 설정돼 있지 않습니다.")
+                return
+            user.pop("unlimited_start", None)
+            user.pop("unlimited_end", None)
+            upload_users(users)
+            print(f"[*] {user_id} 무제한 플랜 해제 완료. 이후 크레딧 차감 정상 적용.")
+            save_credit_record({
+                "user_id": user_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "change_type": "unlimited_clear",
+                "amount": 0,
+                "reason": "unlimited_plan cleared",
+            })
+            return
+    print(f"[!] 사용자 {user_id}를 찾을 수 없습니다.")
+
+
 def list_users_with_credits():
     """크레딧 정보와 함께 사용자 목록 출력"""
     users = download_users()
@@ -196,7 +276,8 @@ def list_users_with_credits():
     for i, user in enumerate(users):
         credits = user.get("credits", 0)
         blog_url = user.get('blog_url', '없음')
-        print(f"{i+1}. id: {user['id']}, 크레딧: {credits}, 구독: {user['subscription_start']} ~ {user['subscription_end']}, 블로그: {blog_url}")
+        unlimited = _unlimited_status(user)
+        print(f"{i+1}. id: {user['id']}, 크레딧: {credits}, 무제한: {unlimited}, 구독: {user['subscription_start']} ~ {user['subscription_end']}, 블로그: {blog_url}")
     print()
 
 def show_credit_history(user_id):
@@ -208,7 +289,10 @@ def show_credit_history(user_id):
     
     print(f"\n=== {user_id} 크레딧 변경 이력 (최근 20건) ===")
     for record in history:
-        change_type_kr = {"add": "추가", "deduct": "차감", "initial": "초기설정"}.get(record["change_type"], record["change_type"])
+        change_type_kr = {
+            "add": "추가", "deduct": "차감", "initial": "초기설정",
+            "unlimited_use": "무제한사용", "unlimited_set": "무제한설정", "unlimited_clear": "무제한해제",
+        }.get(record["change_type"], record["change_type"])
         print(f"{record['timestamp']} | {change_type_kr} | {record['amount']:+d} | {record['reason']}")
     print()
 
@@ -220,7 +304,9 @@ def main():
         print("3. 크레딧 차감")
         print("4. 초기 크레딧 설정")
         print("5. 크레딧 이력 보기")
-        print("6. 종료")
+        print("6. 무제한 플랜 설정 (기간 중 차감 없이 무제한 생성)")
+        print("7. 무제한 플랜 해제")
+        print("8. 종료")
         
         sel = input("선택: ").strip()
         
@@ -257,8 +343,18 @@ def main():
         elif sel == "5":
             user_id = input("사용자 ID: ").strip()
             show_credit_history(user_id)
-            
+
         elif sel == "6":
+            user_id = input("사용자 ID: ").strip()
+            start = input("무제한 시작일(YYYY-MM-DD): ").strip()
+            end = input("무제한 종료일(YYYY-MM-DD): ").strip()
+            set_unlimited_plan(user_id, start, end)
+
+        elif sel == "7":
+            user_id = input("사용자 ID: ").strip()
+            clear_unlimited_plan(user_id)
+
+        elif sel == "8":
             print("종료합니다.")
             break
             
