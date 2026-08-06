@@ -63,11 +63,42 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
                 "Authorization": f"Bearer {CREATOMATE_API_KEY}",
                 "Content-Type": "application/json"
             },
-            data=json.dumps(payload)
+            data=json.dumps(payload),
+            # 타임아웃이 없으면 Creatomate 가 응답을 안 줄 때 Lambda 30초 예산을 통째로 날린다.
+            timeout=(5, 20),
         )
-        
-        result = response.json()
-        
+
+        try:
+            result = response.json()
+        except ValueError:
+            result = None
+
+        # 진단 로그: 상태 코드 + 응답 본문 요약.
+        # 이게 없어서 "렌더링 ID가 없습니다" 만 뜨고 원인을 알 수 없었다 (2026-08-06).
+        # Authorization 헤더는 절대 로그에 남기지 않는다.
+        print(
+            f"[create_creatomate_video] template_id={template_id} "
+            f"status={response.status_code} body={str(result)[:500] if result is not None else (response.text or '')[:500]}"
+        )
+
+        if response.status_code >= 400:
+            # Creatomate 는 에러를 message/hint 등 다양한 키로 준다 — 있는 대로 뽑아 올린다.
+            detail = ""
+            if isinstance(result, dict):
+                detail = (
+                    result.get("message")
+                    or result.get("hint")
+                    or result.get("error")
+                    or ""
+                )
+            if not detail:
+                detail = (response.text or "")[:200]
+            print(f"[create_creatomate_video] 실패 status={response.status_code} detail={detail}")
+            return {
+                "error": "creatomate_error",
+                "message": f"Creatomate {response.status_code}: {detail}".strip(),
+            }
+
         # 성공 시 크레딧 차감
         if user_id and response.status_code == 200:
             # render_id가 있는지 확인 (성공적인 렌더링 시작)
