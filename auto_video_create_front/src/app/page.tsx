@@ -62,6 +62,20 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 const GENERATE_ERROR_MESSAGE =
   "영상 생성에 실패했어요. 다시 시도해보시고, 계속 안 되면 관리자에게 문의해주세요.";
 
+// ── 브라우저 콘솔 디버그 로그 ──────────────────────────────────────────────
+// FE 오류 수집 도구(Sentry 등)가 없고 Amplify 에서도 클라이언트 로그를 볼 수 없어서,
+// 요청이 서버까지 갔는지 / 어디서 끊겼는지를 브라우저 콘솔에서 추적할 수 있게 남긴다.
+// 콘솔에서 "[shorts]" 로 필터하면 전체 흐름이 보인다. 시크릿은 남기지 않는다.
+const LOG_PREFIX = "[shorts]";
+const dlog = (label: string, data?: unknown) => {
+  if (data === undefined) console.log(`${LOG_PREFIX} ${label}`);
+  else console.log(`${LOG_PREFIX} ${label}`, data);
+};
+const derr = (label: string, data?: unknown) => {
+  if (data === undefined) console.error(`${LOG_PREFIX} ${label}`);
+  else console.error(`${LOG_PREFIX} ${label}`, data);
+};
+
 const getProxiedImageUrl = (url: string) => `/api/image-proxy?url=${encodeURIComponent(url)}`;
 
 // 공통 fetch wrapper 함수 추가
@@ -115,6 +129,12 @@ export default function Home() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       setIsLoggedIn(!!localStorage.getItem("user_id"));
+      // 어느 서버로 요청하는지 / 로그인 상태인지를 콘솔에 남겨 환경 문제를 빨리 가린다.
+      dlog("앱 시작", {
+        apiBaseUrl: API_BASE_URL || "(빈 값 — NEXT_PUBLIC_API_BASE_URL 미설정)",
+        origin: window.location.origin,
+        userId: localStorage.getItem("user_id") || "(없음)",
+      });
     }
   }, []);
 
@@ -179,6 +199,36 @@ export default function Home() {
       img.style.display = 'none';
     }
   };
+
+  // "숏폼 만들기" 가 비활성인 이유. 비활성이 아니면 null.
+  //
+  // 버튼만 흐릿하게 두면 사용자는 "눌러도 아무 반응이 없다"고 느낀다.
+  // (자동 배정된 이미지가 로드 실패해 슬롯이 비워졌을 때 특히 그렇다 — 화면상으론
+  //  다 채워진 것처럼 보이는데 버튼이 안 눌린다.) 이유를 문장으로 알려준다.
+  const ctaDisabledReason = (): string | null => {
+    if (loading) return null; // 진행 중은 스피너로 이미 표현됨
+    const filled = sectionMedia.filter(m => m !== null).length;
+    if (filled !== sceneCount) {
+      const remain = sceneCount - filled;
+      return remain > 0
+        ? `이미지나 영상을 ${remain}개 더 선택해주세요. (${filled}/${sceneCount})`
+        : `선택한 미디어가 장면 수보다 많아요. (${filled}/${sceneCount})`;
+    }
+    if (editingIdx !== null) return "수정 중인 스크립트를 저장하거나 취소해주세요.";
+    if (!title.trim()) return "영상 제목을 입력해주세요.";
+    if (scripts.some(s => !s.trim())) return "비어 있는 스크립트를 채워주세요.";
+    return null;
+  };
+
+  // select 단계에서 버튼이 왜 안 눌리는지를 콘솔에도 남긴다.
+  // (disabled 버튼은 onClick 이 발생하지 않아 "눌렀는데 반응이 없다" 상황의 원인이 된다)
+  useEffect(() => {
+    if (step !== 'select') return;
+    const reason = ctaDisabledReason();
+    if (reason) dlog("숏폼 만들기 비활성", reason);
+    else dlog("숏폼 만들기 활성 — 클릭 가능");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, sectionMedia, sceneCount, editingIdx, title, scripts, loading]);
 
   // 스크립트 수정 시작/저장/취소 핸들러
   const handleScriptEditStart = (idx: number) => {
@@ -289,8 +339,11 @@ export default function Home() {
     setEditingText("");
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180000); // 3분
+    const extractUrl = `${API_BASE_URL}/api/blog/extract-all`;
+    dlog("extract-all 요청 시작", { url: extractUrl, blogUrl, scene_count: sceneCount });
+    const extractStartedAt = Date.now();
     try {
-      const res = await authFetch(`${API_BASE_URL}/api/blog/extract-all`, {
+      const res = await authFetch(extractUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ blog_url: blogUrl, scene_count: sceneCount }),
@@ -298,6 +351,11 @@ export default function Home() {
       });
       clearTimeout(timeoutId);
       const data = await res.json();
+      dlog(`extract-all 응답 ${res.status} (${Date.now() - extractStartedAt}ms)`, {
+        status: data?.status, error_code: data?.error_code, scene_count: data?.scene_count,
+        images: data?.images?.length, scripts: data?.scripts?.length,
+      });
+      if (data.status !== "success") derr("extract-all 실패 응답", data);
       if (data.status === "success") {
         setMedia({ images: data.images, videos: data.videos, scripts: data.scripts, title: data.title });
         const scriptList: string[] = (data.scripts || []).map((s: { script: string } | string) => typeof s === 'string' ? s : s.script);
@@ -343,7 +401,13 @@ export default function Home() {
       } else {
         setError(data.message || "이미지/영상/스크립트 추출에 실패했습니다.");
       }
-    } catch {
+    } catch (e) {
+      derr("extract-all 요청 예외 — 서버에 도달 못했을 수 있음", {
+        name: (e as Error)?.name,
+        message: (e as Error)?.message,
+        url: extractUrl,
+        elapsedMs: Date.now() - extractStartedAt,
+      });
       setError("요청 중 오류가 생겼어요. 다시 시도해보시고, 계속 안 되면 관리자에게 문의해주세요.");
     } finally {
       setLoading(false);
@@ -351,14 +415,23 @@ export default function Home() {
   };
 
   const handleGenerateVideo = async () => {
+    const url = `${API_BASE_URL}/api/blog/generate-video`;
+    dlog("generate-video 요청 시작", {
+      url,
+      scene_count: sceneCount,
+      scripts: scripts.length,
+      filledSlots: sectionMedia.filter(m => m !== null).length,
+      apiBaseUrl: API_BASE_URL || "(빈 값 — 환경변수 미설정)",
+    });
     window.scrollTo({ top: 0, behavior: "smooth" });
     setStep('generating');
     setGenerateError(null);
     setVideoUrl(null);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180000); // 3분
+    const startedAt = Date.now();
     try {
-      const res = await authFetch(`${API_BASE_URL}/api/blog/generate-video`, {
+      const res = await authFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -371,7 +444,17 @@ export default function Home() {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
-      const data = await res.json();
+      const text = await res.text();
+      dlog(`generate-video 응답 ${res.status} (${Date.now() - startedAt}ms)`, text.slice(0, 1000));
+      let data: Record<string, unknown>;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        derr("generate-video 응답이 JSON 이 아님 — 게이트웨이 오류 가능", { status: res.status, body: text.slice(0, 300) });
+        setGenerateError(GENERATE_ERROR_MESSAGE);
+        setStep('select');
+        return;
+      }
       if (data.status === "started" && data.render_id) {
         // Creatomate polling via backend proxy
         let pollCount = 0;
@@ -383,9 +466,11 @@ export default function Home() {
           clearTimeout(pollTimeoutId);
           const pollData = await pollRes.json();
           if (pollData.status === "succeeded" && pollData.url) {
+            dlog(`렌더 완료 (폴링 ${pollCount + 1}회)`, pollData.url);
             videoUrl = pollData.url;
             break;
           } else if (pollData.status === "failed") {
+            derr("렌더 실패 (Creatomate)", pollData);
             setGenerateError(GENERATE_ERROR_MESSAGE);
             setStep('select');
             return;
@@ -397,16 +482,25 @@ export default function Home() {
           setVideoUrl(videoUrl);
           setStep('done');
         } else {
+          derr("렌더 폴링 타임아웃 (3분 초과)", { render_id: data.render_id });
           setGenerateError(GENERATE_ERROR_MESSAGE);
           setStep('select');
         }
       } else {
-        // BE 가 내려준 사유(예: 음성 생성 실패, 템플릿 미설정)를 그대로 보여주고
-        // 사용자가 할 수 있는 다음 행동을 덧붙인다.
+        // 서버가 실패 사유를 내려준 경우. 화면에는 일반 안내만 띄우고
+        // 구체적인 사유(error_code/message)는 콘솔에 남겨 디버깅에 쓴다.
+        derr("generate-video 실패 응답", data);
         setGenerateError(GENERATE_ERROR_MESSAGE);
         setStep('select');
       }
-    } catch {
+    } catch (e) {
+      // 여기로 오면 요청이 서버까지 못 갔을 가능성이 높다 (CORS / 네트워크 / 중단).
+      derr("generate-video 요청 예외 — 서버에 도달 못했을 수 있음", {
+        name: (e as Error)?.name,
+        message: (e as Error)?.message,
+        url,
+        elapsedMs: Date.now() - startedAt,
+      });
       setGenerateError(GENERATE_ERROR_MESSAGE);
       setStep('select');
     }
@@ -614,6 +708,14 @@ export default function Home() {
                     </Button>
                   </Box>
                 </Box>
+                {/* 버튼이 왜 안 눌리는지 알려준다 (PC) */}
+                {ctaDisabledReason() && (
+                  <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4, mt: 1 }}>
+                    <Typography sx={{ fontSize: 13, color: '#b26a00', textAlign: 'right', wordBreak: 'keep-all' }}>
+                      {ctaDisabledReason()}
+                    </Typography>
+                  </Box>
+                )}
                 {/* 영상 생성 실패 안내 (PC).
                     기존에는 이 배너가 모바일 분기에만 있어, PC 에서는 실패해도
                     아무 설명 없이 select 화면으로 돌아와 "반응 없음"처럼 보였다. */}
@@ -632,7 +734,7 @@ export default function Home() {
                     variant="body2"
                     sx={{ color: '#666', mb: 2, fontSize: 13 }}
                   >
-                    이미지를 선택해 주세요 — 5개를 모두 고르면 영상 생성하기가 활성화됩니다.
+                    이미지를 선택해 주세요 — {sceneCount}개를 모두 고르면 숏폼 만들기가 활성화됩니다.
                   </Typography>
                   {/* VOC-2: suggested_sections 로 자동 채워진 슬롯이 있을 때만 안내 */}
                   {autoFilledImageCount > 0 && (
@@ -1057,6 +1159,12 @@ export default function Home() {
                 >
                   최종 영상 생성하기
                 </Button>
+                {/* 버튼이 왜 안 눌리는지 알려준다 (모바일) */}
+                {ctaDisabledReason() && (
+                  <Typography sx={{ fontSize: 13, color: '#b26a00', mb: 2, wordBreak: 'keep-all' }}>
+                    {ctaDisabledReason()}
+                  </Typography>
+                )}
                 {generateError && (
                   <Alert severity="error" sx={{ mb: 2 }} onClose={() => setGenerateError(null)}>
                     {generateError}
