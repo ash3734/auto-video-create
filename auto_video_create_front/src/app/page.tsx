@@ -180,6 +180,26 @@ export default function Home() {
     }
   };
 
+  // "숏폼 만들기" 가 비활성인 이유. 비활성이 아니면 null.
+  //
+  // 버튼만 흐릿하게 두면 사용자는 "눌러도 아무 반응이 없다"고 느낀다.
+  // (자동 배정된 이미지가 로드 실패해 슬롯이 비워졌을 때 특히 그렇다 — 화면상으론
+  //  다 채워진 것처럼 보이는데 버튼이 안 눌린다.) 이유를 문장으로 알려준다.
+  const ctaDisabledReason = (): string | null => {
+    if (loading) return null; // 진행 중은 스피너로 이미 표현됨
+    const filled = sectionMedia.filter(m => m !== null).length;
+    if (filled !== sceneCount) {
+      const remain = sceneCount - filled;
+      return remain > 0
+        ? `이미지나 영상을 ${remain}개 더 선택해주세요. (${filled}/${sceneCount})`
+        : `선택한 미디어가 장면 수보다 많아요. (${filled}/${sceneCount})`;
+    }
+    if (editingIdx !== null) return "수정 중인 스크립트를 저장하거나 취소해주세요.";
+    if (!title.trim()) return "영상 제목을 입력해주세요.";
+    if (scripts.some(s => !s.trim())) return "비어 있는 스크립트를 채워주세요.";
+    return null;
+  };
+
   // 스크립트 수정 시작/저장/취소 핸들러
   const handleScriptEditStart = (idx: number) => {
     setEditingIdx(idx);
@@ -614,6 +634,14 @@ export default function Home() {
                     </Button>
                   </Box>
                 </Box>
+                {/* 버튼이 왜 안 눌리는지 알려준다 (PC) */}
+                {ctaDisabledReason() && (
+                  <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4, mt: 1 }}>
+                    <Typography sx={{ fontSize: 13, color: '#b26a00', textAlign: 'right', wordBreak: 'keep-all' }}>
+                      {ctaDisabledReason()}
+                    </Typography>
+                  </Box>
+                )}
                 {/* 영상 생성 실패 안내 (PC).
                     기존에는 이 배너가 모바일 분기에만 있어, PC 에서는 실패해도
                     아무 설명 없이 select 화면으로 돌아와 "반응 없음"처럼 보였다. */}
@@ -1057,6 +1085,12 @@ export default function Home() {
                 >
                   최종 영상 생성하기
                 </Button>
+                {/* 버튼이 왜 안 눌리는지 알려준다 (모바일) */}
+                {ctaDisabledReason() && (
+                  <Typography sx={{ fontSize: 13, color: '#b26a00', mb: 2, wordBreak: 'keep-all' }}>
+                    {ctaDisabledReason()}
+                  </Typography>
+                )}
                 {generateError && (
                   <Alert severity="error" sx={{ mb: 2 }} onClose={() => setGenerateError(null)}>
                     {generateError}
