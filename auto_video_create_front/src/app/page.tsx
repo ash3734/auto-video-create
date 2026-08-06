@@ -660,7 +660,7 @@ export default function Home() {
                     variant="body2"
                     sx={{ color: '#666', mb: 2, fontSize: 13 }}
                   >
-                    이미지를 선택해 주세요 — 5개를 모두 고르면 영상 생성하기가 활성화됩니다.
+                    이미지를 선택해 주세요 — {sceneCount}개를 모두 고르면 숏폼 만들기가 활성화됩니다.
                   </Typography>
                   {/* VOC-2: suggested_sections 로 자동 채워진 슬롯이 있을 때만 안내 */}
                   {autoFilledImageCount > 0 && (
