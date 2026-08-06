@@ -56,11 +56,11 @@ function parseSuggestedSections(raw: unknown, expectedLength: number): Suggested
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
-// 영상 생성이 실패했을 때 사용자가 다음에 뭘 해야 할지 알려준다.
-// (외부 서비스 장애·결제 문제 등은 사용자가 스스로 해결할 수 없으므로 관리자 문의로 안내)
-const ADMIN_CONTACT_GUIDE = "잠시 후 다시 시도해보시고, 계속 안 되면 관리자에게 문의해주세요.";
-const withContactGuide = (message?: string | null) =>
-  `${(message || "").trim() || "영상 생성에 실패했어요."} ${ADMIN_CONTACT_GUIDE}`;
+// 영상 생성 실패 안내.
+// 실패 원인(외부 API 상태 코드, 템플릿 문제 등)은 사용자가 어차피 손쓸 수 없고
+// 서버 로그에 상세히 남으므로, 화면에는 다음 행동만 간결하게 안내한다.
+const GENERATE_ERROR_MESSAGE =
+  "영상 생성에 실패했어요. 다시 시도해보시고, 계속 안 되면 관리자에게 문의해주세요.";
 
 const getProxiedImageUrl = (url: string) => `/api/image-proxy?url=${encodeURIComponent(url)}`;
 
@@ -344,7 +344,7 @@ export default function Home() {
         setError(data.message || "이미지/영상/스크립트 추출에 실패했습니다.");
       }
     } catch {
-      setError(withContactGuide("서버 요청 중 오류가 생겼어요."));
+      setError("요청 중 오류가 생겼어요. 다시 시도해보시고, 계속 안 되면 관리자에게 문의해주세요.");
     } finally {
       setLoading(false);
     }
@@ -386,7 +386,7 @@ export default function Home() {
             videoUrl = pollData.url;
             break;
           } else if (pollData.status === "failed") {
-            setGenerateError(withContactGuide("영상 합성 중 문제가 생겼어요."));
+            setGenerateError(GENERATE_ERROR_MESSAGE);
             setStep('select');
             return;
           }
@@ -397,17 +397,17 @@ export default function Home() {
           setVideoUrl(videoUrl);
           setStep('done');
         } else {
-          setGenerateError(withContactGuide("영상 생성이 제한 시간 내에 끝나지 않았어요."));
+          setGenerateError(GENERATE_ERROR_MESSAGE);
           setStep('select');
         }
       } else {
         // BE 가 내려준 사유(예: 음성 생성 실패, 템플릿 미설정)를 그대로 보여주고
         // 사용자가 할 수 있는 다음 행동을 덧붙인다.
-        setGenerateError(withContactGuide(data.message));
+        setGenerateError(GENERATE_ERROR_MESSAGE);
         setStep('select');
       }
     } catch {
-      setGenerateError(withContactGuide("서버 요청 중 오류가 생겼어요."));
+      setGenerateError(GENERATE_ERROR_MESSAGE);
       setStep('select');
     }
   };
