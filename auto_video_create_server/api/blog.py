@@ -375,7 +375,14 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
         if isinstance(result, dict):
             render_id = result.get('id')
         if not render_id:
-            return {"status": "error", "message": "Creatomate 응답에 렌더링 ID가 없습니다."}
+            # 어떤 응답이 왔는지 남긴다 — 이게 없어서 원인 파악이 불가능했다 (2026-08-06)
+            print(f"[generate_video] Creatomate 응답에 render_id 없음: {str(result)[:500]}")
+            return {
+                "status": "error",
+                "error_code": "creatomate_no_render_id",
+                "message": "Creatomate 응답에 렌더링 ID가 없습니다.",
+                "error_type": "creatomate_no_render_id",
+            }
 
         poll_url = f"https://api.creatomate.com/v1/renders/{render_id}"
         return {"status": "started", "render_id": render_id, "poll_url": poll_url}
