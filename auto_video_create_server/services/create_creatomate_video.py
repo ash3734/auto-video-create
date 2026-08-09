@@ -4,6 +4,7 @@ import json
 import time
 from dotenv import load_dotenv
 from .account_service import check_user_credits, deduct_credits, get_current_credits
+from .alerting import alert
 from .scene_counts import get_template_id, normalize_scene_count
 
 load_dotenv()
@@ -24,7 +25,7 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
     template_id = get_template_id(scene_count)
     if not template_id:
         # 해당 장면 수의 Creatomate 템플릿이 아직 등록되지 않음 — 크래시 대신 안전한 에러 응답
-        print(f"[create_creatomate_video] scene_count={scene_count} 템플릿 미등록")
+        alert("config", "장면 수 템플릿 미등록", scene_count=scene_count)
         return {
             "error": "scene_count_template_not_configured",
             "message": f"{scene_count}장면 템플릿이 아직 준비되지 않았어요. 다른 장면 수로 시도해주세요.",
@@ -93,7 +94,15 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
                 )
             if not detail:
                 detail = (response.text or "")[:200]
-            print(f"[create_creatomate_video] 실패 status={response.status_code} detail={detail}")
+            # 설정 불일치(존재하지 않는 템플릿 ID)와 API 장애를 구분해 알린다.
+            # 2026-08-08: test 5장면 템플릿이 Creatomate 에서 삭제됐는데 나흘간 아무도 몰랐다.
+            source = "config" if response.status_code == 400 else "creatomate"
+            alert(
+                source,
+                f"렌더 요청 실패 status={response.status_code} detail={detail}",
+                template_id=template_id,
+                scene_count=scene_count,
+            )
             return {
                 "error": "creatomate_error",
                 "message": f"Creatomate {response.status_code}: {detail}".strip(),
@@ -108,19 +117,21 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
                 if deduct_success:
                     print(f"[+] {user_id} 크레딧 차감 완료 (render_id: {render_id})")
                 else:
-                    print(f"[!] {user_id} 크레딧 차감 실패")
+                    # 렌더는 시작됐는데 차감이 안 된 상태 — 돈이 새므로 반드시 알린다.
+                    alert("credits", "렌더 시작 후 크레딧 차감 실패", user_id=user_id, render_id=render_id)
             elif isinstance(result, dict) and result.get('id'):
                 render_id = result['id']
                 deduct_success = deduct_credits(user_id, 1000, "video_generation")
                 if deduct_success:
                     print(f"[+] {user_id} 크레딧 차감 완료 (render_id: {render_id})")
                 else:
-                    print(f"[!] {user_id} 크레딧 차감 실패")
+                    # 렌더는 시작됐는데 차감이 안 된 상태 — 돈이 새므로 반드시 알린다.
+                    alert("credits", "렌더 시작 후 크레딧 차감 실패", user_id=user_id, render_id=render_id)
         
         return result
         
     except Exception as e:
-        print(f"[!] Creatomate API 호출 실패: {e}")
+        alert("creatomate", f"API 호출 예외: {e}", template_id=template_id)
         return {
             "error": "api_error",
             "message": f"영상 생성 API 호출 실패: {str(e)}"
