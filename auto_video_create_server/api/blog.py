@@ -12,6 +12,7 @@ from services.create_creatomate_video import create_creatomate_video, get_creato
 from services.account_service import get_user_if_active, check_user_credits, get_current_credits
 from services.ai_background import generate_backgrounds_parallel, FALLBACK_URL as DEFAULT_BG_FALLBACK_URL
 from services.image_mirror import maybe_mirror
+from services.alerting import alert
 # cycle-3: 자막 스타일 편집 신규 서비스
 from services.font_service import get_korean_fonts, get_allowed_font_families
 from services.subtitle_settings_service import (
@@ -48,6 +49,19 @@ from urllib.parse import urlparse
 # from services.tts_fal import ...
 # from services.create_creatomate_video import ...
 # from services.extract_blog import ...
+
+
+def _safe_host(url) -> str:
+    """알림에 남길 블로그 호스트만 뽑는다.
+
+    URL 전체를 남기면 유저가 어떤 글을 봤는지가 로그에 쌓인다. 진단에 필요한 건
+    "어느 플랫폼 파서가 깨졌나"뿐이므로 호스트만 남긴다.
+    """
+    try:
+        return urlparse(str(url)).netloc or "(unknown)"
+    except Exception:
+        return "(unparsable)"
+
 
 def require_active_subscription(request: Request):
     user_id = request.headers.get("X-USER-ID") or request.query_params.get("id")
@@ -220,8 +234,21 @@ def extract_all(req: ExtractMediaRequest, user=Depends(require_active_subscripti
             "message": "지원하지 않는 블로그 플랫폼이에요. 네이버 블로그, 티스토리, 브런치만 가능해요.",
         }
     except Exception as e:
+        # 여기 오는 건 **우리가 예상하지 못한 실패**다. 유저 탓인 경우(비지원 플랫폼,
+        # 미등록 블로그)는 위에서 이미 갈라져 나갔다.
+        #
+        # 이 catch-all 이 조용했던 탓에 네이버가 마크업을 바꿔 파서가 깨져도 우리는 알 수
+        # 없었고, 유저에게는 "다른 글로 시도해주세요"라고 유저 탓처럼 안내됐다.
+        # 모르는 실패는 일단 알린다 — 시끄러우면 그때 유형별로 내리면 된다.
+        # (특정 예외가 유저 탓 소음으로 판명되면 위에 별도 except 로 분리할 것)
         print("extract_all 에러:", e)
         traceback.print_exc()
+        alert(
+            "extract_all",
+            f"예상치 못한 추출 실패: {e}",
+            error_type=type(e).__name__,
+            blog_host=_safe_host(req.blog_url),
+        )
         return {
             "status": "error",
             "error_code": "crawl_failed",
@@ -397,7 +424,20 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
             "error_type": "tts_failed",
         }
     except Exception as e:
+        # TypecastError 는 위에서 갈라져 나갔다. 여기 오는 건 전부 예상 밖이다 —
+        # Creatomate 응답 파싱, S3 업로드, 자막 설정 조회 등 어디서든 터질 수 있고,
+        # 지금까지는 그 어떤 것도 알림 없이 사라졌다.
         print("[generate_video 에러]", e)
+        traceback.print_exc()
+        # scene_count 는 try 블록 첫 줄에서 할당되므로 그 줄이 터지면 미정의다.
+        # 알림 코드가 NameError 로 2차 사고를 내면 알림 자체를 잃는다 — 항상 존재하는
+        # 요청 값을 쓴다.
+        alert(
+            "generate_video",
+            f"예상치 못한 영상 생성 실패: {e}",
+            error_type=type(e).__name__,
+            requested_scene_count=getattr(req, "scene_count", None),
+        )
         return {"status": "error", "message": str(e)}
 
 @router.get("/poll-video")
