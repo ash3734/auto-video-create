@@ -1,0 +1,555 @@
+{
+  "output_format": "mp4",
+  "width": 720,
+  "height": 1280,
+  "fonts": [
+    {
+      "family": "Noto Sans KR",
+      "weight": 100,
+      "style": "normal",
+      "source": "b909dfe8-dcdd-482d-a011-d60ef4330740"
+    },
+    {
+      "family": "CookieRun",
+      "weight": 900,
+      "style": "normal",
+      "source": "bca3fd58-3c54-4a21-ac95-8010257a6910"
+    },
+    {
+      "family": "CookieRun",
+      "weight": 700,
+      "style": "normal",
+      "source": "e4c942ce-b434-4093-bca0-28e3f2636421"
+    },
+    {
+      "family": "CookieRun",
+      "weight": 400,
+      "style": "normal",
+      "source": "9be97604-0f3b-46af-b951-42ee9f03f9ad"
+    }
+  ],
+  "elements": [
+    {
+      "id": "5d0b94c5-d2e2-4f77-b15a-5e66d65d1c1e",
+      "name": "Audio-6FR",
+      "type": "audio",
+      "track": 1,
+      "time": 0,
+      "duration": null,
+      "source": "df2208b7-cc87-4501-a858-b9f490311149",
+      "volume": "15%",
+      "audio_fade_out": 1.5
+    },
+    {
+      "id": "467d358c-5088-418b-9857-83c93becdbd3",
+      "name": "composition_1",
+      "type": "composition",
+      "track": 2,
+      "time": 0,
+      "fill_color": "rgba(51,51,51,1)",
+      "stroke_color": "#faf4f4",
+      "stroke_width": "0.2 vmin",
+      "dynamic": true,
+      "elements": [
+        {
+          "id": "6870cae7-9726-4329-8544-8a54fb6b7a1d",
+          "name": "image1",
+          "type": "image",
+          "track": 1,
+          "time": 0,
+          "height": "50%",
+          "source": "2b069580-c9fe-4ae4-9891-069b4551fe01",
+          "dynamic": true,
+          "visible": false
+        },
+        {
+          "id": "f5643779-d80e-46c8-9fd7-8879e423e63e",
+          "name": "video1",
+          "type": "video",
+          "track": 2,
+          "time": 0,
+          "duration": null,
+          "y": "49.9826%",
+          "height": "50.37%",
+          "source": "3248facb-2abc-433b-8940-0ea670244c3f",
+          "loop": true,
+          "dynamic": true
+        },
+        {
+          "id": "a3359ff6-ad33-49ac-a7a4-f0ab984e98f2",
+          "name": "audio1",
+          "type": "audio",
+          "track": 3,
+          "time": 0,
+          "y": "49.9826%",
+          "source": "598ad5ca-eb4f-4660-96ae-0f679aacc0f3",
+          "dynamic": true
+        },
+        {
+          "id": "da030f84-9f9a-48c8-9928-550132778533",
+          "name": "Subtitles-6K5",
+          "type": "text",
+          "track": 4,
+          "time": 0,
+          "y": "82%",
+          "width": "82%",
+          "height": "35%",
+          "x_alignment": "50%",
+          "y_alignment": "50%",
+          "font_family": "Montserrat",
+          "font_weight": "700",
+          "font_size": "6 vmin",
+          "background_color": "rgba(216,216,216,0)",
+          "background_x_padding": "31%",
+          "background_y_padding": "17%",
+          "background_border_radius": "31%",
+          "transcript_source": "audio1",
+          "transcript_split": "none",
+          "transcript_maximum_length": 14,
+          "transcript_color": "rgba(255,255,255,1)",
+          "fill_color": "#ffffff",
+          "stroke_color": "#000000",
+          "stroke_width": "1 vmin",
+          "dynamic": true
+        }
+      ]
+    },
+    {
+      "id": "b89a6628-7fc3-4a37-b870-239be40b032f",
+      "name": "composition_2",
+      "type": "composition",
+      "track": 2,
+      "fill_color": "rgba(51,51,51,1)",
+      "stroke_color": "#faf4f4",
+      "stroke_width": "0.2 vmin",
+      "dynamic": true,
+      "elements": [
+        {
+          "id": "de0cd14e-2062-4029-94ce-1239fcf14e0e",
+          "name": "image2",
+          "type": "image",
+          "track": 1,
+          "time": 0,
+          "height": "50%",
+          "source": "2b069580-c9fe-4ae4-9891-069b4551fe01",
+          "dynamic": true,
+          "visible": false
+        },
+        {
+          "id": "a4fde8ea-24af-474a-98f0-088ee601a657",
+          "name": "video2",
+          "type": "video",
+          "track": 2,
+          "time": 0,
+          "duration": null,
+          "height": "50%",
+          "source": "3248facb-2abc-433b-8940-0ea670244c3f",
+          "loop": true,
+          "dynamic": true
+        },
+        {
+          "id": "de3bc28b-e598-4411-9410-cfd987befc42",
+          "name": "audio2",
+          "type": "audio",
+          "track": 3,
+          "time": 0,
+          "source": "https://v3.fal.media/files/monkey/JxA1AGNEpZZVSyZ7h1lF-_output.mp3",
+          "dynamic": true
+        },
+        {
+          "id": "58230cb8-d06a-4118-8fd9-e6df6efadb09",
+          "name": "Subtitles-JTM",
+          "type": "text",
+          "track": 4,
+          "time": 0,
+          "y": "82.4721%",
+          "width": "82%",
+          "height": "35%",
+          "x_alignment": "50%",
+          "y_alignment": "50%",
+          "font_family": "Montserrat",
+          "font_weight": "700",
+          "font_size": "6 vmin",
+          "background_color": "rgba(216,216,216,0)",
+          "background_x_padding": "31%",
+          "background_y_padding": "17%",
+          "background_border_radius": "31%",
+          "transcript_source": "audio2",
+          "transcript_maximum_length": 14,
+          "transcript_color": null,
+          "fill_color": "#ffffff",
+          "stroke_color": "#000000",
+          "stroke_width": "1 vmin",
+          "dynamic": true
+        }
+      ]
+    },
+    {
+      "id": "4308e61c-ff66-4f6c-85ba-ec85952b425d",
+      "name": "composition_3",
+      "type": "composition",
+      "track": 2,
+      "fill_color": "rgba(51,51,51,1)",
+      "stroke_color": "#faf4f4",
+      "stroke_width": "0.2 vmin",
+      "dynamic": true,
+      "elements": [
+        {
+          "id": "201eb311-ea9c-4719-a334-1182486bc9e5",
+          "name": "image3",
+          "type": "image",
+          "track": 1,
+          "time": 0,
+          "height": "50%",
+          "source": "2b069580-c9fe-4ae4-9891-069b4551fe01",
+          "dynamic": true,
+          "visible": false
+        },
+        {
+          "id": "31d78e8a-ae67-452f-9215-f20fa4256409",
+          "name": "video3",
+          "type": "video",
+          "track": 2,
+          "time": 0,
+          "duration": null,
+          "height": "50%",
+          "source": "3248facb-2abc-433b-8940-0ea670244c3f",
+          "loop": true,
+          "dynamic": true
+        },
+        {
+          "id": "13518c52-73f7-469b-bd9d-a73a8b4274b5",
+          "name": "audio3",
+          "type": "audio",
+          "track": 3,
+          "time": 0,
+          "source": "https://v3.fal.media/files/monkey/JxA1AGNEpZZVSyZ7h1lF-_output.mp3",
+          "dynamic": true
+        },
+        {
+          "id": "411bcac6-577f-4514-821c-bc3c4fc8760a",
+          "name": "Subtitles-MDV",
+          "type": "text",
+          "track": 4,
+          "time": 0,
+          "y": "82.4721%",
+          "width": "82%",
+          "height": "35%",
+          "x_alignment": "50%",
+          "y_alignment": "50%",
+          "font_family": "Montserrat",
+          "font_weight": "700",
+          "font_size": "6 vmin",
+          "background_color": "rgba(216,216,216,0)",
+          "background_x_padding": "31%",
+          "background_y_padding": "17%",
+          "background_border_radius": "31%",
+          "transcript_source": "audio3",
+          "transcript_maximum_length": 14,
+          "transcript_color": null,
+          "fill_color": "#ffffff",
+          "stroke_color": "#000000",
+          "stroke_width": "1 vmin",
+          "dynamic": true
+        }
+      ]
+    },
+    {
+      "id": "8f33a0e6-c6bc-40a9-ada3-575f6db7ea41",
+      "name": "composition_4",
+      "type": "composition",
+      "track": 2,
+      "fill_color": "rgba(51,51,51,1)",
+      "stroke_color": "#faf4f4",
+      "stroke_width": "0.2 vmin",
+      "dynamic": true,
+      "elements": [
+        {
+          "id": "e54c0baf-aa25-49a9-8514-b141c7ad5ce0",
+          "name": "image4",
+          "type": "image",
+          "track": 1,
+          "time": 0,
+          "height": "50%",
+          "source": "2b069580-c9fe-4ae4-9891-069b4551fe01",
+          "dynamic": true,
+          "visible": false
+        },
+        {
+          "id": "861eb484-7c51-4909-ba06-14c212281540",
+          "name": "video4",
+          "type": "video",
+          "track": 2,
+          "time": 0,
+          "duration": null,
+          "height": "50%",
+          "source": "3248facb-2abc-433b-8940-0ea670244c3f",
+          "loop": true,
+          "dynamic": true
+        },
+        {
+          "id": "acc43036-e58d-4b0a-8eda-f2efb2d6a021",
+          "name": "audio4",
+          "type": "audio",
+          "track": 3,
+          "time": 0,
+          "source": "https://v3.fal.media/files/monkey/JxA1AGNEpZZVSyZ7h1lF-_output.mp3",
+          "dynamic": true
+        },
+        {
+          "id": "ff66a7e5-75a5-4214-84be-82638c0ae206",
+          "name": "Subtitles-5Z2",
+          "type": "text",
+          "track": 4,
+          "time": 0,
+          "y": "82.4721%",
+          "width": "82%",
+          "height": "35%",
+          "x_alignment": "50%",
+          "y_alignment": "50%",
+          "font_family": "Montserrat",
+          "font_weight": "700",
+          "font_size": "6 vmin",
+          "background_color": "rgba(216,216,216,0)",
+          "background_x_padding": "31%",
+          "background_y_padding": "17%",
+          "background_border_radius": "31%",
+          "transcript_source": "audio4",
+          "transcript_maximum_length": 14,
+          "transcript_color": null,
+          "fill_color": "#ffffff",
+          "stroke_color": "#000000",
+          "stroke_width": "1 vmin",
+          "dynamic": true
+        }
+      ]
+    },
+    {
+      "id": "424c1112-74ae-477c-9489-bfc9f37fb41e",
+      "name": "composition_5",
+      "type": "composition",
+      "track": 2,
+      "fill_color": "rgba(51,51,51,1)",
+      "stroke_color": "#faf4f4",
+      "stroke_width": "0.2 vmin",
+      "dynamic": true,
+      "elements": [
+        {
+          "id": "d1093a1a-3ad1-4ff3-a8c8-1928123506ec",
+          "name": "image5",
+          "type": "image",
+          "track": 1,
+          "time": 0,
+          "height": "50%",
+          "source": "2b069580-c9fe-4ae4-9891-069b4551fe01",
+          "dynamic": true,
+          "visible": false
+        },
+        {
+          "id": "08fed2fb-4457-487b-8d0b-c7eeff5efb9e",
+          "name": "video5",
+          "type": "video",
+          "track": 2,
+          "time": 0,
+          "duration": null,
+          "height": "50%",
+          "source": "3248facb-2abc-433b-8940-0ea670244c3f",
+          "loop": true,
+          "dynamic": true
+        },
+        {
+          "id": "51ebb71b-8ce7-4b1a-bbf5-d0c8cc9a82a1",
+          "name": "audio5",
+          "type": "audio",
+          "track": 3,
+          "time": 0,
+          "source": "https://v3.fal.media/files/monkey/JxA1AGNEpZZVSyZ7h1lF-_output.mp3",
+          "dynamic": true
+        },
+        {
+          "id": "4fbf19cd-8921-4867-ab98-ab98c1384b08",
+          "name": "Subtitles-D6M",
+          "type": "text",
+          "track": 4,
+          "time": 0,
+          "y": "82%",
+          "width": "82%",
+          "height": "35%",
+          "x_alignment": "50%",
+          "y_alignment": "50%",
+          "font_family": "Montserrat",
+          "font_weight": "700",
+          "font_size": "6 vmin",
+          "background_color": "rgba(216,216,216,0)",
+          "background_x_padding": "31%",
+          "background_y_padding": "17%",
+          "background_border_radius": "31%",
+          "transcript_source": "audio5",
+          "transcript_maximum_length": 14,
+          "transcript_color": null,
+          "fill_color": "#ffffff",
+          "stroke_color": "#000000",
+          "stroke_width": "1 vmin",
+          "dynamic": true
+        }
+      ]
+    },
+    {
+      "id": "680d8da6-bdd8-4114-a64e-21b2dae32f72",
+      "name": "composition_6",
+      "type": "composition",
+      "track": 2,
+      "fill_color": "rgba(51,51,51,1)",
+      "stroke_color": "#faf4f4",
+      "stroke_width": "0.2 vmin",
+      "dynamic": true,
+      "elements": [
+        {
+          "id": "5dfe3764-cb71-4da0-b115-b2fbd0fa0b2f",
+          "name": "image6",
+          "type": "image",
+          "track": 1,
+          "time": 0,
+          "height": "50%",
+          "source": "2b069580-c9fe-4ae4-9891-069b4551fe01",
+          "dynamic": true,
+          "visible": false
+        },
+        {
+          "id": "2bade3a9-7dff-4f45-af40-b088db7dbf1a",
+          "name": "video6",
+          "type": "video",
+          "track": 2,
+          "time": 0,
+          "duration": null,
+          "height": "50%",
+          "source": "3248facb-2abc-433b-8940-0ea670244c3f",
+          "loop": true,
+          "dynamic": true
+        },
+        {
+          "id": "fbad92a2-fadc-414c-8b55-775a77fee0a1",
+          "name": "audio6",
+          "type": "audio",
+          "track": 3,
+          "time": 0,
+          "source": "https://v3.fal.media/files/monkey/JxA1AGNEpZZVSyZ7h1lF-_output.mp3",
+          "dynamic": true
+        },
+        {
+          "id": "2537f9f5-41c1-47bc-a741-559697a475ca",
+          "name": "Subtitles-3KT",
+          "type": "text",
+          "track": 4,
+          "time": 0,
+          "y": "82%",
+          "width": "82%",
+          "height": "35%",
+          "x_alignment": "50%",
+          "y_alignment": "50%",
+          "font_family": "Montserrat",
+          "font_weight": "700",
+          "font_size": "6 vmin",
+          "background_color": "rgba(216,216,216,0)",
+          "background_x_padding": "31%",
+          "background_y_padding": "17%",
+          "background_border_radius": "31%",
+          "transcript_source": "audio6",
+          "transcript_maximum_length": 14,
+          "transcript_color": null,
+          "fill_color": "#ffffff",
+          "stroke_color": "#000000",
+          "stroke_width": "1 vmin",
+          "dynamic": true
+        }
+      ],
+      "animations": [
+        {
+          "type": "fade",
+          "time": "end",
+          "duration": 0.1,
+          "reversed": true
+        }
+      ]
+    },
+    {
+      "id": "3b3272c3-4b91-4da4-8c81-15dd278405a6",
+      "name": "compostion_logo",
+      "type": "composition",
+      "track": 3,
+      "time": 0,
+      "y": "50.2772%",
+      "elements": [
+        {
+          "id": "2c0de25b-064a-41a0-9c28-700a2fd8593d",
+          "name": "Shape-DSN",
+          "type": "shape",
+          "track": 1,
+          "time": 0,
+          "y": "86.7294%",
+          "width": "100%",
+          "height": "26.78%",
+          "x_anchor": "50%",
+          "y_anchor": "50%",
+          "path": "M 0 0 L 100 0 L 100 100 L 0 100 L 0 0 Z",
+          "opacity": "0%"
+        }
+      ],
+      "animations": [
+        {
+          "type": "fade",
+          "time": "end",
+          "duration": 0.1,
+          "reversed": true
+        }
+      ]
+    },
+    {
+      "id": "d01b84d9-de35-45fc-b9e8-b32d7b3a27fa",
+      "name": "composition_title",
+      "type": "composition",
+      "track": 4,
+      "time": 0,
+      "elements": [
+        {
+          "id": "2d2d526e-f4a3-4a21-acba-69c79cac47f4",
+          "name": "Shape-2ZH",
+          "type": "shape",
+          "track": 1,
+          "time": 0,
+          "y": "13.1739%",
+          "width": "100%",
+          "height": "24.4364%",
+          "x_anchor": "50%",
+          "y_anchor": "50%",
+          "path": "M 0 0 L 100 0 L 100 100 L 0 100 L 0 0 Z"
+        },
+        {
+          "id": "2a2d790d-e46e-47de-b7d6-b24dab77213f",
+          "name": "title",
+          "type": "text",
+          "track": 2,
+          "time": 0,
+          "y": "18.0691%",
+          "width": "88.204%",
+          "height": "9.7904%",
+          "x_alignment": "50%",
+          "text": "신논현 맛집 세광양대창",
+          "font_family": "CookieRun",
+          "font_weight": "700",
+          "font_size_maximum": "99.6 vmin",
+          "fill_color": "#fff100",
+          "dynamic": true
+        }
+      ],
+      "animations": [
+        {
+          "type": "fade",
+          "time": "end",
+          "duration": 0.1,
+          "reversed": true
+        }
+      ]
+    }
+  ]
+}
