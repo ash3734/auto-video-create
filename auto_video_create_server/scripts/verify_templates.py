@@ -38,12 +38,20 @@ from services.scene_counts import ALLOWED_SCENE_COUNTS, SCENE_COUNT_CONFIG  # no
 API_URL = "https://api.creatomate.com/v1/templates/{}"
 TIMEOUT = 15
 
+# Creatomate 앞단의 Cloudflare 가 urllib 기본 User-Agent(`Python-urllib/3.x`)를
+# 차단한다 — 키가 멀쩡해도 `403 error code: 1010` 이 돌아온다. 이걸 모르면
+# "키가 잘못됐나" 로 한참 헤매게 되므로 명시적으로 보낸다. (2026-08-09 확인)
+USER_AGENT = "auto-video-create/1.0 (template-verifier)"
+
 
 def fetch_template(template_id, api_key):
     """(상태, 페이로드) 반환. 상태: 'ok' | 'not_found' | 'error:...'"""
     req = urllib.request.Request(
         API_URL.format(template_id),
-        headers={"Authorization": f"Bearer {api_key}"},
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": USER_AGENT,
+        },
     )
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
