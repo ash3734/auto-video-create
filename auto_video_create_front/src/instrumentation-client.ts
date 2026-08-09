@@ -23,6 +23,39 @@ import * as Sentry from "@sentry/nextjs";
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
+/**
+ * 전송량 제한 — 무료 티어(월 5천 이벤트)를 폭주로 태우지 않기 위한 안전장치.
+ *
+ * 렌더 루프 안에서 에러가 나면 초당 수십 건이 발생할 수 있다. 그러면 하루도 못 가
+ * 한도가 소진되고, 정작 중요한 에러가 오는 달 말에는 아무것도 못 받는다.
+ *
+ * 중복 제거(dedupe)는 Sentry 기본 통합이 해주지만, 그건 **연속된 동일 에러**만
+ * 막는다. 서로 다른 에러가 번갈아 터지는 경우는 못 막으므로 총량 제한이 따로 필요하다.
+ *
+ * 한 브라우저 세션 기준이라 유저 수만큼 곱해지지만, 지금 규모에서는 이 정도가
+ * "폭주는 막고 진짜 에러는 놓치지 않는" 균형점이다.
+ */
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const MAX_EVENTS_PER_WINDOW = 5;
+const MAX_EVENTS_PER_PAGELOAD = 20;
+
+let windowStartedAt = Date.now();
+let eventsInWindow = 0;
+let eventsTotal = 0;
+
+function withinRateLimit(): boolean {
+  const now = Date.now();
+  if (now - windowStartedAt > RATE_LIMIT_WINDOW_MS) {
+    windowStartedAt = now;
+    eventsInWindow = 0;
+  }
+  if (eventsTotal >= MAX_EVENTS_PER_PAGELOAD) return false;
+  if (eventsInWindow >= MAX_EVENTS_PER_WINDOW) return false;
+  eventsInWindow += 1;
+  eventsTotal += 1;
+  return true;
+}
+
 if (dsn) {
   Sentry.init({
     dsn,
@@ -38,7 +71,23 @@ if (dsn) {
     // IP·쿠키 등 자동 수집은 끈 채로 둔다(기본값). 아래에서 user_id 만 명시적으로 붙인다.
     sendDefaultPii: false,
 
+    // 우리 코드와 무관한 잡음만 걸러낸다. 여기에 많이 넣을수록 사각지대가 커지므로
+    // "명백히 우리가 손댈 수 없는 것"만 넣는다.
+    ignoreErrors: [
+      // 브라우저 렌더 최적화 경고 — 기능에 영향 없고 크롬에서 흔하다.
+      /ResizeObserver loop/,
+    ],
+    denyUrls: [
+      // 브라우저 확장 프로그램이 낸 에러는 우리가 고칠 수 없다.
+      /^chrome-extension:\/\//,
+      /^moz-extension:\/\//,
+      /^safari-web-extension:\/\//,
+    ],
+
     beforeSend(event) {
+      // 폭주 차단이 먼저다 — 한도를 넘으면 아예 만들지 않고 버린다.
+      if (!withinRateLimit()) return null;
+
       // 어떤 유저에게서 난 에러인지 알아야 재현과 응대가 된다.
       // localStorage 는 시크릿 모드 등에서 던질 수 있으므로 반드시 감싼다.
       try {
