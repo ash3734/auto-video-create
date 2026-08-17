@@ -6,7 +6,6 @@ from services.summarize import summarize_for_shorts_sets
 from services.tts_typecast import (
     tts_with_typecast_multi,
     TypecastError,
-    DEFAULT_VOICE_ID as DEFAULT_TYPECAST_VOICE_ID,
 )
 from services.create_creatomate_video import create_creatomate_video, get_creatomate_vars, poll_creatomate_video_url
 from services.account_service import get_user_if_active, check_user_credits, get_current_credits
@@ -36,6 +35,8 @@ from services.scene_counts import (
     available_scene_counts,
     DEFAULT_SCENE_COUNT,
 )
+from services.voices import available_voices, normalize_voice_id
+from services.voice_preview import get_preview_url
 from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
 import os
@@ -206,6 +207,40 @@ def get_scene_counts():
         "default_scene_count": DEFAULT_SCENE_COUNT,
     }
 
+@router.get("/voices")
+def get_voices():
+    """GET /api/blog/voices
+
+    선택 가능한 나레이션 음성 목록. is_default=true 가 현재 기본 음성이다.
+    """
+    return {"voices": available_voices()}
+
+
+class VoicePreviewRequest(BaseModel):
+    voice_id: str
+    # 유저가 화면에서 보고 있는 실제 스크립트. 제네릭 샘플이 아니라 이걸 읽힌다.
+    text: str
+
+
+@router.post("/voice-preview")
+def voice_preview(req: VoicePreviewRequest, user=Depends(require_active_subscription)):
+    """POST /api/blog/voice-preview
+
+    (voice_id, text) 조합의 미리듣기 mp3 URL 을 돌려준다. 같은 조합이면 S3 캐시를
+    그대로 쓰므로 재생성 비용이 없다.
+
+    크레딧을 차감하지 않는다 — 미리듣기는 한 줄이라 영상 한 편의 1/5 비용이고,
+    여기에 과금하면 기능을 쓰지 않게 되어 존재 이유가 사라진다.
+    """
+    api_key = os.environ.get("TYPECAST_API_KEY")
+    result = get_preview_url(req.voice_id, req.text, api_key)
+    if result.get("status") != "success":
+        # 200 으로 돌려준다 — 미리듣기 실패는 화면을 막을 사안이 아니고,
+        # FE 는 해당 행에만 에러를 표시하고 선택은 계속 가능해야 한다.
+        return result
+    return result
+
+
 @router.post("/extract-all")
 def extract_all(req: ExtractMediaRequest, user=Depends(require_active_subscription)):
     try:
@@ -299,6 +334,8 @@ class GenerateVideoRequest(BaseModel):
     subtitle_settings: Optional[SubtitleSettingsModel] = None
     # 장면 수 선택 (4~8). 미전송 시 scripts 길이에서 추론, 그것도 무효면 기본 5.
     scene_count: Optional[int] = None
+    # 나레이션 음성. 미전송/무효 시 기본값(혜리) — 기존 유저 결과물이 바뀌지 않는다.
+    voice_id: Optional[str] = None
 
 class GenerateVideoResponse(BaseModel):
     status: str
@@ -319,7 +356,10 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
 
         # 1. TTS 변환 (scripts → mp3 url) — 2026-08-05 Supertone → Typecast 전환
         TYPECAST_API_KEY = os.environ.get("TYPECAST_API_KEY")
-        TYPECAST_VOICE_ID = os.environ.get("TYPECAST_VOICE_ID", DEFAULT_TYPECAST_VOICE_ID)
+        # 2026-08-17: 음성 선택 도입. 요청값을 그대로 믿지 않고 허용 목록으로 정규화한다
+        # — 임의의 voice_id 로 엉뚱한(영어 등) 음성 영상이 나가면 1,000크레딧이 날아간다.
+        # 미전송/무효면 기본값(혜리)이라 기존 유저의 결과물은 그대로다.
+        TYPECAST_VOICE_ID = normalize_voice_id(req.voice_id)
         TTS_SPEED = 1.4
         audio_local_paths, audio_urls = tts_with_typecast_multi(
             req.scripts,
