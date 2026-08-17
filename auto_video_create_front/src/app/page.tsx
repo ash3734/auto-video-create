@@ -13,6 +13,7 @@ import AuthGuard from "../components/AuthGuard";
 import LogoutButton from "../components/LogoutButton";
 import ChangePasswordButton from "../components/ChangePasswordButton";
 import SubtitleStyleEditor, { SubtitleSettings } from "./components/SubtitleStyleEditor";
+import VoicePicker, { Voice } from "./components/VoicePicker";
 
 interface MediaList {
   images: string[];
@@ -108,6 +109,10 @@ export default function Home() {
 
   // sectionMedia: 길이 5, 각 원소는 SectionMedia 또는 null
   const [sectionMedia, setSectionMedia] = useState<(SectionMedia|null)[]>([null, null, null, null, null]);
+  // 나레이션 음성 선택. 목록을 못 받으면 빈 배열 → 선택 UI 자체를 숨기고 BE 기본값으로 간다.
+  const [voices, setVoices] = useState<Voice[]>([]);
+  const [voiceId, setVoiceId] = useState<string>("");
+
   // 장면 수 선택 (4~8). 스크립트/이미지 슬롯 개수가 이 값을 따른다. 기본 5 = 기존 동작.
   const [sceneCount, setSceneCount] = useState<number>(5);
   const [availableSceneCounts, setAvailableSceneCounts] = useState<{ scene_count: number; available: boolean }[]>([]);
@@ -136,6 +141,28 @@ export default function Home() {
         userId: localStorage.getItem("user_id") || "(없음)",
       });
     }
+  }, []);
+
+  // 선택 가능한 음성 목록 로드.
+  // 실패하면 목록을 비워 두고 선택 UI 를 숨긴다 — BE 가 기본값(혜리)을 쓰므로
+  // 음성 목록을 못 받는다고 영상 제작이 막히면 안 된다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch(`${API_BASE_URL}/api/blog/voices`);
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data?.voices) && data.voices.length > 0) {
+          setVoices(data.voices);
+          const def = data.voices.find((v: Voice) => v.is_default) ?? data.voices[0];
+          setVoiceId(def.voice_id);
+        }
+      } catch (e) {
+        derr("음성 목록 로드 실패 — 기본 음성으로 진행", { error: String(e) });
+        if (!cancelled) setVoices([]);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // 선택 가능한 장면 수 목록 로드 (실패 시 5만 선택 가능하게 폴백)
@@ -440,6 +467,8 @@ export default function Home() {
           sections: sectionMedia,
           subtitle_settings: subtitleSettings,
           scene_count: sceneCount,
+          // 빈 문자열이면 보내지 않는다 — BE 가 기본값(혜리)으로 흐른다
+          ...(voiceId ? { voice_id: voiceId } : {}),
         }),
         signal: controller.signal,
       });
@@ -766,6 +795,31 @@ export default function Home() {
                       inputProps={{ maxLength: 30 }}
                       helperText="GPT가 생성한 제목이에요. 자유롭게 수정할 수 있어요."
                     />
+
+                    {/* 음성 선택 — 미리듣기는 스크립트 1을 기준 문장으로 쓴다.
+                        음성끼리 비교하려면 텍스트가 같아야 하기 때문. */}
+                    {voices.length > 0 && (
+                      <VoicePicker
+                        voices={voices}
+                        selected={voiceId}
+                        onSelect={setVoiceId}
+                        previewText={scripts[0] ?? ""}
+                        disabled={loading}
+                        previewBlockedReason={
+                          editingIdx === 0
+                            ? "스크립트 1 수정을 마치면 들어볼 수 있어요"
+                            : null
+                        }
+                        apiBaseUrl={API_BASE_URL}
+                        authHeaders={() => ({
+                          "X-USER-ID":
+                            (typeof window !== "undefined"
+                              ? localStorage.getItem("user_id")
+                              : "") ?? "",
+                        })}
+                      />
+                    )}
+
                     {scripts.map((script, idx) => {
                       const section = sectionMedia[idx];
                       // cycle-2: 사용자가 직접 고른 슬롯만 강조. AI 기본 배경 슬롯은 강조 X.
@@ -988,6 +1042,29 @@ export default function Home() {
                   inputProps={{ maxLength: 30 }}
                   helperText="GPT가 생성한 제목이에요. 자유롭게 수정할 수 있어요."
                 />
+
+                {/* 음성 선택 (모바일) — PC 분기와 동일. 유저 대부분이 모바일이라
+                    한쪽에만 넣으면 사실상 없는 기능이 된다. */}
+                {voices.length > 0 && (
+                  <VoicePicker
+                    voices={voices}
+                    selected={voiceId}
+                    onSelect={setVoiceId}
+                    previewText={scripts[0] ?? ""}
+                    disabled={loading}
+                    previewBlockedReason={
+                      editingIdx === 0 ? "스크립트 1 수정을 마치면 들어볼 수 있어요" : null
+                    }
+                    apiBaseUrl={API_BASE_URL}
+                    authHeaders={() => ({
+                      "X-USER-ID":
+                        (typeof window !== "undefined"
+                          ? localStorage.getItem("user_id")
+                          : "") ?? "",
+                    })}
+                  />
+                )}
+
                 {scripts.map((script, idx) => {
                   const section = sectionMedia[idx];
                   return (
