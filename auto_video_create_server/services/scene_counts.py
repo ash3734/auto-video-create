@@ -41,7 +41,12 @@ SCENE_COUNT_CONFIG: dict = {
     5: {
         # 현행 운영 템플릿 (기존 동작 100% 유지)
         "template_id_prod": "8971a2e5-3875-4d2d-9983-eefe9a76b476",
-        "template_id_test": "eda9d421-b086-4660-9f3c-9236d826226f",
+        # 2026-08-09 교체: 기존 test 5장면(eda9d421)은 Creatomate 에서 삭제된 상태였다.
+        # 08-08 에 "No template was found with that ID" 400 으로 드러났고, 나흘간
+        # 아무도 몰랐다. 5는 기본 장면 수라 test 에서 기본 설정으로 만들면 무조건
+        # 실패하는 상태였다. 새로 만든 템플릿의 ID 로 교체한다.
+        # (scripts/verify_templates.py 가 이런 불일치를 유저보다 먼저 잡는다)
+        "template_id_test": "4a8a79ee-6b4e-427d-bba7-2b1208124c9a",
         "subtitle_suffixes": ["6K5", "JTM", "MDV", "5Z2", "D6M"],
     },
     6: {

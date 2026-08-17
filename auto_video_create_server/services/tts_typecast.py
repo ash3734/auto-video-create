@@ -16,6 +16,8 @@ import time
 import boto3
 import requests
 
+from .alerting import alert
+
 TYPECAST_URL = "https://api.typecast.ai/v1/text-to-speech"
 DEFAULT_MODEL = "ssfm-v30"
 DEFAULT_VOICE_ID = "tc_62e8f21e979b3860fe2f6a24"
@@ -56,6 +58,7 @@ def tts_with_typecast(text, output_path, api_key, voice_id=None, speed=1.4,
                       model=DEFAULT_MODEL, language="kor"):
     """텍스트 1건 → mp3 파일. 성공 시 (output_path, None) 반환."""
     if not api_key:
+        alert("config", "TYPECAST_API_KEY 미설정")
         raise TypecastError("TYPECAST_API_KEY 가 설정되지 않았습니다.")
 
     text = (text or "").strip()
@@ -89,6 +92,7 @@ def tts_with_typecast(text, output_path, api_key, voice_id=None, speed=1.4,
             if attempt == 0:
                 time.sleep(RETRY_BACKOFF_SEC)
                 continue
+            alert("typecast", f"재시도 후에도 요청 실패: {e}")
             raise TypecastError(last_error)
 
         if response.status_code == 200:
@@ -109,8 +113,15 @@ def tts_with_typecast(text, output_path, api_key, voice_id=None, speed=1.4,
         if response.status_code in RETRY_STATUSES and attempt == 0:
             time.sleep(RETRY_BACKOFF_SEC)
             continue
+
+        # 401/402/403 은 키가 틀렸거나 플랜/결제 문제 — 재시도로는 절대 안 풀리고
+        # 사람이 Typecast 콘솔에 들어가야 한다. 그래서 API 장애와 분리해서 알린다.
+        # (2026-08-05~08 에 이 세 코드로 이틀을 날렸다.)
+        source = "config" if response.status_code in (401, 402, 403) else "typecast"
+        alert(source, last_error)
         raise TypecastError(last_error)
 
+    alert("typecast", last_error or "Typecast 호출 실패")
     raise TypecastError(last_error or "Typecast 호출 실패")
 
 
