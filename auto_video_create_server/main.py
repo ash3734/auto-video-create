@@ -31,7 +31,30 @@ app.include_router(account_router, prefix="/api/account")
 async def root():
     return {"status": "ok"}
 
-handler = Mangum(app)
+_http_handler = Mangum(app)
+
+
+def handler(event, context):
+    """Lambda 진입점.
+
+    API Gateway 요청과 EventBridge 스케줄을 같은 함수에서 받는다. 리포트 때문에
+    Lambda·IAM 역할·배포 파이프라인을 하나 더 만드는 것보다, 이미 S3 접근 권한과
+    코드를 갖춘 이 함수를 재사용하는 편이 관리 지점이 적다.
+
+    EventBridge 이벤트는 `source: aws.events` 로 구분한다. HTTP 요청에는 이 필드가
+    없으므로 서로 섞일 일이 없다.
+    """
+    if isinstance(event, dict) and event.get("source") == "aws.events":
+        task = (event.get("detail") or {}).get("task")
+        if task == "daily_report":
+            from services.daily_report import send_daily_report
+
+            send_daily_report()
+            return {"status": "ok", "task": task}
+        print(f"[handler] 알 수 없는 예약 작업: {task}")
+        return {"status": "ignored", "task": task}
+
+    return _http_handler(event, context)
 
 
 if __name__ == "__main__":

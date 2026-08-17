@@ -307,7 +307,10 @@ class GenerateVideoResponse(BaseModel):
 
 @router.post("/generate-video")
 def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscription_and_credits)):
-    print("generate_video 호출")
+    # user_id 를 함께 남긴다 — 일일 사용량 리포트가 "유저별 **시도** 횟수"를 로그에서
+    # 세기 때문이다. S3 크레딧 이력은 성공한 건만 남으므로, 실패한 시도(이탈로 이어지는
+    # 그 지점)는 이 로그로만 알 수 있다. 형식을 바꾸면 리포트 집계가 조용히 깨진다.
+    print(f"generate_video 호출 user_id={user.get('id')}")
     try:
         # 장면 수: 명시값 우선, 없으면 scripts 길이에서 추론 (무효 시 기본 5)
         scene_count = normalize_scene_count(
