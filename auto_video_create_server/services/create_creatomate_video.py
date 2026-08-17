@@ -18,6 +18,19 @@ CREATOMATE_TEMPLATE_ID = get_template_id(5)
 ## 네이버 "e78f211a-9e4c-4f5c-a871-36b9d680ee11"
 ## 유튜브 "14457245-7822-48a6-a711-62d15b739b85"
 
+def _extract_render_id(result):
+    """Creatomate 응답에서 render_id 를 뽑는다. 없으면 None.
+
+    응답이 리스트(`[{...}]`)로 올 때와 딕셔너리로 올 때가 모두 있어 양쪽을 받는다.
+    render_id 가 있어야 렌더가 실제로 시작된 것이므로, 차감 여부의 판단 근거가 된다.
+    """
+    if isinstance(result, list) and result and isinstance(result[0], dict):
+        return result[0].get("id")
+    if isinstance(result, dict):
+        return result.get("id")
+    return None
+
+
 def create_creatomate_video(audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, user_id=None, scene_count=5, **kwargs):
     print("create_creatomate_video 호출")
 
@@ -108,26 +121,23 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
                 "message": f"Creatomate {response.status_code}: {detail}".strip(),
             }
 
-        # 성공 시 크레딧 차감
-        if user_id and response.status_code == 200:
-            # render_id가 있는지 확인 (성공적인 렌더링 시작)
-            if isinstance(result, list) and result and result[0].get('id'):
-                render_id = result[0]['id']
-                deduct_success = deduct_credits(user_id, 1000, "video_generation")
-                if deduct_success:
-                    print(f"[+] {user_id} 크레딧 차감 완료 (render_id: {render_id})")
-                else:
-                    # 렌더는 시작됐는데 차감이 안 된 상태 — 돈이 새므로 반드시 알린다.
-                    alert("credits", "렌더 시작 후 크레딧 차감 실패", user_id=user_id, render_id=render_id)
-            elif isinstance(result, dict) and result.get('id'):
-                render_id = result['id']
-                deduct_success = deduct_credits(user_id, 1000, "video_generation")
-                if deduct_success:
-                    print(f"[+] {user_id} 크레딧 차감 완료 (render_id: {render_id})")
-                else:
-                    # 렌더는 시작됐는데 차감이 안 된 상태 — 돈이 새므로 반드시 알린다.
-                    alert("credits", "렌더 시작 후 크레딧 차감 실패", user_id=user_id, render_id=render_id)
-        
+        # 성공 시 크레딧 차감.
+        #
+        # 2026-08-17 수정: 조건이 `status_code == 200` 이었는데 Creatomate 는 렌더 생성에
+        # **202 Accepted** 를 반환한다(렌더는 비동기로 시작된다). 그래서 이 블록이 한 번도
+        # 실행된 적이 없다 — prod 최근 30일 기준 렌더 성공 10건에 차감 0건.
+        # 크레딧 이력(S3)도 2025-10 이후 비어 있어 사용량 집계가 불가능했다.
+        #
+        # 진입 시 잔액 체크(check_user_credits)만 있고 차감이 없으면, 크레딧 기반 유료
+        # 유저는 사실상 무제한이 된다. 2xx 전체를 성공으로 본다.
+        render_id = _extract_render_id(result)
+        if user_id and 200 <= response.status_code < 300 and render_id:
+            if deduct_credits(user_id, 1000, "video_generation"):
+                print(f"[+] {user_id} 크레딧 차감 완료 (render_id: {render_id})")
+            else:
+                # 렌더는 시작됐는데 차감이 안 된 상태 — 돈이 새므로 반드시 알린다.
+                alert("credits", "렌더 시작 후 크레딧 차감 실패", user_id=user_id, render_id=render_id)
+
         return result
         
     except Exception as e:
