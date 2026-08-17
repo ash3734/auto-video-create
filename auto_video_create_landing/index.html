@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>숏폼 필수 체험단, 이제 그냥 지원하세요</title>
+<meta name="description" content="블로그 글 주소만 넣으면 숏폼이 만들어집니다. 영상 편집은 몰라도 됩니다.">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="숏폼 필수 체험단, 이제 그냥 지원하세요">
+<meta property="og:description" content="블로그 글 주소만 넣으면 숏폼이 만들어집니다. 영상 편집은 몰라도 됩니다.">
+<!-- TODO: 대표 이미지 1200x630 준비 후 절대 URL 로 교체 -->
+<meta property="og:image" content="">
+
+<link rel="stylesheet" as="style" crossorigin
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+
+<!-- ───────────────────────────────────────────────────────────
+     GA4 — TODO: G-XXXXXXXXXX 를 실제 측정 ID 로 교체.
+     교체 전에는 아무것도 전송하지 않는다. 가짜 ID 로 조용히 실패해서
+     "설치했는데 데이터가 안 쌓인다"로 헤매는 걸 막기 위함.
+     ─────────────────────────────────────────────────────────── -->
+<script>
+  window.GA4_ID = "G-XXXXXXXXXX";
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){ dataLayer.push(arguments); }
+  if (window.GA4_ID && !window.GA4_ID.includes("XXXX")) {
+    var s=document.createElement("script");
+    s.async=true; s.src="https://www.googletagmanager.com/gtag/js?id="+window.GA4_ID;
+    document.head.appendChild(s);
+    gtag("js", new Date()); gtag("config", window.GA4_ID);
+  } else {
+    console.warn("[landing] GA4 측정 ID 미설정 — 이벤트를 전송하지 않습니다.");
+  }
+</script>
+
+<style>
+  :root{
+    --paper:#fbfaf7;
+    --paper-2:#f4f2ed;
+    --ink:#191817;
+    --ink-2:#4a4744;
+    --muted:#8a8580;
+    --line:#e6e2da;
+    --accent:#0f7a46;      /* 차분한 초록 — 실용적이고 신뢰감 있는 톤 */
+    --accent-soft:#e7f3ec;
+    --warn:#b45309;
+    --warn-soft:#fdf3e3;
+    --radius:18px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,
+                "Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    word-break:keep-all;              /* 한국어는 어절 단위로 끊어야 읽힌다 */
+    line-height:1.72;-webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;text-decoration:none;}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 24px;}
+  .narrow{max-width:680px;margin:0 auto;}
+  section{padding:92px 0;}
+
+  h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.038em;}
+  h1{font-size:clamp(32px,6.4vw,54px);line-height:1.26;}
+  h2{font-size:clamp(25px,4vw,38px);line-height:1.32;}
+  h3{font-size:18.5px;line-height:1.45;letter-spacing:-.028em;}
+  p{margin:0;}
+  .lead{font-size:clamp(16px,2.2vw,18.5px);color:var(--ink-2);font-weight:500;}
+  .muted{color:var(--muted);}
+  .u{
+    background:linear-gradient(transparent 62%, rgba(15,122,70,.22) 62%);
+    padding:0 3px;
+  }
+
+  .eyebrow{
+    display:inline-block;font-size:13px;font-weight:800;letter-spacing:-.01em;
+    color:var(--accent);background:var(--accent-soft);
+    border-radius:999px;padding:7px 15px;margin-bottom:22px;
+  }
+
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:16px;letter-spacing:-.025em;
+    border-radius:12px;padding:17px 26px;border:0;cursor:pointer;
+    transition:transform .15s ease, background .15s ease, border-color .15s ease;
+  }
+  .btn:active{transform:translateY(1px);}
+  .btn-primary{background:var(--ink);color:var(--paper);}
+  .btn-primary:hover{background:#302d2a;}
+  .btn-ghost{background:transparent;color:var(--ink);border:1.6px solid var(--line);}
+  .btn-ghost:hover{border-color:#cfc9be;background:#fff;}
+  .btn-block{width:100%;}
+
+  /* ── nav ── */
+  header.nav{
+    position:sticky;top:0;z-index:50;background:rgba(251,250,247,.86);
+    backdrop-filter:saturate(150%) blur(12px);border-bottom:1px solid var(--line);
+  }
+  .nav-in{display:flex;align-items:center;justify-content:space-between;height:64px;}
+  .logo{font-weight:900;font-size:17.5px;letter-spacing:-.045em;}
+  .logo i{font-style:normal;color:var(--accent);}
+  .nav .btn{padding:10px 17px;font-size:14px;border-radius:10px;}
+
+  /* ── hero ── */
+  .hero{padding:78px 0 84px;}
+  .hero-grid{display:grid;gap:44px;align-items:center;}
+  .hero-cta{display:flex;flex-direction:column;gap:11px;margin-top:32px;}
+  .hero-note{font-size:14px;color:var(--muted);margin-top:15px;}
+
+  /* 체험단 공고 카드 — 우리 결과물이 아니라 '유저가 겪는 실물'을 보여준다.
+     품질이 아직 강점이 아니므로, 결과물을 히어로에 세우지 않는다. */
+  .notice{
+    background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+    padding:24px;box-shadow:0 14px 34px rgba(60,50,35,.07);
+    transform:rotate(-1.1deg);
+  }
+  .notice-top{
+    display:flex;align-items:center;gap:9px;padding-bottom:14px;
+    border-bottom:1px solid var(--line);margin-bottom:16px;
+  }
+  .notice-top .ico{
+    width:30px;height:30px;border-radius:8px;background:var(--paper-2);
+    display:grid;place-items:center;font-size:14px;
+  }
+  .notice-top b{font-size:14px;letter-spacing:-.02em;}
+  .notice-top span{font-size:12px;color:var(--muted);}
+  .notice h4{margin:0 0 12px;font-size:17px;letter-spacing:-.03em;font-weight:800;}
+  .req{list-style:none;padding:0;margin:0;}
+  .req li{
+    font-size:14px;color:var(--ink-2);padding:7px 0;display:flex;gap:9px;align-items:flex-start;
+  }
+  .req li i{font-style:normal;color:var(--muted);}
+  .req li.hot{
+    background:var(--warn-soft);margin:4px -10px;padding:9px 10px;border-radius:9px;
+    color:var(--warn);font-weight:800;
+  }
+  .stamp{
+    display:inline-block;margin-top:16px;font-size:12.5px;font-weight:800;
+    color:var(--warn);background:var(--warn-soft);border-radius:8px;padding:7px 12px;
+  }
+
+  /* ── 비교 ── */
+  .cmp{display:grid;gap:14px;margin-top:44px;}
+  .cmp-card{
+    border:1.6px solid var(--line);border-radius:var(--radius);padding:26px;background:#fff;
+  }
+  .cmp-card.win{border:2px solid var(--accent);background:#fff;}
+  .cmp-h{font-size:13px;font-weight:800;letter-spacing:.02em;color:var(--muted);margin-bottom:14px;}
+  .cmp-card.win .cmp-h{color:var(--accent);}
+  .cmp-row{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px dashed var(--line);font-size:15px;}
+  .cmp-row:last-child{border-bottom:0;}
+  .cmp-row span{color:var(--muted);}
+  .cmp-row b{font-weight:800;letter-spacing:-.02em;text-align:right;}
+
+  /* ── 실제 화면 목업 ──
+     앱의 MUI 화면을 그대로 재현. 래스터 스크린샷 대신 CSS 로 그려서
+     어느 해상도에서도 선명하고, 호스팅할 이미지 자산이 생기지 않는다. */
+  .shots{display:grid;gap:30px;margin-top:46px;}
+  .shot{margin:0;}
+  .shot figcaption{
+    margin-top:18px;font-size:14.5px;color:var(--muted);font-weight:500;line-height:1.6;
+  }
+  .shot figcaption b{
+    display:block;color:var(--ink);font-size:16.5px;font-weight:800;
+    letter-spacing:-.028em;margin-bottom:3px;
+  }
+  .ui{
+    background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;
+    box-shadow:0 16px 40px rgba(60,50,35,.09);max-width:330px;margin:0 auto;
+  }
+  .ui-bar{
+    padding:12px 14px;border-bottom:1px solid #eef0f4;background:#fff;
+  }
+  .ui-logo{font-size:12.5px;font-weight:800;color:#5b6bd6;letter-spacing:-.03em;}
+  .ui-logo b{color:#7c3aed;}
+  .ui-body{padding:20px 16px 22px;}
+  .ui-h1{
+    font-size:21px;font-weight:800;letter-spacing:-.04em;line-height:1.3;
+    text-align:center;color:#191817;
+  }
+  .ui-sub{
+    font-size:11.5px;color:#8a8580;text-align:center;margin:10px 0 18px;line-height:1.55;
+  }
+  .ui-field{
+    position:relative;border:1px solid #c9cdd6;border-radius:5px;
+    padding:13px 12px;margin-bottom:6px;
+  }
+  .ui-legend{
+    position:absolute;top:-7px;left:9px;background:#fff;padding:0 5px;
+    font-size:10px;color:#8a8580;
+  }
+  .ui-ph{font-size:12.5px;color:#b6b2ac;}
+  .ui-val{font-size:13px;color:#191817;font-weight:500;}
+  .ui-help{font-size:10.5px;color:#8a8580;margin:0 0 16px 3px;}
+  .ui-label{
+    font-size:11.5px;font-weight:800;color:#191817;margin:14px 0 6px;letter-spacing:-.02em;
+  }
+  .ui-label em{font-style:normal;font-weight:500;color:#a09b95;font-size:10px;margin-left:5px;}
+  .ui-seg{display:flex;gap:5px;margin-bottom:16px;}
+  .ui-seg span{
+    flex:1;text-align:center;padding:8px 0;border-radius:4px;
+    border:1px solid #1976d2;color:#1976d2;font-size:12.5px;font-weight:800;
+  }
+  .ui-seg span.on{background:#1976d2;color:#fff;}
+  .ui-cta{
+    background:#1976d2;color:#fff;text-align:center;border-radius:5px;
+    padding:12px 0;font-size:14px;font-weight:800;letter-spacing:-.02em;
+  }
+  .ui-list{border:1px solid #e3e6ef;border-radius:8px;overflow:hidden;margin-bottom:14px;}
+  .ui-row{
+    display:flex;align-items:center;gap:9px;padding:8px 10px;
+    border-bottom:1px solid #e3e6ef;background:#fff;
+  }
+  .ui-row:last-child{border-bottom:0;}
+  .ui-row.on{background:rgba(25,118,210,.07);box-shadow:inset 2.5px 0 0 #1976d2;}
+  .ui-row .rd{
+    width:13px;height:13px;border-radius:50%;border:1.7px solid #bbb;flex:0 0 auto;
+    display:grid;place-items:center;
+  }
+  .ui-row .rd.on{border-color:#1976d2;}
+  .ui-row .rd.on::after{content:"";width:6px;height:6px;border-radius:50%;background:#1976d2;}
+  .ui-row .nm{flex:1;font-size:11.5px;font-weight:800;color:#191817;letter-spacing:-.02em;line-height:1.3;}
+  .ui-row .nm em{display:block;font-style:normal;font-weight:500;font-size:9.5px;color:#8a8580;}
+  .ui-row .pl{
+    width:23px;height:23px;border-radius:50%;border:1.3px solid #1976d2;color:#1976d2;
+    display:grid;place-items:center;font-size:8px;flex:0 0 auto;font-style:normal;
+  }
+  .ui-card{
+    border:1px solid #e3e6ef;border-radius:7px;padding:10px 11px;margin-bottom:7px;background:#fff;
+  }
+  .ui-card b{font-size:11.5px;font-weight:800;letter-spacing:-.02em;}
+  .ui-card p{font-size:11px;color:#4a4744;margin-top:3px;line-height:1.5;}
+
+  /* ── 솔직하게 ── */
+  .honest{background:var(--paper-2);}
+  .honest-grid{display:grid;gap:14px;margin-top:38px;}
+  .hbox{background:#fff;border-radius:var(--radius);padding:26px;border:1.6px solid var(--line);}
+  .hbox.can{border-color:rgba(15,122,70,.3);}
+  .hbox h3{margin-bottom:14px;display:flex;align-items:center;gap:9px;}
+  .hbox .badge{
+    font-size:12px;font-weight:800;border-radius:7px;padding:4px 9px;letter-spacing:-.01em;
+  }
+  .hbox.can .badge{background:var(--accent-soft);color:var(--accent);}
+  .hbox.cant .badge{background:var(--warn-soft);color:var(--warn);}
+  .hlist{list-style:none;padding:0;margin:0;}
+  .hlist li{font-size:15px;color:var(--ink-2);padding:8px 0 8px 22px;position:relative;font-weight:500;}
+  .hbox.can .hlist li::before{content:"✓";position:absolute;left:0;color:var(--accent);font-weight:800;}
+  .hbox.cant .hlist li::before{content:"·";position:absolute;left:4px;color:var(--muted);font-weight:800;font-size:19px;line-height:1.1;}
+
+  /* ── 가격 ── */
+  .plans{display:grid;gap:14px;margin-top:42px;}
+  .plan{
+    border:1.6px solid var(--line);border-radius:var(--radius);padding:28px;background:#fff;
+    display:flex;flex-direction:column;
+  }
+  .plan.best{border:2px solid var(--accent);position:relative;}
+  .plan.best::after{
+    content:"가장 많이 선택";position:absolute;top:-12px;left:50%;transform:translateX(-50%);
+    background:var(--accent);color:#fff;font-size:11.5px;font-weight:800;
+    border-radius:999px;padding:5px 13px;white-space:nowrap;letter-spacing:-.02em;
+  }
+  .pname{font-size:12.5px;font-weight:800;letter-spacing:.05em;color:var(--muted);}
+  .price{font-size:31px;font-weight:900;letter-spacing:-.045em;margin:7px 0 2px;}
+  .price small{font-size:14.5px;font-weight:700;color:var(--muted);letter-spacing:-.02em;}
+  .pdesc{font-size:14.5px;color:var(--ink-2);font-weight:500;margin-bottom:18px;}
+  .plan .btn{margin-top:auto;}
+
+  /* ── FAQ ── */
+  details{
+    border-bottom:1px solid var(--line);padding:20px 2px;
+  }
+  summary{
+    cursor:pointer;font-weight:800;font-size:16.5px;letter-spacing:-.028em;list-style:none;
+    display:flex;justify-content:space-between;align-items:center;gap:14px;
+  }
+  summary::-webkit-details-marker{display:none;}
+  summary::after{content:"+";color:var(--accent);font-weight:800;font-size:21px;line-height:1;}
+  details[open] summary::after{content:"−";}
+  details p{margin-top:12px;font-size:15px;color:var(--ink-2);font-weight:500;}
+
+  /* ── 마무리 ── */
+  .final{
+    background:var(--ink);color:var(--paper);border-radius:24px;
+    padding:60px 32px;text-align:center;
+  }
+  .final h2{color:var(--paper);}
+  .final p{color:rgba(251,250,247,.72);margin-top:13px;font-size:16.5px;font-weight:500;}
+  .final .hero-cta{align-items:center;margin-top:30px;}
+  .final .btn-ghost{border-color:rgba(251,250,247,.32);color:var(--paper);}
+  .final .btn-ghost:hover{background:rgba(251,250,247,.1);border-color:rgba(251,250,247,.5);}
+  .final .btn-primary{background:var(--paper);color:var(--ink);}
+  .final .btn-primary:hover{background:#fff;}
+
+  footer{padding:46px 0 118px;border-top:1px solid var(--line);}
+  footer p{font-size:13.5px;color:var(--muted);margin-bottom:5px;}
+
+  .sticky{
+    position:fixed;left:0;right:0;bottom:0;z-index:60;
+    background:rgba(251,250,247,.94);backdrop-filter:blur(12px);
+    border-top:1px solid var(--line);
+    padding:11px 20px calc(11px + env(safe-area-inset-bottom));display:flex;gap:9px;
+  }
+  .sticky .btn{flex:1;padding:14px 8px;font-size:14.5px;border-radius:11px;}
+
+  .reveal{opacity:0;transform:translateY(18px);transition:opacity .55s ease, transform .55s ease;}
+  .reveal.in{opacity:1;transform:none;}
+  @media (prefers-reduced-motion:reduce){
+    .reveal{opacity:1;transform:none;transition:none;} html{scroll-behavior:auto;}
+  }
+
+  @media (min-width:880px){
+    .hero-grid{grid-template-columns:1.1fr .9fr;gap:56px;}
+    .hero-cta{flex-direction:row;}
+    .cmp{grid-template-columns:1fr 1fr;}
+    .shots{grid-template-columns:1fr 1fr;gap:38px;}
+    .honest-grid{grid-template-columns:1fr 1fr;}
+    .plans{grid-template-columns:repeat(3,1fr);align-items:stretch;}
+    .sticky{display:none;}
+    footer{padding-bottom:46px;}
+  }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <div class="logo">Auto <i>short form</i>.AI</div>
+    <a class="btn btn-primary" href="#" data-cta="kmong-nav">시작하기</a>
+  </div>
+</header>
+
+<!-- ══════════ HERO ══════════ -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow">블로거를 위한 숏폼 자동 변환</span>
+      <h1>“숏폼 필수” 체험단,<br><span class="u">이제 그냥 지원하세요</span></h1>
+      <p class="lead" style="margin-top:20px">
+        이미 써둔 블로그 글 주소만 넣으면 숏폼이 만들어집니다.<br>
+        영상 편집은 몰라도 됩니다.
+      </p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#" data-cta="kmong-hero">크몽에서 시작하기</a>
+        <a class="btn btn-ghost" href="#" data-cta="trial-hero">무료로 먼저 써보기</a>
+      </div>
+      <p class="hero-note">설치 없이 웹에서 · 휴대폰에서도 됩니다</p>
+    </div>
+
+    <div class="notice">
+      <div class="notice-top">
+        <div class="ico">📋</div>
+        <div>
+          <b>체험단 모집 공고</b><br>
+          <span>신청 마감 D-3</span>
+        </div>
+      </div>
+      <h4>○○ 신메뉴 체험단 모집</h4>
+      <ul class="req">
+        <li><i>·</i> 블로그 리뷰 1건 (사진 10장 이상)</li>
+        <li class="hot"><i>!</i> 릴스 또는 숏폼 1건 <b>필수</b></li>
+        <li><i>·</i> 방문 후 7일 이내 업로드</li>
+      </ul>
+      <span class="stamp">← 여기서 포기하셨죠</span>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 비교 ══════════ -->
+<section>
+  <div class="wrap">
+    <div class="narrow reveal" style="text-align:center">
+      <h2>숏폼 하나 올리는 데<br>드는 비용</h2>
+      <p class="lead" style="margin-top:16px">글은 이미 다 썼는데, 영상에서 막힙니다.</p>
+    </div>
+    <div class="cmp reveal">
+      <div class="cmp-card">
+        <div class="cmp-h">직접 만들면</div>
+        <div class="cmp-row"><span>걸리는 시간</span><b>1~2시간</b></div>
+        <div class="cmp-row"><span>필요한 것</span><b>편집 앱 · 자막 · 음성</b></div>
+        <div class="cmp-row"><span>배우는 시간</span><b>며칠</b></div>
+        <div class="cmp-row"><span>편집자에게 맡기면</span><b>건당 3~5만 원</b></div>
+      </div>
+      <div class="cmp-card win">
+        <div class="cmp-h">이 서비스로 만들면</div>
+        <div class="cmp-row"><span>걸리는 시간</span><b>몇 분</b></div>
+        <div class="cmp-row"><span>필요한 것</span><b>블로그 글 주소</b></div>
+        <div class="cmp-row"><span>배우는 시간</span><b>없음</b></div>
+        <div class="cmp-row"><span>비용</span><b>월 10,000원 무제한</b></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 실제 화면 ══════════
+     결과물 대신 '인터페이스'를 보여준다. 화면은 단순하고 깔끔해서 강점이고,
+     "정말 이것만 하면 되나?"라는 의심을 그림 하나로 없앤다.
+     ※ 아래 목업은 실제 앱 화면을 CSS 로 재현한 것이다. UI 가 바뀌면 여기도 손볼 것. -->
+<section>
+  <div class="wrap">
+    <div class="narrow reveal" style="text-align:center">
+      <span class="eyebrow">실제 화면</span>
+      <h2>정말 이게 전부입니다</h2>
+      <p class="lead" style="margin-top:16px">복잡한 편집 화면 같은 건 없습니다.</p>
+    </div>
+
+    <div class="shots reveal">
+      <!-- ① 입력 -->
+      <figure class="shot">
+        <div class="ui">
+          <div class="ui-bar">
+            <span class="ui-logo">Auto <b>short form</b>.AI</span>
+          </div>
+          <div class="ui-body">
+            <div class="ui-h1">내 블로그로<br>숏폼 영상 만들기</div>
+            <div class="ui-sub">네이버 블로그, 티스토리, 브런치 주소를 붙여넣으면 숏폼 영상을 자동으로 만들어줘요.</div>
+            <div class="ui-field">
+              <span class="ui-legend">블로그 주소</span>
+              <span class="ui-ph">https://blog.naver.com/…</span>
+            </div>
+            <div class="ui-label">장면 수 <em>스크립트와 이미지 개수예요</em></div>
+            <div class="ui-seg">
+              <span>4</span><span class="on">5</span><span>6</span><span>7</span><span>8</span>
+            </div>
+            <div class="ui-cta">숏폼 만들기</div>
+          </div>
+        </div>
+        <figcaption><b>1. 주소를 붙여넣습니다</b>장면 수만 고르면 끝. 여기까지 10초.</figcaption>
+      </figure>
+
+      <!-- ② 편집 -->
+      <figure class="shot">
+        <div class="ui">
+          <div class="ui-bar">
+            <span class="ui-logo">Auto <b>short form</b>.AI</span>
+          </div>
+          <div class="ui-body">
+            <div class="ui-field" style="margin-top:2px">
+              <span class="ui-legend">영상 제목</span>
+              <span class="ui-val">주우재 고체향수 목걸이</span>
+            </div>
+            <div class="ui-help">AI가 만든 제목이에요. 자유롭게 수정할 수 있어요.</div>
+
+            <div class="ui-label">음성 <em>▶ 로 들어보세요</em></div>
+            <div class="ui-list">
+              <div class="ui-row on">
+                <i class="rd on"></i>
+                <span class="nm">혜리<em>밝은 여성 · 기본</em></span>
+                <i class="pl">▶</i>
+              </div>
+              <div class="ui-row">
+                <i class="rd"></i>
+                <span class="nm">상현<em>밝은 남성</em></span>
+                <i class="pl">▶</i>
+              </div>
+              <div class="ui-row">
+                <i class="rd"></i>
+                <span class="nm">병훈<em>나이 있는 남성</em></span>
+                <i class="pl">▶</i>
+              </div>
+              <div class="ui-row">
+                <i class="rd"></i>
+                <span class="nm">예슬<em>아나운서 여성</em></span>
+                <i class="pl">▶</i>
+              </div>
+            </div>
+
+            <div class="ui-card">
+              <b>스크립트 1</b>
+              <p>주우재의 고체향수 목걸이, 그 디자인에 반해버릴 거예요.</p>
+            </div>
+            <div class="ui-card">
+              <b>스크립트 2</b>
+              <p>느끼한 가격에 놀란 주우재 목걸이 탐방기가 시작됩니다.</p>
+            </div>
+          </div>
+        </div>
+        <figcaption><b>2. 확인하고 고칩니다</b>글에서 문구를 뽑아드려요. 목소리도 골라서 미리 들어볼 수 있습니다.</figcaption>
+      </figure>
+    </div>
+
+    <p class="lead reveal" style="text-align:center;margin-top:40px">
+      <b>3.</b> 완성된 세로 영상을 받아서 그대로 올리시면 됩니다.
+    </p>
+  </div>
+</section>
+
+<!-- ══════════ 솔직하게 ══════════
+     기대치를 미리 맞춘다. 크몽은 리뷰가 유통의 전부라, 과장으로 얻은
+     구매 한 건보다 실망한 리뷰 한 건이 훨씬 비싸다. -->
+<section class="honest">
+  <div class="wrap">
+    <div class="narrow reveal" style="text-align:center">
+      <h2>솔직하게 말씀드리면</h2>
+      <p class="lead" style="margin-top:16px">
+        사고 나서 실망하시는 게 서로에게 제일 나쁩니다.<br>먼저 알려드릴게요.
+      </p>
+    </div>
+    <div class="honest-grid reveal">
+      <div class="hbox can">
+        <h3><span class="badge">이런 건 됩니다</span></h3>
+        <ul class="hlist">
+          <li>체험단 “숏폼 1건” 요건을 채우는 영상</li>
+          <li>블로그 글의 사진과 내용을 그대로 담기</li>
+          <li>자막·나레이션·배경음악 자동 삽입</li>
+          <li>네이버 클립에 올릴 세로 영상</li>
+          <li>매일 올려도 부담 없는 비용</li>
+        </ul>
+      </div>
+      <div class="hbox cant">
+        <h3><span class="badge">이런 건 아직입니다</span></h3>
+        <ul class="hlist">
+          <li>전문 편집자가 만든 수준의 영상</li>
+          <li>화려한 전환 효과나 모션 그래픽</li>
+          <li>직접 촬영한 영상 편집·컷 편집</li>
+          <li>브랜드 광고용 고퀄리티 제작</li>
+        </ul>
+        <p class="muted" style="font-size:14px;margin-top:14px">
+          작품이 필요하시면 편집자를 찾으시는 게 맞습니다. 저희는 <b>“올려야 하는데 못 올리는 상황”</b>을 푸는 도구입니다.
+        </p>
+      </div>
+    </div>
+    <p class="lead reveal" style="text-align:center;margin-top:34px">
+      그래서 <b>무료 체험</b>을 먼저 권합니다. 써보시고 결정하세요.
+    </p>
+    <div class="reveal" style="display:flex;justify-content:center;margin-top:20px">
+      <a class="btn btn-primary" href="#" data-cta="trial-honest">무료로 먼저 써보기</a>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 가격 ══════════ -->
+<section>
+  <div class="wrap">
+    <div class="narrow reveal" style="text-align:center">
+      <span class="eyebrow">얼리버드 50% 할인</span>
+      <h2>가격</h2>
+    </div>
+    <div class="plans reveal">
+      <div class="plan">
+        <div class="pname">STANDARD</div>
+        <div class="price">5,000<small>원</small></div>
+        <p class="pdesc">10회 제작<br>가볍게 써보고 싶은 분께</p>
+        <a class="btn btn-ghost btn-block" href="#" data-cta="kmong-plan-standard">선택하기</a>
+      </div>
+      <div class="plan best">
+        <div class="pname">DELUXE</div>
+        <div class="price">10,000<small>원 / 월</small></div>
+        <p class="pdesc">월 무제한<br>체험단을 꾸준히 하신다면 이쪽입니다</p>
+        <a class="btn btn-primary btn-block" href="#" data-cta="kmong-plan-deluxe">선택하기</a>
+      </div>
+      <div class="plan">
+        <div class="pname">PREMIUM</div>
+        <div class="price">36,000<small>원 / 년</small></div>
+        <p class="pdesc">연 무제한<br>가장 저렴하게 쓰는 방법</p>
+        <a class="btn btn-ghost btn-block" href="#" data-cta="kmong-plan-premium">선택하기</a>
+      </div>
+    </div>
+    <p class="muted reveal" style="text-align:center;margin-top:24px;font-size:14px">
+      결제와 환불은 크몽을 통해 안전하게 진행됩니다.
+    </p>
+  </div>
+</section>
+
+<!-- ══════════ FAQ ══════════ -->
+<section>
+  <div class="wrap narrow">
+    <div class="reveal" style="text-align:center;margin-bottom:26px">
+      <h2>자주 묻는 질문</h2>
+    </div>
+    <div class="reveal">
+      <details>
+        <summary>프로그램을 설치해야 하나요?</summary>
+        <p>아니요. 웹에서 바로 쓰는 방식이라 설치할 게 없습니다. 휴대폰에서도 됩니다.</p>
+      </details>
+      <details>
+        <summary>어떤 블로그를 지원하나요?</summary>
+        <p>네이버 블로그, 티스토리, 브런치를 지원합니다. 본인이 쓴 글이어야 합니다.</p>
+      </details>
+      <details>
+        <summary>영상이 다 비슷하게 나오지 않나요?</summary>
+        <p>장면 수(4~8개), 자막 스타일, 나레이션 목소리 5종 중에서 고를 수 있습니다. 사진도 글에서 뽑아드린 것 중에 직접 고르거나 바꿀 수 있어요.</p>
+      </details>
+      <details>
+        <summary>결과물이 마음에 안 들면요?</summary>
+        <p>사진과 문구를 바꿔서 다시 만들 수 있습니다. 무제한 플랜이라면 횟수 제한 없이 다시 만드셔도 됩니다. 그래서 무료 체험을 먼저 권해드립니다.</p>
+      </details>
+      <details>
+        <summary>무료로 먼저 써볼 수 있나요?</summary>
+        <p>네. “무료로 먼저 써보기”로 신청해주시면 안내드립니다. 써보시고 후기를 남겨주시면 큰 도움이 됩니다.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 마무리 ══════════ -->
+<section style="padding-top:0">
+  <div class="wrap">
+    <div class="final reveal">
+      <h2>이번 공고는<br>포기하지 마세요</h2>
+      <p>블로그 주소 하나만 있으면 됩니다.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#" data-cta="trial-final">무료로 먼저 써보기</a>
+        <a class="btn btn-ghost" href="#" data-cta="kmong-final">크몽에서 시작하기</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p><b style="color:var(--ink)">Auto short form.AI</b> · 블로그 글 숏폼 자동 변환</p>
+    <p>문의는 크몽 메시지로 주세요. 평균 3시간 이내에 답변드립니다.</p>
+  </div>
+</footer>
+
+<div class="sticky">
+  <a class="btn btn-ghost" href="#" data-cta="trial-sticky">무료 체험</a>
+  <a class="btn btn-primary" href="#" data-cta="kmong-sticky">크몽에서 시작</a>
+</div>
+
+<script>
+(function () {
+  // ─────────────────────────────────────────────────────────
+  // TODO: 두 URL 을 실제 값으로 교체
+  //   KMONG_URL — 크몽 상세페이지
+  //   TRIAL_URL — 무료 체험 신청 폼 (구글 폼이면 충분. 결제가 없으므로
+  //               백엔드를 새로 만들 이유가 없고 응답이 시트로 쌓인다)
+  // ─────────────────────────────────────────────────────────
+  var KMONG_URL = "https://kmong.com/gig/679789";
+  var TRIAL_URL = "";  // 예: https://forms.gle/xxxxxxxx
+
+  // 들어온 UTM 을 그대로 이벤트에 실어 보낸다.
+  // 크몽이 유입 출처를 안 알려주므로 "어느 채널이 사람을 데려왔나"는 여기서만 알 수 있다.
+  var params = new URLSearchParams(location.search);
+  var utm = {};
+  ["utm_source","utm_medium","utm_campaign","utm_content"].forEach(function(k){
+    if (params.get(k)) utm[k] = params.get(k);
+  });
+
+  function track(name, extra){
+    var payload = Object.assign({}, utm, extra || {});
+    if (window.GA4_ID && !window.GA4_ID.includes("XXXX")) gtag("event", name, payload);
+    console.log("[landing]", name, payload);
+  }
+
+  track("page_view_landing");
+
+  document.querySelectorAll("[data-cta]").forEach(function(el){
+    el.addEventListener("click", function(e){
+      var cta = el.getAttribute("data-cta");
+      var isTrial = cta.indexOf("trial") === 0;
+      var url = isTrial ? TRIAL_URL : KMONG_URL;
+
+      // 목적지가 없으면 이동시키지 않는다. 빈 링크로 이탈시키는 것보다 낫다.
+      if (!url) {
+        e.preventDefault();
+        track(isTrial ? "click_trial_unset" : "click_kmong_unset", { cta: cta });
+        alert("준비 중입니다. 곧 열립니다.");
+        return;
+      }
+
+      // 아웃바운드 클릭이 우리가 측정할 수 있는 마지막 지점이다.
+      // 실제 구매 여부는 크몽이 알려주지 않으므로, 구매자 온보딩 때
+      // "어디서 보고 오셨어요?"를 직접 묻는 것으로 보완한다.
+      track(isTrial ? "click_trial" : "click_kmong", { cta: cta });
+      el.setAttribute("href", url);
+      el.setAttribute("target", "_blank");
+      el.setAttribute("rel", "noopener");
+    });
+  });
+
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(en){
+      if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); }
+    });
+  }, { threshold:.12, rootMargin:"0px 0px -8% 0px" });
+  document.querySelectorAll(".reveal").forEach(function(el){ io.observe(el); });
+})();
+</script>
+
+</body>
+</html>
