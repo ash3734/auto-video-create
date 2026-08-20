@@ -27,11 +27,28 @@ from datetime import datetime, timedelta, timezone
 
 import boto3
 
+from .account_service import (
+    BUCKET_USERS,
+    KEY_USERS,
+    _parse_date,
+    is_unlimited_active,
+)
+
 KST = timezone(timedelta(hours=9))
 
 BUCKET_CREDITS = "blog-to-short-form-credits"
 CREDITS_PREFIX = "credits/"
 VIDEO_REASON = "video_generation"
+
+# 영상 한 편에 필요한 크레딧. 이 값 미만이면 무제한이 아닌 한 진입 자체가 막힌다.
+CREDITS_PER_VIDEO = 1000
+
+# 만료가 이 일수 이내면 리포트에서 눈에 띄게 표시한다 — 연장 안내를 보낼 시점.
+EXPIRY_WARN_DAYS = 14
+
+# 2099-12-31 같은 값은 "무기한"을 뜻하는 관례적 표기다. 남은 일수를 26,000일로
+# 찍으면 정보가 아니라 소음이라, 이 기준을 넘으면 '무기한'으로 표시한다.
+PERPETUAL_DAYS = 3650
 
 # api/blog.py 의 진입 로그와 짝이다. 형식을 바꾸면 시도 집계가 조용히 0 이 된다.
 ATTEMPT_PATTERN = "generate_video 호출 user_id="
@@ -127,7 +144,94 @@ def count_attempts(target_date, log_group, logs=None):
     return dict(counts)
 
 
-def format_report(target_date, attempts, successes):
+def _days_left(end_date, today):
+    """만료일까지 남은 일수. 오늘이 만료일이면 0 (양끝 포함 정책과 일치)."""
+    return (end_date - today).days
+
+
+def subscription_status(today=None, s3=None):
+    """구독 중인 유저의 남은 기간과 '지금 영상을 만들 수 있는지'를 정리한다.
+
+    남은 일수만으로는 부족하다 — 구독이 살아 있어도 크레딧이 0이고 무제한도 아니면
+    진입 자체가 막힌다(2026-08-17 차감 버그 수정 이후 실제로 막힌다). 그래서
+    `can_create` 를 함께 낸다. 돈은 내고 있는데 못 쓰는 유저를 놓치지 않기 위함이다.
+
+    반환: 만료가 임박한 순으로 정렬된 리스트. 조회 실패 시 None.
+    """
+    today = today or datetime.now(KST).date()
+    s3 = s3 or boto3.client("s3")
+    try:
+        body = s3.get_object(Bucket=BUCKET_USERS, Key=KEY_USERS)["Body"].read()
+        users = json.loads(body)
+    except Exception as e:
+        # 구독 현황을 못 읽어도 사용량 리포트는 나가야 한다.
+        print(f"[daily_report] 구독 정보 조회 실패 (구독 현황 생략): {e}")
+        return None
+
+    rows = []
+    for user in users if isinstance(users, list) else []:
+        end = _parse_date(user.get("subscription_end"))
+        if end is None or end < today:
+            continue  # 만료됐거나 날짜가 없으면 '구독자'가 아니다
+
+        unlimited = is_unlimited_active(user)
+        credits = user.get("credits")
+        credits = credits if isinstance(credits, int) else 0
+
+        u_end = _parse_date(user.get("unlimited_end"))
+        rows.append({
+            "user_id": user.get("id") or "(unknown)",
+            "days_left": _days_left(end, today),
+            "unlimited": unlimited,
+            "unlimited_days_left": _days_left(u_end, today) if (unlimited and u_end) else None,
+            "credits": credits,
+            "can_create": unlimited or credits >= CREDITS_PER_VIDEO,
+        })
+
+    rows.sort(key=lambda r: r["days_left"])
+    return rows
+
+
+def _fmt_days(days):
+    if days is None:
+        return ""
+    if days > PERPETUAL_DAYS:
+        return "무기한"
+    if days == 0:
+        return "오늘 만료"
+    return f"{days}일 남음"
+
+
+def format_subscriptions(rows):
+    """구독 현황 블록. rows 가 None 이면 조회 실패를 명시한다."""
+    lines = ["", "── 구독 현황 ──"]
+    if rows is None:
+        lines.append("  (구독 정보를 불러오지 못했습니다)")
+        return lines
+    if not rows:
+        lines.append("  구독 중인 유저가 없습니다.")
+        return lines
+
+    for r in rows:
+        parts = [f"구독 {_fmt_days(r['days_left'])}"]
+        if r["unlimited"]:
+            parts.append(f"무제한 {_fmt_days(r['unlimited_days_left'])}")
+        else:
+            parts.append(f"크레딧 {r['credits']}")
+
+        marks = []
+        # 돈은 내고 있는데 지금 영상을 못 만드는 유저 — 가장 먼저 알아야 할 상태다.
+        if not r["can_create"]:
+            marks.append("생성 불가")
+        if r["days_left"] <= EXPIRY_WARN_DAYS and r["days_left"] <= PERPETUAL_DAYS:
+            marks.append("만료 임박")
+        suffix = f"  ⚠ {' · '.join(marks)}" if marks else ""
+
+        lines.append(f"  {r['user_id']:16s} {' · '.join(parts)}{suffix}")
+    return lines
+
+
+def format_report(target_date, attempts, successes, subscriptions=None):
     """사람이 읽을 리포트 본문. 0건인 날도 반드시 내용을 만든다.
 
     메일이 안 오는 게 "아무도 안 썼다"인지 "리포트가 고장났다"인지 구분되지 않으면
@@ -159,6 +263,8 @@ def format_report(target_date, attempts, successes):
                 tail = f" (실패 {failed})" if failed > 0 else ""
                 lines.append(f"  {uid:16s} 시도 {a}회 / 성공 {s}회{tail}")
 
+    lines += format_subscriptions(subscriptions)
+
     lines += [
         "",
         "— 성공은 크레딧 이력(S3), 시도는 Lambda 로그 기준입니다.",
@@ -177,7 +283,10 @@ def build_daily_report(target_date=None, log_group=None, s3=None, logs=None):
 
     successes = count_successes(target_date, s3=s3)
     attempts = count_attempts(target_date, log_group, logs=logs)
-    return target_date, format_report(target_date, attempts, successes)
+    # 구독 현황은 '어제'가 아니라 **오늘 시점**이다 — 남은 기간은 지금 기준이어야
+    # 연장 안내를 언제 보낼지 판단할 수 있다.
+    subscriptions = subscription_status(s3=s3)
+    return target_date, format_report(target_date, attempts, successes, subscriptions)
 
 
 def send_daily_report(topic_arn=None, sns=None, **kwargs):
