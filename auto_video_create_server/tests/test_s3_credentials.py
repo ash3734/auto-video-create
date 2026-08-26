@@ -96,10 +96,14 @@ class TestS3ClientUsesDefaultChain(unittest.TestCase):
         """
         from utils import s3_utils
 
+        # 값을 **일부러 AWS 키 형식이 아니게** 둔다. 진짜처럼 보이는 값(ASIA/AKIA +
+        # 16자)을 쓰면 GitHub 시크릿 스캐너가 실제 유출로 오인해 알림을 띄운다.
+        # 2026-08-27 에 ASIAFAKE... 로 뒀다가 실제로 경보가 떴다. botocore 는 형식을
+        # 검증하지 않으므로 아무 문자열이나 그대로 왕복한다.
         fake_lambda_env = {
-            "AWS_ACCESS_KEY_ID": "ASIAFAKEFAKEFAKEFAKE",
-            "AWS_SECRET_ACCESS_KEY": "fakesecret",
-            "AWS_SESSION_TOKEN": "faketoken",
+            "AWS_ACCESS_KEY_ID": "not-a-real-key-id",
+            "AWS_SECRET_ACCESS_KEY": "not-a-real-secret",
+            "AWS_SESSION_TOKEN": "not-a-real-token",
             "AWS_DEFAULT_REGION": "ap-northeast-2",
         }
         saved = s3_utils.boto3.DEFAULT_SESSION
@@ -108,8 +112,8 @@ class TestS3ClientUsesDefaultChain(unittest.TestCase):
             with mock.patch.dict(os.environ, fake_lambda_env, clear=False):
                 client = s3_utils.s3_client()
                 creds = client._request_signer._credentials
-                self.assertEqual(creds.token, "faketoken")
-                self.assertEqual(creds.access_key, "ASIAFAKEFAKEFAKEFAKE")
+                self.assertEqual(creds.token, "not-a-real-token")
+                self.assertEqual(creds.access_key, "not-a-real-key-id")
         finally:
             s3_utils.boto3.DEFAULT_SESSION = saved
 
