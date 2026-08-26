@@ -12,6 +12,7 @@ import os
 from typing import Optional
 
 import boto3
+from utils.s3_utils import s3_client
 import openai
 import requests
 
@@ -24,12 +25,9 @@ FALLBACK_URL = (
 
 
 def _s3_client():
-    return boto3.client(
-        "s3",
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name="ap-northeast-2",
-    )
+    # 자격증명을 직접 넘기지 않는다 — 이유는 utils.s3_utils.s3_client 참조.
+    # (세션 토큰 누락으로 람다에서 모든 쓰기가 InvalidAccessKeyId 로 실패했다)
+    return s3_client()
 
 
 def _public_url(s3_key: str) -> str:
