@@ -3,7 +3,7 @@
 # 단위 테스트를 돌릴 수 있게 된다.
 from __future__ import annotations
 
-from utils.s3_utils import load_json_from_s3
+from utils.s3_utils import load_json_from_s3, s3_client
 from datetime import datetime
 import boto3
 import json
@@ -136,11 +136,9 @@ BUCKET_USERS = "blog-to-short-form-users"
 BUCKET_CREDITS = "blog-to-short-form-credits"
 KEY_USERS = "users.json"
 
-s3 = boto3.client("s3",
-    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    region_name="ap-northeast-2"
-)
+# 자격증명을 직접 넘기지 않는다 — 이유는 utils.s3_utils.s3_client 참조.
+# (세션 토큰 누락으로 람다에서 모든 쓰기가 InvalidAccessKeyId 로 실패했다)
+s3 = s3_client()
 
 def get_current_credits(user_id: str) -> int:
     """사용자의 현재 크레딧 조회"""
