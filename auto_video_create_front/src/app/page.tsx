@@ -10,6 +10,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import EditIcon from '@mui/icons-material/Edit';
 import AuthGuard from "../components/AuthGuard";
+import { normalizeBlogUrl } from "./utils/blogUrl";
 import LogoutButton from "../components/LogoutButton";
 import ChangePasswordButton from "../components/ChangePasswordButton";
 import SubtitleStyleEditor, { SubtitleSettings } from "./components/SubtitleStyleEditor";
@@ -352,6 +353,17 @@ export default function Home() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 서버 왕복 전에 주소를 정리하고 막는다. 빈 칸 제출과 두 번 붙여넣기가
+    // 실제로 유저 세션에서 나왔고, 둘 다 왕복 한 번을 버린 뒤에야 실패로 보였다.
+    const checked = normalizeBlogUrl(blogUrl);
+    if (!checked.ok) {
+      setError(checked.message);
+      return;
+    }
+    // 정리된 주소를 입력창에도 반영해 무엇이 전송되는지 보이게 한다.
+    setBlogUrl(checked.url);
+
     setLoading(true);
     setError(null);
     setMedia(null);
@@ -367,13 +379,14 @@ export default function Home() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180000); // 3분
     const extractUrl = `${API_BASE_URL}/api/blog/extract-all`;
-    dlog("extract-all 요청 시작", { url: extractUrl, blogUrl, scene_count: sceneCount });
+    // checked.url 을 쓴다 — setBlogUrl 은 비동기라 이 시점의 blogUrl 은 아직 예전 값이다.
+    dlog("extract-all 요청 시작", { url: extractUrl, blogUrl: checked.url, scene_count: sceneCount });
     const extractStartedAt = Date.now();
     try {
       const res = await authFetch(extractUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blog_url: blogUrl, scene_count: sceneCount }),
+        body: JSON.stringify({ blog_url: checked.url, scene_count: sceneCount }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
