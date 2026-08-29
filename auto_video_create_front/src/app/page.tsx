@@ -14,7 +14,7 @@ import { normalizeBlogUrl } from "./utils/blogUrl";
 import LogoutButton from "../components/LogoutButton";
 import ChangePasswordButton from "../components/ChangePasswordButton";
 import SubtitleStyleEditor, { SubtitleSettings } from "./components/SubtitleStyleEditor";
-import VoicePicker, { Voice } from "./components/VoicePicker";
+import VoicePicker, { Voice, Speed } from "./components/VoicePicker";
 
 interface MediaList {
   images: string[];
@@ -113,6 +113,9 @@ export default function Home() {
   // 나레이션 음성 선택. 목록을 못 받으면 빈 배열 → 선택 UI 자체를 숨기고 BE 기본값으로 간다.
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string>("");
+  // 나레이션 배속. 목록을 못 받으면 빈 배열 → 배속 UI 를 숨기고 BE 기본값(1배)으로 간다.
+  const [speedOptions, setSpeedOptions] = useState<Speed[]>([]);
+  const [speed, setSpeed] = useState<number>(1);
 
   // 장면 수 선택 (4~8). 스크립트/이미지 슬롯 개수가 이 값을 따른다. 기본 5 = 기존 동작.
   const [sceneCount, setSceneCount] = useState<number>(5);
@@ -161,6 +164,26 @@ export default function Home() {
       } catch (e) {
         derr("음성 목록 로드 실패 — 기본 음성으로 진행", { error: String(e) });
         if (!cancelled) setVoices([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // 배속 목록. 실패해도 영상 생성을 막지 않는다 — UI 만 숨기고 BE 기본값으로 흐른다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch(`${API_BASE_URL}/api/blog/speeds`);
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data?.speeds) && data.speeds.length > 0) {
+          setSpeedOptions(data.speeds);
+          const def = data.speeds.find((s: Speed) => s.is_default) ?? data.speeds[0];
+          setSpeed(def.value);
+        }
+      } catch (e) {
+        derr("배속 목록 로드 실패 — 기본 배속으로 진행", { error: String(e) });
+        if (!cancelled) setSpeedOptions([]);
       }
     })();
     return () => { cancelled = true; };
@@ -482,6 +505,8 @@ export default function Home() {
           scene_count: sceneCount,
           // 빈 문자열이면 보내지 않는다 — BE 가 기본값(혜리)으로 흐른다
           ...(voiceId ? { voice_id: voiceId } : {}),
+          // 목록을 못 받았으면 보내지 않는다 — BE 가 기본값(1배)으로 흐른다
+          ...(speedOptions.length > 0 ? { speed } : {}),
         }),
         signal: controller.signal,
       });
@@ -816,6 +841,9 @@ export default function Home() {
                         voices={voices}
                         selected={voiceId}
                         onSelect={setVoiceId}
+                        speeds={speedOptions}
+                        selectedSpeed={speed}
+                        onSelectSpeed={setSpeed}
                         previewText={scripts[0] ?? ""}
                         disabled={loading}
                         previewBlockedReason={
@@ -1063,6 +1091,9 @@ export default function Home() {
                     voices={voices}
                     selected={voiceId}
                     onSelect={setVoiceId}
+                    speeds={speedOptions}
+                    selectedSpeed={speed}
+                    onSelectSpeed={setSpeed}
                     previewText={scripts[0] ?? ""}
                     disabled={loading}
                     previewBlockedReason={
