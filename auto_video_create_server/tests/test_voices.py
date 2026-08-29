@@ -17,6 +17,10 @@ os.environ.setdefault("CREATOMATE_API_KEY", "dummy")
 
 from services import voice_preview as vp  # noqa: E402
 from services import voices as v  # noqa: E402
+from services.speeds import to_tempo as _to_tempo  # noqa: E402
+
+# 기본 배속(1배)의 Typecast tempo. _cache_key 가 tempo 를 받으므로 여기서 한 번 만든다.
+_T = _to_tempo(1.0)
 
 
 class TestCatalog(unittest.TestCase):
@@ -68,25 +72,25 @@ class TestNormalize(unittest.TestCase):
 
 class TestPreviewCacheKey(unittest.TestCase):
     def test_same_inputs_same_key(self):
-        a = vp._cache_key("tc_a", "안녕하세요")
-        b = vp._cache_key("tc_a", "안녕하세요")
+        a = vp._cache_key("tc_a", "안녕하세요", _T)
+        b = vp._cache_key("tc_a", "안녕하세요", _T)
         self.assertEqual(a, b)
 
     def test_text_change_changes_key(self):
         """스크립트를 고치면 새로 생성되어야 한다 — 옛 음성이 재생되면 안 된다."""
-        a = vp._cache_key("tc_a", "안녕하세요")
-        b = vp._cache_key("tc_a", "안녕하세요!")
+        a = vp._cache_key("tc_a", "안녕하세요", _T)
+        b = vp._cache_key("tc_a", "안녕하세요!", _T)
         self.assertNotEqual(a, b)
 
     def test_voice_change_changes_key(self):
-        self.assertNotEqual(vp._cache_key("tc_a", "같은 문장"), vp._cache_key("tc_b", "같은 문장"))
+        self.assertNotEqual(vp._cache_key("tc_a", "같은 문장", _T), vp._cache_key("tc_b", "같은 문장", _T))
 
     def test_key_is_scoped_by_voice(self):
-        self.assertTrue(vp._cache_key("tc_a", "x").startswith("voice-previews/tc_a/"))
+        self.assertTrue(vp._cache_key("tc_a", "x", _T).startswith("voice-previews/tc_a/"))
 
     def test_separator_prevents_collision(self):
         """구분자가 없으면 ('ab','c') 와 ('a','bc') 가 같은 키가 된다."""
-        self.assertNotEqual(vp._cache_key("ab", "c"), vp._cache_key("a", "bc"))
+        self.assertNotEqual(vp._cache_key("ab", "c", _T), vp._cache_key("a", "bc", _T))
 
 
 class TestPreviewFlow(unittest.TestCase):
@@ -133,7 +137,7 @@ class TestPreviewFlow(unittest.TestCase):
         """미리듣기에서도 임의 ID 를 그대로 쓰지 않는다."""
         s3 = mock.Mock()
         with mock.patch.object(vp, "_s3", return_value=s3):
-            key = vp._cache_key(v.normalize_voice_id("tc_bogus"), "문장")
+            key = vp._cache_key(v.normalize_voice_id("tc_bogus"), "문장", _T)
         self.assertIn(v.DEFAULT_VOICE_ID, key)
 
     def test_long_text_truncated(self):
@@ -150,9 +154,23 @@ class TestPreviewFlow(unittest.TestCase):
         self.assertEqual(len(sent), vp.MAX_PREVIEW_CHARS)
 
     def test_preview_speed_matches_video(self):
-        """미리듣기 속도가 영상과 다르면 들은 것과 결과물이 달라진다."""
-        from services.tts_typecast import tts_with_typecast  # noqa: F401
-        self.assertEqual(vp.PREVIEW_SPEED, 1.4)
+        """미리듣기 속도가 영상과 다르면 들은 것과 결과물이 달라진다.
+
+        2026-08-29 배속 선택 이후로는 상수 비교가 아니라 **같은 환산식을 쓰는지**를
+        본다. 미리듣기는 vp 안에서, 영상은 api.blog 에서 각각 to_tempo 를 부른다.
+        """
+        from services.speeds import to_tempo
+
+        for rel in (0.7, 1.0, 1.25, None):
+            s3 = mock.Mock()
+            from botocore.exceptions import ClientError
+            s3.head_object.side_effect = ClientError({"Error": {"Code": "404"}}, "HeadObject")
+            with mock.patch.object(vp, "_s3", return_value=s3), \
+                 mock.patch.object(vp, "tts_with_typecast") as tts, \
+                 mock.patch.object(vp, "upload_to_s3", return_value="https://x/y.mp3"), \
+                 mock.patch("os.remove"):
+                vp.get_preview_url(v.DEFAULT_VOICE_ID, "문장", "KEY", speed=rel)
+            self.assertEqual(tts.call_args.kwargs["speed"], to_tempo(rel), rel)
 
 
 class TestGenerateVideoUsesRequestVoice(unittest.TestCase):

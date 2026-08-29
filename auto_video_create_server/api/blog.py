@@ -35,6 +35,7 @@ from services.scene_counts import (
     available_scene_counts,
     DEFAULT_SCENE_COUNT,
 )
+from services.speeds import available_speeds, normalize_speed, to_tempo
 from services.voices import available_voices, normalize_voice_id
 from services.voice_preview import get_preview_url
 from crawler.dispatcher import UnsupportedPlatformError
@@ -207,6 +208,16 @@ def get_scene_counts():
         "default_scene_count": DEFAULT_SCENE_COUNT,
     }
 
+@router.get("/speeds")
+def get_speeds():
+    """GET /api/blog/speeds
+
+    선택 가능한 나레이션 배속 목록. is_default=true 가 현재 기본 배속(1배)이다.
+    값은 **상대 배속**이라 1.0 이 지금까지의 속도와 같다.
+    """
+    return {"speeds": available_speeds()}
+
+
 @router.get("/voices")
 def get_voices():
     """GET /api/blog/voices
@@ -220,6 +231,8 @@ class VoicePreviewRequest(BaseModel):
     voice_id: str
     # 유저가 화면에서 보고 있는 실제 스크립트. 제네릭 샘플이 아니라 이걸 읽힌다.
     text: str
+    # 배속. 미리듣기가 실제 결과물과 같은 속도로 들려야 고르는 의미가 있다.
+    speed: Optional[float] = None
 
 
 @router.post("/voice-preview")
@@ -233,7 +246,7 @@ def voice_preview(req: VoicePreviewRequest, user=Depends(require_active_subscrip
     여기에 과금하면 기능을 쓰지 않게 되어 존재 이유가 사라진다.
     """
     api_key = os.environ.get("TYPECAST_API_KEY")
-    result = get_preview_url(req.voice_id, req.text, api_key)
+    result = get_preview_url(req.voice_id, req.text, api_key, speed=req.speed)
     if result.get("status") != "success":
         # 200 으로 돌려준다 — 미리듣기 실패는 화면을 막을 사안이 아니고,
         # FE 는 해당 행에만 에러를 표시하고 선택은 계속 가능해야 한다.
@@ -336,6 +349,8 @@ class GenerateVideoRequest(BaseModel):
     scene_count: Optional[int] = None
     # 나레이션 음성. 미전송/무효 시 기본값(혜리) — 기존 유저 결과물이 바뀌지 않는다.
     voice_id: Optional[str] = None
+    # 나레이션 배속(상대값, 1.0 = 지금 속도). 미전송/무효 시 1.0 — 기존 결과물 유지.
+    speed: Optional[float] = None
 
 class GenerateVideoResponse(BaseModel):
     status: str
@@ -360,7 +375,12 @@ def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscr
         # — 임의의 voice_id 로 엉뚱한(영어 등) 음성 영상이 나가면 1,000크레딧이 날아간다.
         # 미전송/무효면 기본값(혜리)이라 기존 유저의 결과물은 그대로다.
         TYPECAST_VOICE_ID = normalize_voice_id(req.voice_id)
-        TTS_SPEED = 1.4
+        # 배속 선택 (2026-08-29). 요청값을 그대로 믿지 않고 허용 목록으로 정규화한다
+        # — 임의의 속도로 엉뚱한 길이의 영상이 나가면 1,000크레딧이 날아간다.
+        # 미전송/무효면 1.0 배(= tempo 1.4)라 기존 유저의 결과물은 그대로다.
+        TTS_SPEED = to_tempo(req.speed)
+        # "영상이 너무 빠르다/느리다" 문의가 오면 어느 배속으로 만든 건지 알아야 한다.
+        print(f"나레이션 배속 {normalize_speed(req.speed)}배 (tempo={TTS_SPEED})")
         audio_local_paths, audio_urls = tts_with_typecast_multi(
             req.scripts,
             api_key=TYPECAST_API_KEY,

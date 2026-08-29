@@ -12,6 +12,7 @@ API 요약 (https://typecast.ai/docs/ko/api-reference/text-to-speech/text-to-spe
 """
 import os
 import time
+import unicodedata
 
 import boto3
 import requests
@@ -46,6 +47,44 @@ def upload_to_s3(local_path, bucket, s3_key):
     return f"https://{bucket}.s3.amazonaws.com/{s3_key}"
 
 
+def clean_for_speech(text) -> str:
+    """읽을 수 없는 문자를 걷어내고 앞뒤 공백을 정리한다 (2026-08-29).
+
+    ## 왜 strip() 만으로는 부족한가
+
+    prod 에서 유저 auctionrun0643 이 8장면으로 만들 때, 블로그 본문이 모자라
+    요약 모델이 7·8번 스크립트를 **제로폭 공백(U+200B) 하나**로 채웠다.
+
+    화면에서는 빈 칸으로 보이고, 아래 검사도 통과한다 —
+
+        "\\u200b".strip() == "\\u200b"    # 파이썬은 제로폭 공백을 공백으로 안 본다
+
+    그래서 그대로 Typecast 로 나가 422 "cannot be synthesized" 로 거절당했고,
+    유저는 이유를 알 수 없는 영어 에러를 보며 9번을 재시도했다.
+
+    ## 무엇을 지우나
+
+    유니코드 **Cf(format)** 과 **Cc(control)** 범주를 지운다. 제로폭 공백/조이너,
+    BOM, 방향 제어 문자 등 "눈에 안 보이는데 문자열 길이는 차지하는" 것들이
+    전부 여기 속한다. 네이버 블로그 본문에는 이런 문자가 흔해서, 문장 중간에
+    섞여 들어온 경우에도 지우는 편이 합성 품질에 낫다.
+
+    줄바꿈과 탭은 공백으로 바꿔 살린다 — 문장 구분은 유지해야 한다.
+    """
+    if not isinstance(text, str):
+        return ""
+    kept = []
+    for ch in text:
+        category = unicodedata.category(ch)
+        if ch in "\n\r\t":
+            kept.append(" ")
+        elif category in ("Cf", "Cc"):
+            continue  # 보이지 않는 문자 — 읽을 수 없다
+        else:
+            kept.append(ch)
+    return " ".join("".join(kept).split())
+
+
 def _clamp_tempo(speed):
     try:
         tempo = float(speed)
@@ -61,7 +100,7 @@ def tts_with_typecast(text, output_path, api_key, voice_id=None, speed=1.4,
         alert("config", "TYPECAST_API_KEY 미설정")
         raise TypecastError("TYPECAST_API_KEY 가 설정되지 않았습니다.")
 
-    text = (text or "").strip()
+    text = clean_for_speech(text)
     if not text:
         # 빈 스크립트는 Typecast 가 422 로 거절한다(최소 1자). 장면↔오디오 인덱스가
         # 어긋나면 영상이 통째로 망가지므로, 조용히 넘기지 않고 명확히 실패시킨다.
@@ -135,6 +174,20 @@ def tts_with_typecast_multi(scripts, api_key, voice_id=None, speed=1.4,
     os.makedirs(output_dir, exist_ok=True)
     audio_local_paths = []
     audio_urls = []
+
+    # 빈 스크립트를 **먼저 전부** 찾아 알려준다. 한 번에 하나씩 알려주면 유저가
+    # 7번을 채우고 다시 눌렀다가 8번에서 또 막힌다 (2026-08-29 실제로 그랬다).
+    blanks = [
+        idx
+        for idx, item in enumerate(scripts, 1)
+        if not clean_for_speech(item["script"] if isinstance(item, dict) else item)
+    ]
+    if blanks:
+        positions = ", ".join(f"{i}번" for i in blanks)
+        raise TypecastError(
+            f"{positions} 스크립트가 비어 있어 음성을 만들 수 없어요."
+            " 내용을 채우거나 장면 수를 줄여주세요."
+        )
 
     for idx, item in enumerate(scripts, 1):
         text = item["script"] if isinstance(item, dict) else item
