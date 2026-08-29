@@ -9,8 +9,8 @@
 ## 캐시가 핵심이다
 
 미리듣기는 실시간 TTS 호출이라, 캐시가 없으면 ▶ 를 연타할 때마다 비용이 나간다.
-`(voice_id, 텍스트)` 해시를 S3 키로 써서 같은 조합이면 재생성하지 않는다.
-스크립트를 수정하면 해시가 바뀌어 새로 생성되는데, 이게 맞는 동작이다.
+`(voice_id, 텍스트, 배속)` 해시를 S3 키로 써서 같은 조합이면 재생성하지 않는다.
+스크립트를 수정하거나 배속을 바꾸면 해시가 바뀌어 새로 생성되는데, 이게 맞는 동작이다.
 
 비용 감각: 미리듣기는 **한 줄**이라 영상 한 편(5줄)의 1/5이다. 5개 음성을 다 들어봐도
 영상 1편 분량. 지연은 prod 로그 기준 한 줄에 1초 안팎이라 FE 에 로딩 상태가 필요하다.
@@ -23,20 +23,25 @@ import boto3
 from botocore.exceptions import ClientError
 
 from .tts_typecast import S3_BUCKET, TypecastError, tts_with_typecast, upload_to_s3
+from .speeds import to_tempo
 from .voices import normalize_voice_id
 
 S3_PREFIX = "voice-previews"
-
-# 영상 생성과 같은 속도로 들려줘야 실제 결과물과 일치한다.
-PREVIEW_SPEED = 1.4
 
 # 미리듣기는 한 문장이면 충분하다. 너무 길면 비용과 지연만 늘고 판단에는 도움이 안 된다.
 MAX_PREVIEW_CHARS = 200
 
 
-def _cache_key(voice_id: str, text: str) -> str:
-    """(음성, 텍스트) 조합의 S3 키. 텍스트가 한 글자만 달라도 다른 키가 된다."""
-    digest = hashlib.sha256(f"{voice_id}\x00{text}".encode("utf-8")).hexdigest()[:20]
+def _cache_key(voice_id: str, text: str, speed: float) -> str:
+    """(음성, 텍스트, 배속) 조합의 S3 키. 셋 중 하나만 달라도 다른 키가 된다.
+
+    배속이 키에 **반드시** 들어가야 한다. 2026-08-29 에 배속 선택을 붙이기 전까지는
+    속도가 1.4 로 고정이라 (voice_id, text) 만으로 충분했다. 배속이 열린 뒤에도
+    그대로 뒀다면, 0.7배를 고른 유저가 앞서 캐시된 1.25배 음성을 듣게 된다 —
+    조용히 틀린 소리를 들려주고 그 상태로 영상을 만들게 하는 종류의 버그다.
+    """
+    raw = f"{voice_id}\x00{text}\x00{speed:.4f}"
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
     return f"{S3_PREFIX}/{voice_id}/{digest}.mp3"
 
 
@@ -57,11 +62,14 @@ def _existing_url(key: str) -> str:
     return f"https://{S3_BUCKET}.s3.amazonaws.com/{key}"
 
 
-def get_preview_url(voice_id: str, text: str, api_key: str) -> dict:
+def get_preview_url(voice_id: str, text: str, api_key: str, speed=None) -> dict:
     """미리듣기 mp3 URL 반환.
 
     반환: {"status": "success", "url": ..., "cached": bool}
           {"status": "error", "message": ...}
+
+    `speed` 는 상대 배속(1.0 = 지금 속도)이며, 영상 생성과 **같은 환산식**을 거쳐
+    Typecast tempo 가 된다. 같은 값을 써야 미리듣기가 실제 결과물과 일치한다.
 
     텍스트가 비어 있으면 만들 수 없다. 영상 생성 경로와 달리 여기서는 조용히 거절한다
     — 미리듣기 실패가 영상 제작을 막아서는 안 되므로 FE 는 이 실패를 흡수한다.
@@ -73,7 +81,8 @@ def get_preview_url(voice_id: str, text: str, api_key: str) -> dict:
         text = text[:MAX_PREVIEW_CHARS]
 
     voice_id = normalize_voice_id(voice_id)
-    key = _cache_key(voice_id, text)
+    tempo = to_tempo(speed)
+    key = _cache_key(voice_id, text, tempo)
 
     cached = _existing_url(key)
     if cached:
@@ -81,7 +90,7 @@ def get_preview_url(voice_id: str, text: str, api_key: str) -> dict:
 
     tmp_path = os.path.join(tempfile.gettempdir(), f"preview_{os.getpid()}.mp3")
     try:
-        tts_with_typecast(text, tmp_path, api_key, voice_id=voice_id, speed=PREVIEW_SPEED)
+        tts_with_typecast(text, tmp_path, api_key, voice_id=voice_id, speed=tempo)
         url = upload_to_s3(tmp_path, S3_BUCKET, key)
     except TypecastError as e:
         # tts_typecast 안에서 이미 [ALERT] 를 남긴다 — 여기서 중복 알림하지 않는다.
