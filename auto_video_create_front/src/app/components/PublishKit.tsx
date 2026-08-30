@@ -28,6 +28,8 @@ import CheckIcon from '@mui/icons-material/Check';
 export type SeoCopy = {
   title: string;
   description: string;
+  /** 유튜브 설명란용 긴 버전. 없으면 description 으로 대신한다. */
+  description_long?: string;
   hashtags: string[];
 };
 
@@ -47,7 +49,9 @@ function buildFields(platform: string, seo: SeoCopy): Field[] {
 
   if (platform === 'youtube') {
     // 유튜브만 제목 칸이 따로 있다. 제목은 60자까지만 화면에 보인다.
-    const body = [desc, tags.slice(0, 15).map(tag).join(' '), '#Shorts']
+    // 설명란은 유튜브가 영상을 이해하고 검색에 노출시키는 재료라 긴 버전을 쓴다.
+    const longDesc = seo.description_long || desc;
+    const body = [longDesc, tags.slice(0, 15).map(tag).join(' '), '#Shorts']
       .filter(Boolean)
       .join('\n\n');
     return [
