@@ -336,13 +336,36 @@ def _generate_with_claude(prompt, schema=None):
     return next(b.text for b in response.content if b.type == "text").strip()
 
 
+# 스크립트·배포용 문구를 만드는 모델 (2026-08-30).
+#
+# gpt-3.5-turbo 에서 옮겨왔다. 같은 블로그 글로 후보들을 나란히 돌려 정했다 —
+#
+#   gpt-3.5-turbo   유튜브 설명 115자(일반론)   4.0s   **JSON 파싱 실패**
+#   gpt-4o-mini     185자                    11.6s   OK
+#   gpt-4.1-mini    225자                     6.0s   OK   ← 선택
+#   gpt-5-mini      출력 0자(추론이 예산 소진)   17.6s   실패
+#
+# 길이보다 **내용**이 갈렸다. gpt-3.5 는 "지하철역 접근성, 주차 시설 상태" 처럼
+# 아무 글에나 붙는 말을 쓰는데, gpt-4.1-mini 는 본문에서 날짜·법원·감정가·평형·
+# 랜드마크를 실제로 뽑아낸다. 사람이 검색하는 건 그런 말들이다.
+#
+# 더 중요한 건 안정성이다. 비교 중 gpt-3.5 가 배열 끝에 쉼표를 넣고 "seo" 를
+# JSON 객체 **바깥**에 써서 파싱이 깨졌다. 그러면 우리 코드는 제목도 스크립트도
+# 빈 값으로 돌려주고, 유저는 아무것도 없는 화면을 본다. 간헐적이라 더 나쁘다.
+# (2026-08-29 8장면에서 제로폭 공백으로 스크립트가 채워진 것도 같은 뿌리로 보인다)
+#
+# 지연은 4.0s → 6.0s. Lambda 타임아웃 60초, 최근 1,970건의 실제 소요가
+# 중앙값 0.2s / 최대 12s 라 여유 안에 있다. gpt-4o-mini(11.6s)는 그래서 뺐다.
+OPENAI_MODEL = "gpt-4.1-mini"
+
+
 def _generate_with_openai(prompt):
     """OpenAI fallback — ANTHROPIC_API_KEY 미설정 배포 환경에서 기존 동작 유지."""
     import openai
 
     client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": "당신은 유능한 영상 스크립트 작가입니다."},
             {"role": "user", "content": prompt},

@@ -163,6 +163,20 @@ class TestPipelineFallbacks(unittest.TestCase):
         self.assertEqual(got[2], sm.EMPTY_SEO)
 
 
+class TestModelChoice(unittest.TestCase):
+    """모델을 되돌리면 문구 품질과 JSON 안정성이 같이 내려간다 (2026-08-30 비교)."""
+
+    def test_not_on_gpt_3_5(self):
+        self.assertNotIn("3.5", sm.OPENAI_MODEL)
+
+    def test_model_is_used_by_the_fallback(self):
+        """상수만 바꾸고 호출부가 옛 모델을 쓰면 아무 의미가 없다."""
+        import inspect
+
+        src = inspect.getsource(sm._generate_with_openai)
+        self.assertIn("model=OPENAI_MODEL", src)
+
+
 class TestTokenBudget(unittest.TestCase):
     def test_fallback_ceiling_raised(self):
         """실측: 장면 10개 응답이 약 570 토큰. 유튜브용 긴 설명(200~400자)까지
