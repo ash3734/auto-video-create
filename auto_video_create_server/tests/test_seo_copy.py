@@ -68,13 +68,43 @@ class TestNormalizeSeo(unittest.TestCase):
     def test_junk_shapes_never_raise(self):
         for bad in (None, "", [], 0, "문자열", {"hashtags": "태그"}, {"title": 3}):
             got = sm.normalize_seo(bad)
-            self.assertEqual(set(got), {"title", "description", "hashtags"}, repr(bad))
+            self.assertEqual(set(got), {"title", "description", "description_long", "hashtags"}, repr(bad))
             self.assertIsInstance(got["hashtags"], list)
 
     def test_returned_shape_is_always_complete(self):
         """FE 가 세 키의 존재를 전제로 그린다."""
         got = sm.normalize_seo({"title": "t"})
-        self.assertEqual(set(got), {"title", "description", "hashtags"})
+        self.assertEqual(set(got), {"title", "description", "description_long", "hashtags"})
+
+
+class TestLongDescription(unittest.TestCase):
+    """유튜브 설명란은 검색 재료라 짧으면 손해다 (PO 지적, 2026-08-30)."""
+
+    def test_long_description_kept(self):
+        got = sm.normalize_seo({
+            "title": "t", "description": "짧은 것",
+            "description_long": "유튜브용 긴 설명입니다. " * 5, "hashtags": [],
+        })
+        self.assertIn("유튜브용 긴 설명", got["description_long"])
+        self.assertEqual(got["description"], "짧은 것")
+
+    def test_falls_back_to_short_when_missing(self):
+        """유튜브 탭이 빈 칸이 되는 것보다 짧게라도 채우는 편이 낫다."""
+        got = sm.normalize_seo({"title": "t", "description": "짧은 것", "hashtags": []})
+        self.assertEqual(got["description_long"], "짧은 것")
+
+    def test_both_empty_stays_empty(self):
+        got = sm.normalize_seo({"title": "t", "hashtags": []})
+        self.assertEqual(got["description_long"], "")
+
+    def test_prompt_no_longer_caps_at_three_sentences(self):
+        """'2~3문장' 이라고 못 박아 둔 게 설명이 짧았던 직접 원인이었다."""
+        self.assertNotIn("description: 2~3문장", sm.SEO_ADDENDUM)
+        self.assertIn("description_long", sm.SEO_ADDENDUM)
+
+    def test_prompt_asks_for_exact_hashtag_count(self):
+        """15개를 요청했는데 5개가 왔다 — 개수를 강하게 요구한다."""
+        self.assertIn("정확히 15개", sm.SEO_ADDENDUM)
 
 
 class TestSchema(unittest.TestCase):
@@ -83,6 +113,9 @@ class TestSchema(unittest.TestCase):
             schema = sm.build_shorts_output_schema(5, with_images=with_images)
             self.assertIn("seo", schema["properties"], with_images)
             self.assertIn("seo", schema["required"], with_images)
+            seo = schema["properties"]["seo"]
+            self.assertIn("description_long", seo["properties"], with_images)
+            self.assertIn("description_long", seo["required"], with_images)
 
     def test_scene_count_still_enforced(self):
         """seo 를 얹다가 기존 장면 수 강제가 깨지면 안 된다."""
@@ -132,11 +165,12 @@ class TestPipelineFallbacks(unittest.TestCase):
 
 class TestTokenBudget(unittest.TestCase):
     def test_fallback_ceiling_raised(self):
-        """실측: 장면 10개 응답이 이미 약 570 토큰. 700 이면 seo 를 얹을 때 잘린다."""
+        """실측: 장면 10개 응답이 약 570 토큰. 유튜브용 긴 설명(200~400자)까지
+        더하면 1,500 도 빠듯해 2,500 으로 올렸다. 잘리면 스크립트까지 깨진다."""
         import inspect
 
         src = inspect.getsource(sm._generate_with_openai)
-        self.assertIn("max_tokens=1500", src)
+        self.assertIn("max_tokens=2500", src)
 
 
 if __name__ == "__main__":

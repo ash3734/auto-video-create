@@ -27,9 +27,10 @@ SHORTS_OUTPUT_SCHEMA = {
             "properties": {
                 "title": {"type": "string"},
                 "description": {"type": "string"},
+                "description_long": {"type": "string"},
                 "hashtags": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["title", "description", "hashtags"],
+            "required": ["title", "description", "description_long", "hashtags"],
             "additionalProperties": False,
         },
     },
@@ -60,9 +61,10 @@ SHORTS_OUTPUT_SCHEMA_WITH_IMAGES = {
             "properties": {
                 "title": {"type": "string"},
                 "description": {"type": "string"},
+                "description_long": {"type": "string"},
                 "hashtags": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["title", "description", "hashtags"],
+            "required": ["title", "description", "description_long", "hashtags"],
             "additionalProperties": False,
         },
     },
@@ -98,11 +100,31 @@ SEO_ADDENDUM = """
 
 - 배포용 문구 (추가 작업):
 이 영상을 SNS 에 올릴 때 쓸 문구도 함께 만들어줘. "seo" 키로 반환해.
-  - title: 40자 이내. 영상 제목과 달라도 되고, 클릭하고 싶게. 낚시성 표현은 쓰지 마.
-  - description: 2~3문장. 글의 핵심을 알려주고 마지막은 자연스럽게 마무리해.
-  - hashtags: 15개. '#' 없이 단어만. 앞쪽에 구체적인 것(지역명, 상품명, 주제),
-    뒤쪽에 넓은 것을 놓아줘. 한글 위주로, 실제로 검색될 만한 말로 써.
-형식: "seo": {{"title": "...", "description": "...", "hashtags": ["...", "..."]}}
+
+  - title: 40자 이내. 사람들이 실제로 검색할 만한 말을 앞쪽에 두고,
+    본문의 고유명사(지역·단지·상호·제품명)를 반드시 하나 이상 넣어줘.
+    낚시성 표현은 쓰지 마.
+
+  - description: 3~4문장, 한 문단. 인스타그램·페이스북에 쓸 것이라
+    읽기 편한 말투로. 첫 문장만 봐도 무슨 영상인지 알 수 있게 써줘.
+
+  - description_long: 유튜브 설명란용, 200~400자.
+    유튜브는 설명란 글자로 영상을 이해하고 검색에 노출시키니 충분히 길게 써.
+    이렇게 구성해줘 —
+      1) 첫 두 줄: 무슨 영상인지 한눈에. (이 부분만 접히지 않고 먼저 보인다)
+      2) 그 다음: 본문에서 뽑은 **구체적인 정보**를 자연스러운 문장으로.
+         고유명사, 숫자, 지역, 조건 같은 걸 최대한 살려줘. 이런 말들이
+         검색에 걸리는 실제 재료다.
+      3) 마지막 한 줄: 영상에서 확인하라는 안내.
+    빈 미사여구로 길이만 늘리지 마. 본문에 없는 사실을 지어내지도 마.
+
+  - hashtags: **정확히 15개.** '#' 없이 단어만, 공백 없이.
+    앞 3개는 가장 구체적인 것(지역명·상호명·제품명)으로 — 유튜브는 앞 3개만
+    제목 위에 보인다. 뒤로 갈수록 넓은 주제어를 놓아줘.
+    한글 위주로, 사람이 실제로 검색창에 칠 법한 말로 써.
+
+형식: "seo": {{"title": "...", "description": "...", "description_long": "...",
+              "hashtags": ["...", "..."]}}
 """
 
 
@@ -152,7 +174,7 @@ def _normalize_scripts(scripts, scene_count: int):
 
 
 # 배포용 문구의 안전 기본값. 모델이 안 주거나 형식이 어긋나도 영상 제작은 계속돼야 한다.
-EMPTY_SEO = {"title": "", "description": "", "hashtags": []}
+EMPTY_SEO = {"title": "", "description": "", "description_long": "", "hashtags": []}
 MAX_HASHTAGS = 15
 
 
@@ -172,6 +194,13 @@ def normalize_seo(raw, fallback_title: str = "") -> dict:
     desc = raw.get("description")
     desc = desc.strip() if isinstance(desc, str) else ""
 
+    # 유튜브 설명란용 긴 버전. 모델이 안 주면 짧은 설명으로 대신한다 —
+    # 유튜브 탭이 빈 칸이 되는 것보다 짧게라도 채워 주는 편이 낫다.
+    long_desc = raw.get("description_long")
+    long_desc = long_desc.strip() if isinstance(long_desc, str) else ""
+    if not long_desc:
+        long_desc = desc
+
     tags, seen = [], set()
     for t in raw.get("hashtags") or []:
         if not isinstance(t, str):
@@ -184,7 +213,12 @@ def normalize_seo(raw, fallback_title: str = "") -> dict:
         if len(tags) >= MAX_HASHTAGS:
             break
 
-    return {"title": title or (fallback_title or ""), "description": desc, "hashtags": tags}
+    return {
+        "title": title or (fallback_title or ""),
+        "description": desc,
+        "description_long": long_desc,
+        "hashtags": tags,
+    }
 
 
 def extract_json_from_codeblock(content):
@@ -313,7 +347,7 @@ def _generate_with_openai(prompt):
             {"role": "system", "content": "당신은 유능한 영상 스크립트 작가입니다."},
             {"role": "user", "content": prompt},
         ],
-        max_tokens=1500,
+        max_tokens=2500,
         temperature=0.7,
     )
     return response.choices[0].message.content.strip()

@@ -434,6 +434,8 @@ export default function Home() {
           setSeo({
             title: typeof rawSeo.title === "string" ? rawSeo.title : "",
             description: typeof rawSeo.description === "string" ? rawSeo.description : "",
+            description_long:
+              typeof rawSeo.description_long === "string" ? rawSeo.description_long : "",
             hashtags: Array.isArray(rawSeo.hashtags)
               ? rawSeo.hashtags.filter((t: unknown): t is string => typeof t === "string")
               : [],
