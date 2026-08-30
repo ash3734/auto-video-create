@@ -30,7 +30,7 @@ if __name__ == "__main__":
     url = input("네이버 블로그 주소를 입력하세요: ")
     text, images, videos = extract_blog_content(url)
 
-    title, scripts = summarize_for_shorts_sets(text)
+    title, scripts, _seo = summarize_for_shorts_sets(text)
 
     print(f"\n[쇼츠 제목] {title}")
     print("[쇼츠 스크립트]")
