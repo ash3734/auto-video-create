@@ -22,8 +22,18 @@ SHORTS_OUTPUT_SCHEMA = {
                 "additionalProperties": False,
             },
         },
+        "seo": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "hashtags": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["title", "description", "hashtags"],
+            "additionalProperties": False,
+        },
     },
-    "required": ["title", "scripts"],
+    "required": ["title", "scripts", "seo"],
     "additionalProperties": False,
 }
 
@@ -45,8 +55,18 @@ SHORTS_OUTPUT_SCHEMA_WITH_IMAGES = {
                 "additionalProperties": False,
             },
         },
+        "seo": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "hashtags": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["title", "description", "hashtags"],
+            "additionalProperties": False,
+        },
     },
-    "required": ["title", "scripts"],
+    "required": ["title", "scripts", "seo"],
     "additionalProperties": False,
 }
 
@@ -64,6 +84,25 @@ IMAGE_MATCHING_ADDENDUM = """
 
 이미지 목록:
 {image_list}
+"""
+
+
+# 배포용 문구 (2026-08-30). 유저 요청: "제목 설명 태그 등등도 생성" —
+# 만든 영상을 유튜브/인스타/틱톡/페이스북에 올릴 때 쓸 문구다.
+# 기존 스크립트 생성 호출에 피기백 — 추가 API 호출 없음 (이미지 매칭과 같은 수법).
+#
+# 재료 3개만 만들고 플랫폼별 조립은 화면에서 한다. 플랫폼마다 따로 생성하면 호출이
+# 4배가 되는데, 실제로 갈리는 건 "제목 칸이 따로 있는가"(유튜브만)와 해시태그 개수뿐이라
+# 그럴 이유가 없다.
+SEO_ADDENDUM = """
+
+- 배포용 문구 (추가 작업):
+이 영상을 SNS 에 올릴 때 쓸 문구도 함께 만들어줘. "seo" 키로 반환해.
+  - title: 40자 이내. 영상 제목과 달라도 되고, 클릭하고 싶게. 낚시성 표현은 쓰지 마.
+  - description: 2~3문장. 글의 핵심을 알려주고 마지막은 자연스럽게 마무리해.
+  - hashtags: 15개. '#' 없이 단어만. 앞쪽에 구체적인 것(지역명, 상품명, 주제),
+    뒤쪽에 넓은 것을 놓아줘. 한글 위주로, 실제로 검색될 만한 말로 써.
+형식: "seo": {{"title": "...", "description": "...", "hashtags": ["...", "..."]}}
 """
 
 
@@ -110,6 +149,42 @@ def _normalize_scripts(scripts, scene_count: int):
     while len(scripts) < scene_count:
         scripts.append({"script": ""})
     return scripts
+
+
+# 배포용 문구의 안전 기본값. 모델이 안 주거나 형식이 어긋나도 영상 제작은 계속돼야 한다.
+EMPTY_SEO = {"title": "", "description": "", "hashtags": []}
+MAX_HASHTAGS = 15
+
+
+def normalize_seo(raw, fallback_title: str = "") -> dict:
+    """모델이 준 seo 를 화면에 그대로 쓸 수 있는 형태로 다듬는다.
+
+    문구가 없다고 영상 제작을 막지 않는다 — 부가 기능이므로 조용히 빈 값으로 흐른다.
+    해시태그는 '#' 을 떼고 중복/빈 값을 제거한 뒤 개수를 제한한다. 모델이 '#여행' 처럼
+    붙여서 줄 때가 있는데, 화면에서 다시 '#' 을 붙이므로 그대로 두면 '##여행' 이 된다.
+    """
+    if not isinstance(raw, dict):
+        return {**EMPTY_SEO, "title": fallback_title or ""}
+
+    title = raw.get("title")
+    title = title.strip() if isinstance(title, str) else ""
+
+    desc = raw.get("description")
+    desc = desc.strip() if isinstance(desc, str) else ""
+
+    tags, seen = [], set()
+    for t in raw.get("hashtags") or []:
+        if not isinstance(t, str):
+            continue
+        t = t.strip().lstrip("#").strip().replace(" ", "")
+        if not t or t.lower() in seen:
+            continue
+        seen.add(t.lower())
+        tags.append(t)
+        if len(tags) >= MAX_HASHTAGS:
+            break
+
+    return {"title": title or (fallback_title or ""), "description": desc, "hashtags": tags}
 
 
 def extract_json_from_codeblock(content):
@@ -238,7 +313,7 @@ def _generate_with_openai(prompt):
             {"role": "system", "content": "당신은 유능한 영상 스크립트 작가입니다."},
             {"role": "user", "content": prompt},
         ],
-        max_tokens=700,
+        max_tokens=1500,
         temperature=0.7,
     )
     return response.choices[0].message.content.strip()
@@ -274,6 +349,7 @@ def summarize_for_shorts_sets(text, category: str = "restaurant", image_infos=No
         except Exception as e:
             # 이미지 부록 구성 실패 시 매칭 없이 기존 동작 (방어적)
             print(f"[summarize] 이미지 매칭 부록 구성 실패 — 매칭 없이 진행: {e}")
+    prompt += SEO_ADDENDUM
     schema = build_shorts_output_schema(scene_count, with_images=with_images)
     try:
         if os.environ.get("ANTHROPIC_API_KEY"):
@@ -282,17 +358,16 @@ def summarize_for_shorts_sets(text, category: str = "restaurant", image_infos=No
             print("[summarize] ANTHROPIC_API_KEY 미설정 — OpenAI fallback 사용")
             content = _generate_with_openai(prompt)
         if content is None:
-            return "", []
+            return "", [], dict(EMPTY_SEO)
         print("모델 응답:", content)
     except Exception as e:
         print("모델 API 호출 실패:", e)
-        title = ""
-        scripts = []
-        return title, scripts
+        return "", [], dict(EMPTY_SEO)
     try:
         obj = json.loads(content)
         title = obj.get("title", "")
         scripts = _normalize_scripts(obj.get("scripts", []), scene_count)
+        seo = normalize_seo(obj.get("seo"), fallback_title=title)
     except Exception:
         try:
             json_str = extract_json_from_codeblock(content)
@@ -301,8 +376,10 @@ def summarize_for_shorts_sets(text, category: str = "restaurant", image_infos=No
             obj = json.loads(fixed_content)
             title = obj.get("title", "")
             scripts = _normalize_scripts(obj.get("scripts", []), scene_count)
+            seo = normalize_seo(obj.get("seo"), fallback_title=title)
         except Exception as e:
             print(f"Claude 응답 파싱 실패: {e}")
             title = ""
             scripts = []
-    return title, scripts
+            seo = dict(EMPTY_SEO)
+    return title, scripts, seo

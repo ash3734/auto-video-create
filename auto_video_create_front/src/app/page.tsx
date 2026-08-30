@@ -15,6 +15,7 @@ import LogoutButton from "../components/LogoutButton";
 import ChangePasswordButton from "../components/ChangePasswordButton";
 import SubtitleStyleEditor, { SubtitleSettings } from "./components/SubtitleStyleEditor";
 import VoicePicker, { Voice, Speed } from "./components/VoicePicker";
+import PublishKit, { SeoCopy } from "./components/PublishKit";
 
 interface MediaList {
   images: string[];
@@ -97,6 +98,8 @@ export default function Home() {
   const [scripts, setScripts] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState<string>("");
+  // 배포용 문구. extract-all 응답으로 받아 완료 화면까지 들고 간다.
+  const [seo, setSeo] = useState<SeoCopy | null>(null);
   const [step, setStep] = useState<'input' | 'select' | 'generating' | 'done'>('input');
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -392,6 +395,7 @@ export default function Home() {
     setMedia(null);
     setScripts([]);
     setTitle("");
+    setSeo(null);
     setStep('input');
     setVideoUrl(null);
     setGenerateError(null);
@@ -424,6 +428,17 @@ export default function Home() {
         const scriptList: string[] = (data.scripts || []).map((s: { script: string } | string) => typeof s === 'string' ? s : s.script);
         setScripts(scriptList);
         setTitle(data.title || "");
+        // 배포용 문구. 구버전 BE 나 생성 실패 시 필드가 없으므로 방어적으로 읽는다.
+        const rawSeo = data.seo;
+        if (rawSeo && typeof rawSeo === "object") {
+          setSeo({
+            title: typeof rawSeo.title === "string" ? rawSeo.title : "",
+            description: typeof rawSeo.description === "string" ? rawSeo.description : "",
+            hashtags: Array.isArray(rawSeo.hashtags)
+              ? rawSeo.hashtags.filter((t: unknown): t is string => typeof t === "string")
+              : [],
+          });
+        }
 
         // VOC-2: extract-all 응답의 suggested_sections 로 sectionMedia 초기값을 자동 채움 (default 제안, 강제 아님).
         // 형식이 계약과 다르면(필드 없음/구버전 BE 포함) null 반환 → 기존 default_slot_count 폴백 동작 유지.
@@ -1321,6 +1336,19 @@ export default function Home() {
                     style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 12, background: '#000' }}
                   />
                 </Box>
+                {/* 다운로드 — 원본 URL 은 재생만 되고 저장이 안 되므로 프록시를 거친다 */}
+                <Button
+                  variant="contained"
+                  color="primary"
+                  size="large"
+                  href={`/api/video-proxy?url=${encodeURIComponent(videoUrl)}&name=${encodeURIComponent(title || 'shorts')}`}
+                  sx={{ fontWeight: 700, minWidth: 200, mb: 1 }}
+                >
+                  영상 다운로드
+                </Button>
+
+                {seo && <PublishKit seo={seo} />}
+
                 <Box sx={{ width: '100%', maxWidth: 1000, mx: 'auto', mt: 4, mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
                   <Button
                     variant="outlined"

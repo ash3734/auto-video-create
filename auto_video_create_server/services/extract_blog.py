@@ -6,7 +6,7 @@ if __name__ == "__main__":
     print("[이미지 목록]")
     for i, img in enumerate(images, 1):
         print(f"{i}: {img}")
-    title, scripts = summarize_for_shorts_sets(text)
+    title, scripts, _seo = summarize_for_shorts_sets(text)
     print("[스크립트]")
     for s in scripts:
         print(s) 
