@@ -35,6 +35,7 @@ from services.scene_counts import (
     available_scene_counts,
     DEFAULT_SCENE_COUNT,
 )
+from services.blog_url import parse_blog_ref, same_blog
 from services.speeds import available_speeds, normalize_speed, to_tempo
 from services.voices import available_voices, normalize_voice_id
 from services.voice_preview import get_preview_url
@@ -126,40 +127,15 @@ def validate_blog_url(user_id: str, blog_url: str) -> bool:
             print(f"사용자 {user_id}의 블로그 주소가 설정되지 않음")
             return False
         
-        # URL 파싱: 플랫폼별 username 추출 규칙 (cycle-2: tistory / brunch 추가)
-        def parse_blog_url(url):
-            parsed = urlparse(url)
-            host = parsed.netloc.lower()
-            path = parsed.path.strip('/')
-            path_parts = path.split('/') if path else []
-
-            # 네이버: blog.naver.com/{username}
-            if "blog.naver.com" in host:
-                username = path_parts[0] if path_parts else ""
-                return "naver", username
-
-            # 티스토리: {username}.tistory.com
-            if host.endswith(".tistory.com"):
-                subdomain = host.replace(".tistory.com", "")
-                return "tistory", subdomain
-
-            # 브런치: brunch.co.kr/@{username}
-            if "brunch.co.kr" in host:
-                first = path_parts[0] if path_parts else ""
-                username = first[1:] if first.startswith("@") else first
-                return "brunch", username
-
-            # 그 외: 도메인 자체를 username 으로 (개인 도메인은 1차 사이클 미지원이지만 fallback)
-            return host, ""
-
-        user_platform, user_username = parse_blog_url(user_blog_url)
-        request_platform, request_username = parse_blog_url(blog_url)
-
-        print(f"사용자 블로그: {user_platform}/{user_username}")
-        print(f"요청 블로그: {request_platform}/{request_username}")
-
-        # 플랫폼과 사용자명 모두 일치해야 통과
-        return (user_platform == request_platform) and (user_username == request_username) and user_username != ""
+        # 주소 해석은 services.blog_url 로 모았다 (2026-08-30).
+        # 여기 있던 구현에는 알려진 결함이 둘 있었다 —
+        #   1) 호스트를 부분 문자열로 검사해 blog.naver.com.attacker.io 가 통과
+        #   2) 경로 첫 조각만 봐서 구형 PostView 링크의 작성자를 못 읽음
+        ref_user = parse_blog_ref(user_blog_url)
+        ref_req = parse_blog_ref(blog_url)
+        print(f"사용자 블로그: {ref_user.platform}/{ref_user.author}")
+        print(f"요청 블로그: {ref_req.platform}/{ref_req.author}")
+        return same_blog(user_blog_url, blog_url)
         
     except Exception as e:
         print(f"블로그 URL 검증 중 오류: {e}")
@@ -266,6 +242,19 @@ def extract_all(req: ExtractMediaRequest, user=Depends(require_active_subscripti
                 "status": "error",
                 "error_code": "blog_not_registered",
                 "message": "등록된 블로그 주소가 아닙니다. 관리자에게 문의해주세요.",
+            }
+
+        # 글 주소가 아니면(블로그 홈/목록) 크롤링을 시도하지 않는다.
+        # 시도하면 "본문 영역을 찾을 수 없습니다" 로 실패해 catch-all 이 장애 알람을
+        # 울리는데, 이건 장애가 아니라 주소를 잘못 넣은 것이다.
+        # (2026-08-30 test 알람 — m.blog.naver.com/{id} 를 넣어 두 번 울렸다)
+        if not parse_blog_ref(req.blog_url).is_post:
+            print(f"글 주소가 아님 (홈/목록): {_safe_host(req.blog_url)}")
+            return {
+                "status": "error",
+                "error_code": "not_a_post_url",
+                "message": "블로그 홈 주소예요. 만들고 싶은 글을 연 뒤 "
+                           "그 글의 주소를 복사해서 넣어주세요.",
             }
 
         result = get_blog_media_and_scripts(

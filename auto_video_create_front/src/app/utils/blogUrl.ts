@@ -100,5 +100,39 @@ export function normalizeBlogUrl(raw: string): BlogUrlResult {
     };
   }
 
+  if (!isPostUrl(host, parsed)) {
+    return {
+      ok: false,
+      message: "블로그 홈 주소예요. 만들고 싶은 글을 연 뒤 그 글의 주소를 복사해서 넣어주세요.",
+    };
+  }
+
   return { ok: true, url: parsed.toString() };
+}
+
+/**
+ * 개별 **글** 주소인가, 블로그 홈인가 (2026-08-30).
+ *
+ * 호스트만 맞으면 통과시키던 탓에 `m.blog.naver.com/아이디`(블로그 홈)가 그대로
+ * 서버까지 갔다. 크롤러가 본문을 못 찾아 실패하고, 그게 장애 알람까지 울렸다.
+ * 유저에게는 "다른 글로 시도해주세요" 라고만 보여서 **무엇이 잘못됐는지 알 수 없었다.**
+ *
+ * 여기서 걸러 왕복을 없애고, 무엇을 해야 하는지 바로 알려준다.
+ */
+function isPostUrl(host: string, parsed: URL): boolean {
+  const parts = parsed.pathname.split("/").filter(Boolean);
+
+  if (host === "blog.naver.com" || host === "m.blog.naver.com") {
+    // 구형 공유 링크: /PostView.naver?blogId=..&logNo=..
+    if (parsed.searchParams.get("logNo")) return true;
+    // 신형: /{아이디}/{글번호}
+    return parts.length >= 2 && /^\d+$/.test(parts[1]);
+  }
+
+  if (host === "brunch.co.kr" || host === "m.brunch.co.kr") {
+    return parts.length >= 2;             // /@작가/글번호
+  }
+
+  // 티스토리 — /{글번호} 또는 /entry/{제목}
+  return parts.length >= 1 && parts[0] !== "category";
 }
