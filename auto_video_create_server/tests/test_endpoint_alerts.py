@@ -66,14 +66,16 @@ class TestExtractAllAlerts(unittest.TestCase):
 
     def test_alert_carries_host_not_full_url(self):
         """진단에 필요한 건 어느 플랫폼인지 뿐 — 글 주소 전체는 남기지 않는다."""
-        url = "https://blog.naver.com/someone/verysecretpost123"
+        # 네이버 글 번호는 숫자다. 2026-08-30 부터 글 주소가 아니면 크롤링 전에
+        # 걸러내므로(홈 주소 알람 방지), 여기서도 실제 형식을 써야 이 경로를 탄다.
+        url = "https://blog.naver.com/someone/224390000123"
         with mock.patch.object(blog, "validate_blog_url", return_value=True), \
              mock.patch.object(blog, "get_blog_media_and_scripts",
                                side_effect=RuntimeError("boom")):
             _, out = _capture(lambda: blog.extract_all(self._req(url), user=USER))
 
         self.assertIn("blog_host=blog.naver.com", out)
-        self.assertNotIn("verysecretpost123", out)
+        self.assertNotIn("224390000123", out)
 
     def test_unsupported_platform_does_not_alert(self):
         """유저가 지원 안 하는 플랫폼을 넣은 것 — 우리가 할 일이 없다."""
@@ -84,6 +86,48 @@ class TestExtractAllAlerts(unittest.TestCase):
 
         self.assertNotIn("[ALERT]", out)
         self.assertEqual(result["error_code"], "unsupported_platform")
+
+    def test_blog_home_url_does_not_alert(self):
+        """2026-08-30 test 알람의 원인 — 홈 주소는 장애가 아니라 입력 실수다.
+
+        유저가 m.blog.naver.com/{아이디} 를 넣어 크롤러가 본문을 못 찾았고,
+        catch-all 이 그걸 "예상치 못한 실패" 로 보고 알람을 울렸다. 두 번.
+        """
+        for home in ("https://m.blog.naver.com/auctionrun0643",
+                     "https://blog.naver.com/auctionrun0643",
+                     "https://m.blog.naver.com",
+                     "https://someone.tistory.com"):
+            with mock.patch.object(blog, "validate_blog_url", return_value=True), \
+                 mock.patch.object(blog, "get_blog_media_and_scripts") as crawl:
+                result, out = _capture(lambda: blog.extract_all(self._req(home), user=USER))
+
+            self.assertNotIn("[ALERT]", out, home)
+            self.assertEqual(result["error_code"], "not_a_post_url", home)
+            # 크롤링을 시도조차 하지 않는다 — 왕복과 지연이 사라진다
+            crawl.assert_not_called()
+
+    def test_message_tells_what_to_do(self):
+        """'다른 글로 시도해주세요' 는 틀린 안내였다 — 글이 아니라 주소가 문제다."""
+        with mock.patch.object(blog, "validate_blog_url", return_value=True):
+            result, _ = _capture(
+                lambda: blog.extract_all(
+                    self._req("https://m.blog.naver.com/auctionrun0643"), user=USER))
+        self.assertIn("글", result["message"])
+        self.assertIn("주소", result["message"])
+
+    def test_real_post_still_reaches_the_crawler(self):
+        """가드가 정상 글까지 막으면 아무도 영상을 못 만든다."""
+        for good in ("https://blog.naver.com/someone/224390000123",
+                     "https://m.blog.naver.com/someone/224390000123",
+                     "https://blog.naver.com/PostView.naver?blogId=someone&logNo=1",
+                     "https://someone.tistory.com/12",
+                     "https://brunch.co.kr/@someone/10"):
+            with mock.patch.object(blog, "validate_blog_url", return_value=True), \
+                 mock.patch.object(blog, "get_blog_media_and_scripts",
+                                   return_value={"images": [], "scripts": []}) as crawl:
+                result, _ = _capture(lambda: blog.extract_all(self._req(good), user=USER))
+            self.assertEqual(result["status"], "success", good)
+            crawl.assert_called_once()
 
     def test_unregistered_blog_does_not_alert(self):
         """등록 안 된 블로그 — 정상적인 거절이다."""

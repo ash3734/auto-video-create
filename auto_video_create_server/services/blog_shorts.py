@@ -68,7 +68,7 @@ def get_blog_media_and_scripts(blog_url: str, scene_count: int = 5) -> dict:
     scene_count = normalize_scene_count(scene_count)
     text, images, videos, platform, image_infos = dispatcher_extract_rich(blog_url)
     category = classify_blog(text)
-    title, scripts = summarize_for_shorts_sets(
+    title, scripts, seo = summarize_for_shorts_sets(
         text, category=category, image_infos=image_infos or None, scene_count=scene_count
     )
     # N개 슬롯 중 이미지+영상으로 채워지지 않는 슬롯 수
@@ -83,6 +83,8 @@ def get_blog_media_and_scripts(blog_url: str, scene_count: int = 5) -> dict:
         "platform": platform,
         "default_slot_count": default_slot_count,
         "scene_count": scene_count,
+        # 배포용 문구 — 없거나 실패해도 빈 값이라 FE 가 블록을 숨기고 넘어간다.
+        "seo": seo,
     }
     # VOC-2: 자동 배정 제안. 실패해도 전체 응답은 정상 (필드 생략 → FE 가 기존 폴백).
     try:
