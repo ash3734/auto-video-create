@@ -38,6 +38,22 @@ function isAllowed(raw: string): boolean {
   return ALLOWED_HOSTS.some(re => re.test(parsed.hostname));
 }
 
+/**
+ * 파일명을 Content-Disposition 에 안전하게 싣는다.
+ *
+ * HTTP 헤더 값은 ASCII 만 담을 수 있어서, 한글 제목을 그대로 넣으면 응답 생성이
+ * 통째로 터진다(500). 영상 제목은 대부분 한글이라 이걸 놓치면 다운로드가
+ * **항상** 실패한다 — 실제로 배포 후 확인하다 잡았다.
+ *
+ * RFC 5987 방식으로 두 벌을 준다: 구형 클라이언트용 ASCII 대체 이름과,
+ * 퍼센트 인코딩한 UTF-8 원래 이름. 요즘 브라우저는 filename* 을 우선한다.
+ */
+function contentDisposition(name: string): string {
+  const ascii = name.replace(/[^\x20-\x7E]/g, '').replace(/["\\]/g, '') || 'shorts';
+  const encoded = encodeURIComponent(`${name}.mp4`);
+  return `attachment; filename="${ascii}.mp4"; filename*=UTF-8''${encoded}`;
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const videoUrl = searchParams.get('url');
@@ -48,7 +64,8 @@ export async function GET(req: NextRequest) {
     return new Response('Not an allowed video host', { status: 400 });
   }
 
-  const name = (searchParams.get('name') || 'shorts').replace(/[^\w가-힣-]/g, '').slice(0, 60);
+  const raw = (searchParams.get('name') || 'shorts').replace(/[^\w가-힣-]/g, '').slice(0, 60);
+  const name = raw || 'shorts';
 
   try {
     const upstream = await fetch(videoUrl);
@@ -60,7 +77,7 @@ export async function GET(req: NextRequest) {
       headers: {
         'Content-Type': upstream.headers.get('content-type') || 'video/mp4',
         // 이게 이 프록시의 존재 이유다 — 재생이 아니라 저장으로 만든다.
-        'Content-Disposition': `attachment; filename="${name || 'shorts'}.mp4"`,
+        'Content-Disposition': contentDisposition(name),
         'Content-Length': String(buf.byteLength),
       },
     });
