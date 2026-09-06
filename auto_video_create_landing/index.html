@@ -661,16 +661,39 @@
 
   track("page_view_landing");
 
+  // 버튼 하나가 두 개의 이벤트를 남긴다 (2026-08-30).
+  //
+  //   click_kmong                  ← 합계용. "크몽으로 몇 명이 갔나"
+  //   click_kmong_plan_deluxe      ← 버튼별. "어느 버튼이 눌렸나"
+  //
+  // 왜 둘 다인가: GA4 는 커스텀 파라미터(cta)를 **맞춤 측정기준으로 등록하기 전까지
+  // 보고서에 보여주지 않는다.** 그래서 cta 를 보내고는 있었지만 화면에서는 버튼 구분이
+  // 안 됐다. 이벤트 이름을 나누면 등록 없이 '이벤트' 보고서에 바로 뜬다.
+  // 합계 이벤트를 남겨두는 건, 이름을 나누기만 하면 "총 몇 명이 크몽에 갔나"를
+  // 한눈에 볼 수 없기 때문이다.
+  //
+  // GA4 이벤트 이름 규칙: 영문/숫자/밑줄, 40자 이내.
+  // data-cta 가 이미 "kmong-plan-deluxe" 처럼 플랫폼을 포함하므로 그대로 쓴다.
+  // (prefix 를 덧붙이면 click_kmong_kmong_plan_deluxe 가 된다)
+  function ctaEventName(cta){
+    return ("click_" + cta.replace(/[^a-zA-Z0-9]+/g, "_")).slice(0, 40);
+  }
+
   document.querySelectorAll("[data-cta]").forEach(function(el){
     el.addEventListener("click", function(e){
       var cta = el.getAttribute("data-cta");
       var isTrial = cta.indexOf("trial") === 0;
       var url = isTrial ? TRIAL_URL : KMONG_URL;
+      var base = isTrial ? "click_trial" : "click_kmong";
+      // 어느 버튼인지 사람이 읽을 수 있게 라벨도 같이 남긴다.
+      var info = { cta: cta, link_text: (el.textContent || "").trim().slice(0, 40) };
 
       // 목적지가 없으면 이동시키지 않는다. 빈 링크로 이탈시키는 것보다 낫다.
+      // 이것도 버튼별로 남긴다 — "어느 자리에서 막혔나"를 알아야 우선순위가 정해진다.
       if (!url) {
         e.preventDefault();
-        track(isTrial ? "click_trial_unset" : "click_kmong_unset", { cta: cta });
+        track(base + "_unset", info);
+        track(ctaEventName(cta) + "_unset", info);
         alert("준비 중입니다. 곧 열립니다.");
         return;
       }
@@ -678,7 +701,9 @@
       // 아웃바운드 클릭이 우리가 측정할 수 있는 마지막 지점이다.
       // 실제 구매 여부는 크몽이 알려주지 않으므로, 구매자 온보딩 때
       // "어디서 보고 오셨어요?"를 직접 묻는 것으로 보완한다.
-      track(isTrial ? "click_trial" : "click_kmong", { cta: cta });
+      track(base, info);
+      // 합계와 이름이 같아지면(예: data-cta="kmong") 한 클릭이 두 번 세어진다.
+      if (ctaEventName(cta) !== base) track(ctaEventName(cta), info);
       el.setAttribute("href", url);
       el.setAttribute("target", "_blank");
       el.setAttribute("rel", "noopener");
