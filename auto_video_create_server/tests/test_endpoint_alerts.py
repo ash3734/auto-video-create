@@ -36,6 +36,15 @@ from crawler.dispatcher import UnsupportedPlatformError  # noqa: E402
 USER = {"id": "tester"}
 
 
+class _HttpReq:
+    """generate_video 가 요청 객체를 받는다 (2026-08-30, 체험 IP 제한 도입).
+    테스트에서는 헤더만 있으면 충분하다."""
+    headers = {"x-forwarded-for": "203.0.113.5"}
+    client = None
+
+
+
+
 def _capture(fn):
     buf = io.StringIO()
     with redirect_stdout(buf):
@@ -162,7 +171,7 @@ class TestGenerateVideoAlerts(unittest.TestCase):
         with mock.patch.object(
             blog, "normalize_scene_count", side_effect=RuntimeError("boom")
         ):
-            result, out = _capture(lambda: blog.generate_video(self._req(), user=USER))
+            result, out = _capture(lambda: blog.generate_video(_HttpReq(), self._req(), user=USER))
 
         self.assertIn("[ALERT]", out)
         self.assertIn("source=generate_video", out)
@@ -177,7 +186,7 @@ class TestGenerateVideoAlerts(unittest.TestCase):
         with mock.patch.object(
             blog, "normalize_scene_count", side_effect=RuntimeError("boom")
         ):
-            result, out = _capture(lambda: blog.generate_video(self._req(), user=USER))
+            result, out = _capture(lambda: blog.generate_video(_HttpReq(), self._req(), user=USER))
 
         self.assertNotIsInstance(result, Exception, "except 블록이 예외를 냈다")
         self.assertIn("requested_scene_count=5", out)
@@ -188,7 +197,7 @@ class TestGenerateVideoAlerts(unittest.TestCase):
              mock.patch.object(
                  blog, "tts_with_typecast_multi",
                  side_effect=blog.TypecastError("Typecast 401: invalid")):
-            result, out = _capture(lambda: blog.generate_video(self._req(), user=USER))
+            result, out = _capture(lambda: blog.generate_video(_HttpReq(), self._req(), user=USER))
 
         self.assertEqual(result["error_code"], "tts_failed")
         self.assertNotIn("source=generate_video", out)

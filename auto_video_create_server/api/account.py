@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 from services.account_service import authenticate_user, change_password, MIN_PASSWORD_LENGTH
+from services.trial import blocked_on_prod
 
 router = APIRouter()
 
@@ -17,6 +18,13 @@ class LoginResponse(BaseModel):
 
 @router.post("/login", response_model=LoginResponse)
 def login(req: LoginRequest):
+    # 공개 체험 계정은 prod 에 들어올 수 없다 (2026-08-30).
+    # users.json 을 test·prod 가 공유하므로, 비밀번호를 공개하면 prod 로도 로그인된다.
+    # 계정을 지우면 test 에서도 못 쓰게 되니 ENV 로 갈라서 여기서 막는다.
+    if blocked_on_prod(req.id):
+        print(f"[login] 체험 계정의 prod 로그인 차단: {req.id}")
+        return LoginResponse(status="fail", reason="invalid credentials")
+
     user = authenticate_user(req.id, req.pw)
     if user == "expired":
         return LoginResponse(status="fail", reason="구독 기간이 만료되었습니다. 관리자에게 문의하세요.")
