@@ -36,6 +36,7 @@ from services.scene_counts import (
     DEFAULT_SCENE_COUNT,
 )
 from services.blog_url import parse_blog_ref, same_blog
+from services.trial import blocked_on_prod, check_and_count, client_ip, is_trial_user
 from services.speeds import available_speeds, normalize_speed, to_tempo
 from services.voices import available_voices, normalize_voice_id
 from services.voice_preview import get_preview_url
@@ -70,6 +71,9 @@ def require_active_subscription(request: Request):
     user_id = request.headers.get("X-USER-ID") or request.query_params.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="인증 정보가 없습니다.")
+    # 로그인을 거치지 않고 X-USER-ID 만 넣어 부르는 경로도 막는다.
+    if blocked_on_prod(user_id):
+        raise HTTPException(status_code=403, detail="체험 계정은 이 서버에서 사용할 수 없습니다.")
     user = get_user_if_active(user_id)
     if not user:
         raise HTTPException(status_code=403, detail="구독이 만료된 계정입니다.")
@@ -80,6 +84,9 @@ def require_active_subscription_and_credits(request: Request, required_credits: 
     user_id = request.headers.get("X-USER-ID") or request.query_params.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="인증 정보가 없습니다.")
+    # 로그인을 거치지 않고 X-USER-ID 만 넣어 부르는 경로도 막는다.
+    if blocked_on_prod(user_id):
+        raise HTTPException(status_code=403, detail="체험 계정은 이 서버에서 사용할 수 없습니다.")
     
     # 구독 상태 체크
     user = get_user_if_active(user_id)
@@ -347,11 +354,27 @@ class GenerateVideoResponse(BaseModel):
     message: Optional[str] = None
 
 @router.post("/generate-video")
-def generate_video(req: GenerateVideoRequest, user=Depends(require_active_subscription_and_credits)):
+def generate_video(request: Request, req: GenerateVideoRequest,
+                   user=Depends(require_active_subscription_and_credits)):
     # user_id 를 함께 남긴다 — 일일 사용량 리포트가 "유저별 **시도** 횟수"를 로그에서
     # 세기 때문이다. S3 크레딧 이력은 성공한 건만 남으므로, 실패한 시도(이탈로 이어지는
     # 그 지점)는 이 로그로만 알 수 있다. 형식을 바꾸면 리포트 집계가 조용히 깨진다.
     print(f"generate_video 호출 user_id={user.get('id')}")
+
+    # 공개 체험 계정은 IP 당 하루 횟수를 제한한다 (2026-08-30).
+    # 브라우저 세션으로 막으면 시크릿 모드로 바로 뚫리는데, Creatomate·Typecast·OpenAI
+    # 키를 test 와 prod 가 공유하므로 체험 트래픽이 몰리면 prod 고객이 영향을 받는다.
+    if is_trial_user(user.get("id")):
+        usage = check_and_count(client_ip(request))
+        print(f"[trial] 사용량 {usage['used']}/{usage['limit']} (하루 총 {usage['daily_total']})")
+        if not usage["allowed"]:
+            return {
+                "status": "error",
+                "error_code": "trial_limit_reached",
+                "message": f"체험은 하루 {usage['limit']}회까지예요. "
+                           "내일 다시 시도하시거나, 정식으로 시작해보세요.",
+            }
+
     try:
         # 장면 수: 명시값 우선, 없으면 scripts 길이에서 추론 (무효 시 기본 5)
         scene_count = normalize_scene_count(

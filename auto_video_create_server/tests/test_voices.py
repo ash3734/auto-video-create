@@ -23,6 +23,14 @@ from services.speeds import to_tempo as _to_tempo  # noqa: E402
 _T = _to_tempo(1.0)
 
 
+class _HttpReq:
+    """generate_video 가 요청 객체를 받는다 (2026-08-30, 체험 IP 제한 도입).
+    테스트에서는 헤더만 있으면 충분하다."""
+    headers = {"x-forwarded-for": "203.0.113.5"}
+    client = None
+
+
+
 class TestCatalog(unittest.TestCase):
     def test_five_voices_exposed(self):
         self.assertEqual(len(v.available_voices()), 5)
@@ -187,7 +195,7 @@ class TestGenerateVideoUsesRequestVoice(unittest.TestCase):
         )
         with mock.patch.object(blog, "tts_with_typecast_multi",
                                side_effect=RuntimeError("stop here")) as tts:
-            blog.generate_video(req, user={"id": "u"})
+            blog.generate_video(_HttpReq(), req, user={"id": "u"})
         self.assertEqual(tts.call_args.kwargs["voice_id"], chosen)
 
     def test_bogus_voice_id_falls_back(self):
@@ -201,7 +209,7 @@ class TestGenerateVideoUsesRequestVoice(unittest.TestCase):
         )
         with mock.patch.object(blog, "tts_with_typecast_multi",
                                side_effect=RuntimeError("stop here")) as tts:
-            blog.generate_video(req, user={"id": "u"})
+            blog.generate_video(_HttpReq(), req, user={"id": "u"})
         self.assertEqual(tts.call_args.kwargs["voice_id"], v.DEFAULT_VOICE_ID)
 
     def test_missing_voice_id_uses_default(self):
@@ -215,7 +223,7 @@ class TestGenerateVideoUsesRequestVoice(unittest.TestCase):
         )
         with mock.patch.object(blog, "tts_with_typecast_multi",
                                side_effect=RuntimeError("stop here")) as tts:
-            blog.generate_video(req, user={"id": "u"})
+            blog.generate_video(_HttpReq(), req, user={"id": "u"})
         self.assertEqual(tts.call_args.kwargs["voice_id"], v.DEFAULT_VOICE_ID)
 
 
