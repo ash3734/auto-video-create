@@ -331,6 +331,37 @@
     .sticky{display:none;}
     footer{padding-bottom:46px;}
   }
+
+  /* ── 체험 계정 안내 팝업 ── */
+  #trial-modal{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:20px;}
+  .tm-back{position:absolute;inset:0;background:rgba(25,24,23,.55);}
+  .tm-box{
+    position:relative;background:#fff;border-radius:var(--radius);padding:28px 24px 20px;
+    width:100%;max-width:380px;box-shadow:0 24px 60px rgba(40,32,20,.28);
+  }
+  .tm-box h3{font-size:21px;margin-bottom:6px;}
+  .tm-sub{font-size:14px;color:var(--ink-2);margin-bottom:18px;}
+  .tm-row{
+    display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:8px;
+    background:var(--paper-2);border-radius:11px;
+  }
+  .tm-row span{font-size:12.5px;color:var(--muted);width:52px;flex:0 0 auto;font-weight:700;}
+  .tm-row b{flex:1;font-size:15.5px;font-weight:800;letter-spacing:.01em;word-break:break-all;}
+  .tm-row button{
+    flex:0 0 auto;border:1.4px solid var(--line);background:#fff;border-radius:8px;
+    padding:6px 11px;font-size:12.5px;font-weight:800;cursor:pointer;color:var(--ink-2);
+  }
+  .tm-row button:hover{border-color:#cfc9be;}
+  .tm-note{list-style:none;padding:0;margin:16px 0 18px;}
+  .tm-note li{
+    font-size:13px;color:var(--ink-2);padding:3px 0 3px 14px;position:relative;line-height:1.6;
+  }
+  .tm-note li::before{content:"·";position:absolute;left:3px;color:var(--muted);}
+  .tm-go{margin-bottom:6px;}
+  .tm-close{
+    display:block;width:100%;background:none;border:0;color:var(--muted);
+    font-size:13.5px;padding:9px;cursor:pointer;font-weight:700;
+  }
 </style>
 </head>
 <body>
@@ -634,13 +665,18 @@
 <script>
 (function () {
   // ─────────────────────────────────────────────────────────
-  // TODO: 두 URL 을 실제 값으로 교체
-  //   KMONG_URL — 크몽 상세페이지
-  //   TRIAL_URL — 무료 체험 신청 폼 (구글 폼이면 충분. 결제가 없으므로
-  //               백엔드를 새로 만들 이유가 없고 응답이 시트로 쌓인다)
+  // 무료 체험은 문의 없이 바로 써보게 한다 (PO 결정 2026-08-30).
+  // 공용 체험 계정을 안내하고 test 서버로 보낸다.
+  //
+  //   · test 서버 결과물에는 **워터마크**가 찍힌다 — 그대로 가져다 쓰긴 어렵다
+  //   · 같은 계정이 prod 로는 로그인되지 않는다 (서버에서 ENV 로 차단)
+  //   · IP 당 하루 3회까지 (서버에서 집계). 화면 안내와 서버 값이 어긋나지 않게
+  //     숫자를 바꿀 땐 services/trial.py 의 DAILY_LIMIT_PER_IP 도 함께 볼 것
   // ─────────────────────────────────────────────────────────
   var KMONG_URL = "https://kmong.com/gig/679789";
-  var TRIAL_URL = "";  // 예: https://forms.gle/xxxxxxxx
+  var TRIAL_URL = "https://main.d1exkg86btrgn7.amplifyapp.com";
+  var TRIAL_ID = "test";
+  var TRIAL_PW = "trial1234";
 
   // 들어온 UTM 을 그대로 이벤트에 실어 보낸다.
   // 크몽이 유입 출처를 안 알려주므로 "어느 채널이 사람을 데려왔나"는 여기서만 알 수 있다.
@@ -704,11 +740,78 @@
       track(base, info);
       // 합계와 이름이 같아지면(예: data-cta="kmong") 한 클릭이 두 번 세어진다.
       if (ctaEventName(cta) !== base) track(ctaEventName(cta), info);
+
+      // 무료 체험은 계정을 먼저 알려주고 보낸다. 바로 보내면 로그인 화면에서
+      // 아이디를 몰라 그대로 이탈한다.
+      if (isTrial) {
+        e.preventDefault();
+        openTrialModal();
+        return;
+      }
+
       el.setAttribute("href", url);
       el.setAttribute("target", "_blank");
       el.setAttribute("rel", "noopener");
     });
   });
+
+  // ── 체험 계정 안내 팝업 ───────────────────────────────────
+  // alert() 로는 복사가 안 되고 줄바꿈도 지저분하다. 복사 버튼이 있어야
+  // 모바일에서 아이디·비밀번호를 옮겨 적는 수고가 사라진다.
+  function openTrialModal(){
+    if (document.getElementById("trial-modal")) return;
+
+    var wrap = document.createElement("div");
+    wrap.id = "trial-modal";
+    wrap.innerHTML =
+      '<div class="tm-back"></div>' +
+      '<div class="tm-box" role="dialog" aria-modal="true" aria-label="무료 체험 계정">' +
+        '<h3>바로 써보세요</h3>' +
+        '<p class="tm-sub">아래 계정으로 로그인하면 됩니다. 가입도, 문의도 필요 없어요.</p>' +
+        '<div class="tm-row"><span>아이디</span><b id="tm-id">' + TRIAL_ID + '</b>' +
+          '<button type="button" data-copy="' + TRIAL_ID + '">복사</button></div>' +
+        '<div class="tm-row"><span>비밀번호</span><b id="tm-pw">' + TRIAL_PW + '</b>' +
+          '<button type="button" data-copy="' + TRIAL_PW + '">복사</button></div>' +
+        '<ul class="tm-note">' +
+          '<li>체험 영상에는 <b>워터마크</b>가 찍혀요.</li>' +
+          '<li>하루 <b>3편</b>까지 만들 수 있어요.</li>' +
+          '<li>여러 명이 함께 쓰는 계정이라 설정이 바뀌어 있을 수 있어요.</li>' +
+        '</ul>' +
+        '<a class="btn btn-primary btn-block tm-go" href="' + TRIAL_URL + '" target="_blank" rel="noopener">체험하러 가기</a>' +
+        '<button type="button" class="tm-close">닫기</button>' +
+      '</div>';
+    document.body.appendChild(wrap);
+
+    wrap.addEventListener("click", function(ev){
+      var t = ev.target;
+      if (t.classList.contains("tm-back") || t.classList.contains("tm-close")) {
+        wrap.remove();
+        return;
+      }
+      if (t.dataset && t.dataset.copy) {
+        var val = t.dataset.copy;
+        try { navigator.clipboard.writeText(val); }
+        catch (_) {
+          var ta = document.createElement("textarea");
+          ta.value = val; ta.style.position="fixed"; ta.style.opacity="0";
+          document.body.appendChild(ta); ta.select();
+          try { document.execCommand("copy"); } catch (__) {}
+          document.body.removeChild(ta);
+        }
+        t.textContent = "복사됨";
+        setTimeout(function(){ t.textContent = "복사"; }, 1500);
+      }
+      if (t.classList.contains("tm-go")) {
+        track("trial_modal_go", utm);
+      }
+    });
+
+    document.addEventListener("keydown", function esc(ev){
+      if (ev.key === "Escape") { wrap.remove(); document.removeEventListener("keydown", esc); }
+    });
+
+    track("trial_modal_open", utm);
+  }
 
   var io = new IntersectionObserver(function(entries){
     entries.forEach(function(en){
