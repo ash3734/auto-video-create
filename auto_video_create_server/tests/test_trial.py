@@ -152,5 +152,32 @@ class TestDailyTotalAlert(unittest.TestCase):
         self.assertNotIn("ip", kwargs)
 
 
+class TestPasswordChangeBlocked(unittest.TestCase):
+    """비밀번호가 공개돼 있으므로, 변경을 열어두면 아무나 바꿔서 잠글 수 있다.
+
+    그러면 체험 자체가 막히고 되돌리려면 우리가 S3 를 직접 고쳐야 한다.
+    """
+
+    def _call(self, user_id, pw="whatever12"):
+        import api.account as account
+        req = account.ChangePasswordRequest(id=user_id, current_pw="x" * 10, new_pw=pw)
+        with mock.patch.object(account, "change_password") as cp:
+            res = account.change_password_endpoint(req)
+        return res, cp
+
+    def test_trial_account_cannot_change(self):
+        res, cp = self._call("test")
+        self.assertEqual(res.status, "fail")
+        self.assertIn("체험", res.reason)
+        # 변경 함수까지 가지도 않는다
+        cp.assert_not_called()
+
+    def test_real_users_can_still_change(self):
+        """유료 고객의 비밀번호 변경을 막으면 안 된다 (2026-08-27 에 고친 기능)."""
+        for uid in ("auctionrun0643", "linkplc", "ssonek"):
+            _, cp = self._call(uid)
+            cp.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

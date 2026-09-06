@@ -16,6 +16,11 @@ import {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 const MIN_PASSWORD_LENGTH = 8;
 
+// 공개 체험 계정. 이 계정은 비밀번호를 바꿀 수 없다 — 랜딩에 공개돼 있어서
+// 누군가 바꾸면 다른 사람들이 전부 못 들어온다. 서버에서도 막지만, 눌러도 실패하는
+// 버튼을 보여줄 이유가 없으므로 화면에서도 감춘다.
+const TRIAL_USER_ID = "test";
+
 export default function ChangePasswordButton() {
   const [open, setOpen] = useState(false);
   const [currentPw, setCurrentPw] = useState("");
@@ -82,6 +87,13 @@ export default function ChangePasswordButton() {
       setLoading(false);
     }
   };
+
+  // 체험 계정이면 버튼 자체를 그리지 않는다.
+  // localStorage 는 시크릿 모드 등에서 던질 수 있어 반드시 감싼다.
+  let userId: string | null = null;
+  try { userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null; }
+  catch { userId = null; }
+  if (userId === TRIAL_USER_ID) return null;
 
   return (
     <>

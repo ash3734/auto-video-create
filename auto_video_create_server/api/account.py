@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 from services.account_service import authenticate_user, change_password, MIN_PASSWORD_LENGTH
-from services.trial import blocked_on_prod
+from services.trial import blocked_on_prod, is_trial_user
 
 router = APIRouter()
 
@@ -60,7 +60,18 @@ def change_password_endpoint(req: ChangePasswordRequest):
 
     현재 비밀번호를 검증한 뒤 새 비밀번호로 변경한다.
     구독 만료 여부와 무관하게 변경 가능 (만료 계정도 비밀번호는 바꿀 수 있어야 함).
+
+    단 **공개 체험 계정은 변경할 수 없다** (2026-08-30). 비밀번호를 랜딩에 공개해
+    두었으므로, 변경을 열어두면 아무나 바꿔서 잠글 수 있다. 그러면 체험 자체가
+    막히고 되돌리려면 우리가 S3 를 직접 고쳐야 한다.
     """
+    if is_trial_user(req.id):
+        print(f"[change_password] 체험 계정 변경 차단: {req.id}")
+        return ChangePasswordResponse(
+            status="fail",
+            reason="체험 계정은 비밀번호를 변경할 수 없어요.",
+        )
+
     result = change_password(req.id, req.current_pw, req.new_pw)
     if result == "success":
         return ChangePasswordResponse(status="success")
