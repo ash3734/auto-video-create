@@ -37,11 +37,14 @@ KST = timezone(timedelta(hours=9))
 # 공개된 체험 계정. 이 값이 바뀌면 랜딩 페이지 안내 문구도 함께 바꿔야 한다.
 TRIAL_USER_ID = "test"
 
-# IP 하나가 하루에 만들 수 있는 영상 수 (PO 결정).
-DAILY_LIMIT_PER_IP = 3
+# IP 하나가 하루에 만들 수 있는 영상 수 (PO 결정, 2026-09-09 에 3 → 10).
+# 3편을 다 쓰고 더 만들려던 체험 유저가 막혀 문의가 들어와 늘렸다.
+DAILY_LIMIT_PER_IP = 10
 
 # 하루 총합이 이 값을 넘으면 알린다. 인기인지 남용인지는 사람이 판단한다.
-DAILY_TOTAL_ALERT = 10
+# **IP 당 한도보다 넉넉해야 한다** — 같은 값이면 한 사람이 한도를 다 쓰는 것만으로
+# 매일 알림이 울리고, 그러면 알림을 보지 않게 된다.
+DAILY_TOTAL_ALERT = 30
 
 BUCKET = "blog-to-short-form-credits"   # 이미 쓰고 있는 버킷을 재사용한다
 PREFIX = "trial-usage"

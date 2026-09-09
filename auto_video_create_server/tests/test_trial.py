@@ -6,7 +6,7 @@
    users.json 을 test·prod 가 공유하고 로그인이 ENV 를 구분하지 않으므로, 막지 않으면
    비밀번호 공개가 곧 prod 개방이 된다. 워터마크 없는 영상이 나가고 크레딧도 실제로 빠진다.
 
-2. **IP 당 하루 3회.**
+2. **IP 당 하루 N회** (services.trial.DAILY_LIMIT_PER_IP).
    Creatomate·Typecast·OpenAI 키를 test 와 prod 가 공유한다. 체험이 몰리면 그 달
    prod 고객이 영상을 못 만든다.
 """
@@ -80,22 +80,25 @@ class TestDailyLimit(unittest.TestCase):
         self.load.start(); self.save.start()
         self.addCleanup(self.load.stop); self.addCleanup(self.save.stop)
 
-    def test_three_allowed_fourth_blocked(self):
+    def test_limit_allowed_then_blocked(self):
+        """한도까지는 허용, 그다음부터 차단. 숫자는 상수에서 끌어 쓴다 —
+        박아두면 한도를 바꿀 때마다 테스트가 깨진다 (2026-09-09 에 3 → 10)."""
         ip = "1.1.1.1"
-        for i in range(1, 4):
+        for i in range(1, trial.DAILY_LIMIT_PER_IP + 1):
             got = trial.check_and_count(ip)
             self.assertTrue(got["allowed"], i)
             self.assertEqual(got["used"], i)
         self.assertFalse(trial.check_and_count(ip)["allowed"])
 
-    def test_limit_is_three(self):
-        self.assertEqual(trial.DAILY_LIMIT_PER_IP, 3)
+    def test_alert_threshold_above_per_ip_limit(self):
+        """같은 값이면 한 사람이 한도를 다 쓰는 것만으로 매일 알림이 울린다."""
+        self.assertGreater(trial.DAILY_TOTAL_ALERT, trial.DAILY_LIMIT_PER_IP)
 
     def test_different_ips_counted_separately(self):
         for ip in ("1.1.1.1", "2.2.2.2", "3.3.3.3"):
-            for _ in range(3):
+            for _ in range(trial.DAILY_LIMIT_PER_IP):
                 self.assertTrue(trial.check_and_count(ip)["allowed"])
-        # 각자 3회씩 썼어도 서로에게 영향이 없다
+        # 각자 한도를 다 썼어도 서로에게 영향이 없다
         self.assertFalse(trial.check_and_count("1.1.1.1")["allowed"])
         self.assertFalse(trial.check_and_count("2.2.2.2")["allowed"])
 
@@ -122,7 +125,7 @@ class TestDailyTotalAlert(unittest.TestCase):
         self.addCleanup(mock.patch.stopall)
 
     def _use(self, n):
-        """서로 다른 IP 로 n 회 사용 (IP 당 3회 제한을 피하려고 IP 를 바꾼다)."""
+        """서로 다른 IP 로 n 회 사용 (IP 당 한도를 피하려고 IP 를 바꾼다)."""
         for i in range(n):
             trial.check_and_count(f"10.0.0.{i}")
 
