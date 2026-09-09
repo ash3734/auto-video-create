@@ -62,6 +62,22 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 // 영상 생성 실패 안내.
 // 실패 원인(외부 API 상태 코드, 템플릿 문제 등)은 사용자가 어차피 손쓸 수 없고
 // 서버 로그에 상세히 남으므로, 화면에는 다음 행동만 간결하게 안내한다.
+// 서버가 내려준 message 를 그대로 보여줄 실패 사유 (2026-09-09).
+//
+// 그동안은 사유를 전부 콘솔에만 남기고 화면에는 "실패했어요, 다시 시도해보세요" 만
+// 띄웠다. 그래서 체험 한도(하루 3회)에 걸린 유저가 안내대로 **10번을 다시 시도하고**
+// 결국 관리자에게 문의했다. 서버는 "체험은 하루 3회까지예요" 라고 정확히 말하고
+// 있었는데 화면이 그 말을 버리고 있었다.
+//
+// 다만 아무 사유나 노출하면 안 된다. 여기 있는 것은 **유저가 스스로 조치할 수 있는**
+// 경우뿐이고, 나머지(외부 API 오류, 예상 밖 예외)는 지금처럼 일반 안내로 덮는다.
+const USER_ACTIONABLE_ERRORS = new Set([
+  "trial_limit_reached",              // 체험 한도 — 내일 오거나 정식 구매
+  "tts_failed",                       // 빈 스크립트 — 몇 번 문장인지까지 알려준다
+  "insufficient_credits",             // 크레딧 부족 — 충전하면 된다
+  "scene_count_template_not_configured", // 다른 장면 수를 고르면 된다
+]);
+
 const GENERATE_ERROR_MESSAGE =
   "영상 생성에 실패했어요. 다시 시도해보시고, 계속 안 되면 관리자에게 문의해주세요.";
 
@@ -571,10 +587,14 @@ export default function Home() {
           setStep('select');
         }
       } else {
-        // 서버가 실패 사유를 내려준 경우. 화면에는 일반 안내만 띄우고
-        // 구체적인 사유(error_code/message)는 콘솔에 남겨 디버깅에 쓴다.
+        // 서버가 실패 사유를 내려준 경우.
         derr("generate-video 실패 응답", data);
-        setGenerateError(GENERATE_ERROR_MESSAGE);
+        // error_code / error_type 두 이름이 섞여 있다 (생성 경로와 Creatomate 경로).
+        const code = String(data.error_code ?? data.error_type ?? "");
+        const serverMsg = typeof data.message === "string" ? data.message.trim() : "";
+        setGenerateError(
+          USER_ACTIONABLE_ERRORS.has(code) && serverMsg ? serverMsg : GENERATE_ERROR_MESSAGE
+        );
         setStep('select');
       }
     } catch (e) {

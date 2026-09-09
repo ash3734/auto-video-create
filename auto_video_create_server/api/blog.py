@@ -366,7 +366,10 @@ def generate_video(request: Request, req: GenerateVideoRequest,
     # 키를 test 와 prod 가 공유하므로 체험 트래픽이 몰리면 prod 고객이 영향을 받는다.
     if is_trial_user(user.get("id")):
         usage = check_and_count(client_ip(request))
-        print(f"[trial] 사용량 {usage['used']}/{usage['limit']} (하루 총 {usage['daily_total']})")
+        # 허용/차단을 로그에 명시한다. 3번째 성공과 4번째 차단이 둘 다 "3/3" 으로
+        # 찍혀서, 2026-09-09 문의 때 렌더 건수를 따로 세어보고서야 구분할 수 있었다.
+        print(f"[trial] {'허용' if usage['allowed'] else '차단'} "
+              f"{usage['used']}/{usage['limit']} (하루 총 {usage['daily_total']})")
         if not usage["allowed"]:
             return {
                 "status": "error",
