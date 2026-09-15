@@ -11,6 +11,7 @@ from services.create_creatomate_video import create_creatomate_video, get_creato
 from services.account_service import get_user_if_active, check_user_credits, get_current_credits
 from services.ai_background import generate_backgrounds_parallel, FALLBACK_URL as DEFAULT_BG_FALLBACK_URL
 from services.image_mirror import maybe_mirror
+from services.scene_media import image_slot_variables
 from services.alerting import alert
 # cycle-3: 자막 스타일 편집 신규 서비스
 from services.font_service import get_korean_fonts, get_allowed_font_families
@@ -429,9 +430,8 @@ def generate_video(request: Request, req: GenerateVideoRequest,
                 # cycle-2.2 BUG-007: Creatomate 가 차단당하는 외부 호스트(Daum CDN 등) 는
                 # S3 미러링 후 그 URL 을 전달. 그 외 호스트는 원본 그대로.
                 image_src = maybe_mirror(section.url or "", referer="https://brunch.co.kr/")
-                variables[f"image{i}.source"] = image_src
-                variables[f"image{i}.visible"] = "true"
-                variables[f"video{i}.visible"] = "false"
+                # 사진이 잘리지 않게 틀 안에 통째로 넣는다 (services/scene_media.py)
+                variables.update(image_slot_variables(i, image_src))
             elif section.type == "video":
                 variables[f"video{i}.source"] = section.url
                 variables[f"image{i}.visible"] = "false"

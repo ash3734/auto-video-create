@@ -985,7 +985,9 @@ export default function Home() {
                                   src={getProxiedImageUrl(section.url as string)}
                                   alt={`스크립트 ${idx + 1} 이미지`}
                                   onError={() => handleSectionImageError(idx)}
-                                  style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 8 }}
+                                  // 영상에서 사진을 자르지 않고 통째로 넣으므로(서버 scene_media.py)
+                                  // 미리보기도 같게 보여준다. 여백 색은 영상의 장면 배경색(#333).
+                                  style={{ width: '100%', height: 200, objectFit: 'contain', background: '#333', borderRadius: 8 }}
                                 />
                               ) : (
                                 <video
