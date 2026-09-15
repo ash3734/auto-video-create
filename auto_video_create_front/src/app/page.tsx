@@ -81,6 +81,11 @@ const USER_ACTIONABLE_ERRORS = new Set([
 const GENERATE_ERROR_MESSAGE =
   "영상 생성에 실패했어요. 다시 시도해보시고, 계속 안 되면 관리자에게 문의해주세요.";
 
+// 렌더 완료를 기다리는 최대 시간. 생성 중 화면의 "최대 5분" 안내와 같은 값이어야 한다.
+const RENDER_POLL_TIMEOUT_MS = 5 * 60 * 1000;
+// 이 시간이 지나면 "생각보다 오래 걸리고 있어요"로 안내를 바꾼다.
+const RENDER_SLOW_NOTICE_MS = 2 * 60 * 1000;
+
 // ── 브라우저 콘솔 디버그 로그 ──────────────────────────────────────────────
 // FE 오류 수집 도구(Sentry 등)가 없고 Amplify 에서도 클라이언트 로그를 볼 수 없어서,
 // 요청이 서버까지 갔는지 / 어디서 끊겼는지를 브라우저 콘솔에서 추적할 수 있게 남긴다.
@@ -119,6 +124,9 @@ export default function Home() {
   const [step, setStep] = useState<'input' | 'select' | 'generating' | 'done'>('input');
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  // 렌더가 평소보다 오래 걸릴 때 안내를 바꾼다. 그대로 두면 멈춘 줄 알고 다시 눌러
+  // 같은 영상이 두 번 만들어진다 (2026-09-15, Creatomate 음성 인식 지연 18분).
+  const [generateSlow, setGenerateSlow] = useState(false);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMsg, setSnackbarMsg] = useState("");
   const [zoomImg, setZoomImg] = useState<string | null>(null);
@@ -522,6 +530,7 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
     setStep('generating');
     setGenerateError(null);
+    setGenerateSlow(false);
     setVideoUrl(null);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180000); // 3분
@@ -556,10 +565,16 @@ export default function Home() {
         return;
       }
       if (data.status === "started" && data.render_id) {
-        // Creatomate polling via backend proxy
+        // Creatomate polling via backend proxy.
+        // 횟수가 아니라 경과 시간으로 끊는다 — 폴링 응답 시간만큼 실제 대기가 늘어나기 때문.
+        // 화면 안내("최대 5분")와 같은 값이어야 한다. 이전엔 3분에 끊어, 늦게라도 완성될
+        // 영상을 실패로 보여줬다.
         let pollCount = 0;
         let videoUrl = null;
-        while (pollCount < 60) { // 최대 3분(3초 * 60)
+        const pollStartedAt = Date.now();
+        setGenerateSlow(false);
+        while (Date.now() - pollStartedAt < RENDER_POLL_TIMEOUT_MS) {
+          if (Date.now() - pollStartedAt > RENDER_SLOW_NOTICE_MS) setGenerateSlow(true);
           const pollController = new AbortController();
           const pollTimeoutId = setTimeout(() => pollController.abort(), 180000); // 3분
           const pollRes = await authFetch(`${API_BASE_URL}/api/blog/poll-video?render_id=${data.render_id}`, { signal: pollController.signal });
@@ -582,7 +597,7 @@ export default function Home() {
           setVideoUrl(videoUrl);
           setStep('done');
         } else {
-          derr("렌더 폴링 타임아웃 (3분 초과)", { render_id: data.render_id });
+          derr(`렌더 폴링 타임아웃 (${RENDER_POLL_TIMEOUT_MS / 60000}분 초과, ${pollCount}회)`, { render_id: data.render_id });
           setGenerateError(GENERATE_ERROR_MESSAGE);
           setStep('select');
         }
@@ -1339,7 +1354,9 @@ export default function Home() {
                 최종 영상을 생성 중입니다...
               </Typography>
               <Typography variant="body2" align="center" color="text.secondary" sx={{ mb: 4 }}>
-                최대 5분 정도 소요될 수 있습니다. 잠시만 기다려 주세요.
+                {generateSlow
+                  ? '생각보다 오래 걸리고 있어요. 영상은 계속 만들어지고 있으니 창을 닫지 말고 조금만 더 기다려 주세요.'
+                  : '최대 5분 정도 소요될 수 있습니다. 잠시만 기다려 주세요.'}
               </Typography>
               <Box sx={{ width: 300, maxWidth: '90%' }}>
                 <LinearProgress color="primary" sx={{ height: 4, borderRadius: 2 }} />
