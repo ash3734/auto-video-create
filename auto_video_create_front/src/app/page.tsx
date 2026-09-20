@@ -139,6 +139,7 @@ export default function Home() {
   // 화면에서 그 렌더로 "돌아가는" 기능은 두지 않는다 — 기다리는 루프가 둘이 되면
   // 늦게 끝난 쪽이 화면을 덮어써서 엉킨다.
   const cancelWaitRef = useRef(false);
+  const pollAbortRef = useRef<AbortController | null>(null);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMsg, setSnackbarMsg] = useState("");
   const [zoomImg, setZoomImg] = useState<string | null>(null);
@@ -616,22 +617,39 @@ export default function Home() {
     setGenerateSlow(false);
     const pollStartedAt = Date.now();
     let pollCount = 0;
+    // 3초 대기를 잘게 쪼개 기다린다. 통째로 기다리면 중단을 눌러도 그만큼 늦게 반응한다.
+    const sleepUnlessCancelled = async (ms: number) => {
+      const until = Date.now() + ms;
+      while (Date.now() < until) {
+        if (cancelWaitRef.current) return;
+        await new Promise(r => setTimeout(r, 100));
+      }
+    };
     while (Date.now() - pollStartedAt < RENDER_POLL_TIMEOUT_MS) {
       if (cancelWaitRef.current) {
+        // 화면 전환은 버튼 핸들러가 이미 했다. 여기서는 조용히 빠져나온다.
         dlog("기다리기 중단 (유저)", { render_id: renderId, pollCount });
-        setStep('select');
-        handleBetaAlert("기다리기를 멈췄어요. 영상은 계속 만들어지고 있어요.");
         return;
       }
       if (Date.now() - pollStartedAt > RENDER_SLOW_NOTICE_MS) setGenerateSlow(true);
       const pollController = new AbortController();
       const pollTimeoutId = setTimeout(() => pollController.abort(), 180000); // 3분
-      const pollRes = await authFetch(`${API_BASE_URL}/api/blog/poll-video?render_id=${renderId}`, { signal: pollController.signal });
-      clearTimeout(pollTimeoutId);
-      const pollData = await pollRes.json();
+      pollAbortRef.current = pollController;   // 중단 시 진행 중인 요청도 끊는다
+      let pollData: Record<string, unknown>;
+      try {
+        const pollRes = await authFetch(`${API_BASE_URL}/api/blog/poll-video?render_id=${renderId}`, { signal: pollController.signal });
+        pollData = await pollRes.json();
+      } catch (e) {
+        if (cancelWaitRef.current) return;     // 중단으로 끊긴 요청 — 정상 경로
+        throw e;
+      } finally {
+        clearTimeout(pollTimeoutId);
+        pollAbortRef.current = null;
+      }
+      if (cancelWaitRef.current) return;
       if (pollData.status === "succeeded" && pollData.url) {
         dlog(`렌더 완료 (확인 ${pollCount + 1}회)`, pollData.url);
-        setVideoUrl(pollData.url);
+        setVideoUrl(String(pollData.url));
         setStep('done');
         return;
       }
@@ -641,12 +659,24 @@ export default function Home() {
         setStep('select');
         return;
       }
-      await new Promise(r => setTimeout(r, 3000));
+      await sleepUnlessCancelled(3000);
       pollCount++;
     }
+    if (cancelWaitRef.current) return;
     derr(`렌더 확인 타임아웃 (${RENDER_POLL_TIMEOUT_MS / 60000}분 초과, ${pollCount}회)`, { render_id: renderId });
     setGenerateError(RENDER_TIMEOUT_MESSAGE);
     setStep('select');
+  };
+
+  /** 기다리기 중단 — 누른 즉시 화면을 2페이지로 돌린다.
+   *  진행 중인 확인 요청도 끊는다. 예전엔 루프가 다음 차례에 플래그를 읽을 때까지
+   *  몇 초씩 반응이 없었다. */
+  const handleStopWaiting = () => {
+    cancelWaitRef.current = true;
+    pollAbortRef.current?.abort();
+    setGenerateSlow(false);
+    setStep('select');
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   /** 완료 화면 → 이미지 선택 화면으로. 같은 글의 대본·이미지·설정을 그대로 두고
@@ -1401,14 +1431,13 @@ export default function Home() {
               <Button
                 variant="text"
                 color="inherit"
-                onClick={() => { cancelWaitRef.current = true; }}
+                onClick={handleStopWaiting}
                 sx={{ mt: 3, color: '#888', fontSize: 13 }}
               >
                 기다리지 않고 이미지 선택으로 돌아가기
               </Button>
               <Typography align="center" sx={{ fontSize: 12, color: '#aaa', mt: 0.5, maxWidth: 360, lineHeight: 1.6 }}>
-                돌아가도 이 영상은 계속 만들어지지만, 화면에는 더 이상 나타나지 않아요.
-                새로 만들면 크레딧이 한 번 더 사용됩니다.
+                돌아가면 이 영상은 받아볼 수 없고, 사용한 크레딧도 돌아오지 않아요.
               </Typography>
             </Box>
           )}
