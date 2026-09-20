@@ -1,6 +1,6 @@
 "use client";
 import { Box, Button, TextField, Typography, CircularProgress, LinearProgress, Snackbar, Alert, Paper, Dialog, IconButton, ImageListItem } from "@mui/material";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useMediaQuery } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
@@ -134,6 +134,10 @@ export default function Home() {
   // 렌더가 평소보다 오래 걸릴 때 안내를 바꾼다. 그대로 두면 멈춘 줄 알고 다시 눌러
   // 같은 영상이 두 번 만들어진다 (2026-09-15, Creatomate 음성 인식 지연 18분).
   const [generateSlow, setGenerateSlow] = useState(false);
+  // 기다리기를 중단해도 렌더는 서버에서 계속된다. 그 render_id 를 들고 있다가
+  // "상태 다시 확인"으로 돌아갈 수 있게 한다 (크레딧은 이미 차감됐으므로 재생성은 낭비다).
+  const [pendingRenderId, setPendingRenderId] = useState<string | null>(null);
+  const cancelWaitRef = useRef(false);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMsg, setSnackbarMsg] = useState("");
   const [zoomImg, setZoomImg] = useState<string | null>(null);
@@ -572,42 +576,8 @@ export default function Home() {
         return;
       }
       if (data.status === "started" && data.render_id) {
-        // Creatomate polling via backend proxy.
-        // 횟수가 아니라 경과 시간으로 끊는다 — 폴링 응답 시간만큼 실제 대기가 늘어나기 때문.
-        // 화면 안내("최대 5분")와 같은 값이어야 한다. 이전엔 3분에 끊어, 늦게라도 완성될
-        // 영상을 실패로 보여줬다.
-        let pollCount = 0;
-        let videoUrl = null;
-        const pollStartedAt = Date.now();
-        setGenerateSlow(false);
-        while (Date.now() - pollStartedAt < RENDER_POLL_TIMEOUT_MS) {
-          if (Date.now() - pollStartedAt > RENDER_SLOW_NOTICE_MS) setGenerateSlow(true);
-          const pollController = new AbortController();
-          const pollTimeoutId = setTimeout(() => pollController.abort(), 180000); // 3분
-          const pollRes = await authFetch(`${API_BASE_URL}/api/blog/poll-video?render_id=${data.render_id}`, { signal: pollController.signal });
-          clearTimeout(pollTimeoutId);
-          const pollData = await pollRes.json();
-          if (pollData.status === "succeeded" && pollData.url) {
-            dlog(`렌더 완료 (폴링 ${pollCount + 1}회)`, pollData.url);
-            videoUrl = pollData.url;
-            break;
-          } else if (pollData.status === "failed") {
-            derr("렌더 실패 (Creatomate)", pollData);
-            setGenerateError(GENERATE_ERROR_MESSAGE);
-            setStep('select');
-            return;
-          }
-          await new Promise(r => setTimeout(r, 3000)); // 3초 대기
-          pollCount++;
-        }
-        if (videoUrl) {
-          setVideoUrl(videoUrl);
-          setStep('done');
-        } else {
-          derr(`렌더 폴링 타임아웃 (${RENDER_POLL_TIMEOUT_MS / 60000}분 초과, ${pollCount}회)`, { render_id: data.render_id });
-          setGenerateError(RENDER_TIMEOUT_MESSAGE);
-          setStep('select');
-        }
+        setPendingRenderId(String(data.render_id));
+        await waitForRender(String(data.render_id));
       } else {
         // 서버가 실패 사유를 내려준 경우.
         derr("generate-video 실패 응답", data);
@@ -632,6 +602,62 @@ export default function Home() {
     }
   };
 
+  /** 렌더가 끝날 때까지 기다린다. 생성 직후와 "상태 다시 확인" 양쪽에서 쓴다.
+   *
+   * 횟수가 아니라 경과 시간으로 끊는다 — 확인 요청에 걸리는 시간만큼 실제 대기가 늘어난다.
+   * 화면 안내("최대 5분")와 같은 값이어야 한다.
+   * 중간에 유저가 "기다리기 중단"을 누르면 cancelWaitRef 로 빠져나온다. 이때 렌더 자체는
+   * 서버에서 계속 진행되므로, render_id 를 남겨 두었다가 다시 확인할 수 있게 한다.
+   */
+  const waitForRender = async (renderId: string) => {
+    cancelWaitRef.current = false;
+    setStep('generating');
+    setGenerateError(null);
+    setGenerateSlow(false);
+    const pollStartedAt = Date.now();
+    let pollCount = 0;
+    while (Date.now() - pollStartedAt < RENDER_POLL_TIMEOUT_MS) {
+      if (cancelWaitRef.current) {
+        dlog("기다리기 중단 (유저)", { render_id: renderId, pollCount });
+        setStep('select');
+        handleBetaAlert("기다리기를 멈췄어요. 영상은 계속 만들어지고 있어요.");
+        return;
+      }
+      if (Date.now() - pollStartedAt > RENDER_SLOW_NOTICE_MS) setGenerateSlow(true);
+      const pollController = new AbortController();
+      const pollTimeoutId = setTimeout(() => pollController.abort(), 180000); // 3분
+      const pollRes = await authFetch(`${API_BASE_URL}/api/blog/poll-video?render_id=${renderId}`, { signal: pollController.signal });
+      clearTimeout(pollTimeoutId);
+      const pollData = await pollRes.json();
+      if (pollData.status === "succeeded" && pollData.url) {
+        dlog(`렌더 완료 (확인 ${pollCount + 1}회)`, pollData.url);
+        setPendingRenderId(null);
+        setVideoUrl(pollData.url);
+        setStep('done');
+        return;
+      }
+      if (pollData.status === "failed") {
+        derr("렌더 실패 (Creatomate)", pollData);
+        setPendingRenderId(null);
+        setGenerateError(GENERATE_ERROR_MESSAGE);
+        setStep('select');
+        return;
+      }
+      await new Promise(r => setTimeout(r, 3000));
+      pollCount++;
+    }
+    derr(`렌더 확인 타임아웃 (${RENDER_POLL_TIMEOUT_MS / 60000}분 초과, ${pollCount}회)`, { render_id: renderId });
+    setGenerateError(RENDER_TIMEOUT_MESSAGE);
+    setStep('select');
+  };
+
+  /** 완료 화면 → 새 영상 만들기. 자막·음성·속도·장면 수 설정은 그대로 두고 글만 바꾼다. */
+  const handleCreateAnother = () => {
+    handleReset();
+    handleBetaAlert("자막·음성·속도 설정은 그대로 두었어요. 새 글 주소만 넣어주세요.");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const handleReset = () => {
     setBlogUrl("");
     setLoading(false);
@@ -642,6 +668,7 @@ export default function Home() {
     setStep('input');
     setVideoUrl(null);
     setGenerateError(null);
+    setPendingRenderId(null);   // 다른 글로 가는 것이므로 직전 렌더 안내도 지운다
     setSectionMedia(Array(sceneCount).fill(null));
     setAutoFilledImageCount(0);
     setEditingIdx(null);
@@ -660,6 +687,24 @@ export default function Home() {
       return () => clearTimeout(timer);
     }
   }, [step, videoUrl]);
+
+  /* 기다리기를 멈췄거나 5분을 넘긴 뒤, 그 영상으로 돌아가는 줄.
+     다시 만들면 크레딧이 또 빠지므로 "상태 확인"을 먼저 권한다. */
+  const pendingBar = (pendingRenderId && step === 'select') ? (
+    <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4, mt: 2 }}>
+      <Alert
+        severity="info"
+        action={
+          <Button color="inherit" size="small" onClick={() => waitForRender(pendingRenderId)}>
+            상태 확인
+          </Button>
+        }
+        onClose={() => setPendingRenderId(null)}
+      >
+        직전에 만들던 영상이 있어요. 다시 만들면 크레딧이 한 번 더 사용됩니다.
+      </Alert>
+    </Box>
+  ) : null;
 
   return (
     <AuthGuard>
@@ -852,6 +897,7 @@ export default function Home() {
                     </Alert>
                   </Box>
                 )}
+                {pendingBar}
                 {/* cycle-3: 자막 스타일 설정 (Row 1 — 접힘 기본) */}
                 <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4, mt: 2 }}>
                   <SubtitleStyleEditor onSettingsChange={setSubtitleSettings} />
@@ -1352,6 +1398,7 @@ export default function Home() {
                     {generateError}
                   </Alert>
                 )}
+                {pendingBar}
               </Box>
             )
           )}
@@ -1368,6 +1415,19 @@ export default function Home() {
               <Box sx={{ width: 300, maxWidth: '90%' }}>
                 <LinearProgress color="primary" sx={{ height: 4, borderRadius: 2 }} />
               </Box>
+              {/* 기다리기 중단 — 렌더는 서버에서 계속된다. "취소"라고 쓰면 영상이 취소되는
+                  것으로 읽혀서(크레딧은 이미 차감됨) 문구를 그대로 쓰지 않는다. */}
+              <Button
+                variant="text"
+                color="inherit"
+                onClick={() => { cancelWaitRef.current = true; }}
+                sx={{ mt: 3, color: '#888', fontSize: 13 }}
+              >
+                기다리지 않고 나가기
+              </Button>
+              <Typography align="center" sx={{ fontSize: 12, color: '#aaa', mt: 0.5 }}>
+                나가셔도 영상은 계속 만들어집니다. 잠시 뒤 “상태 확인”으로 결과를 볼 수 있어요.
+              </Typography>
             </Box>
           )}
           {step === 'done' && videoUrl && (
@@ -1397,16 +1457,22 @@ export default function Home() {
 
                 {seo && <PublishKit seo={seo} />}
 
-                <Box sx={{ width: '100%', maxWidth: 1000, mx: 'auto', mt: 4, mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                {/* 완료 후 이어서 만들기 — 자막·음성·속도·장면 수는 그대로 두고 글만 바꾼다.
+                    한 번 만든 사람이 곧바로 다음 글을 만드는 경우가 많다 (하루 10편 만든 고객). */}
+                <Box sx={{ width: '100%', maxWidth: 1000, mx: 'auto', mt: 4, mb: 2, display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
                   <Button
-                    variant="outlined"
+                    variant="contained"
                     color="primary"
-                    onClick={handleReset}
-                    sx={{ fontWeight: 600, minWidth: 100 }}
+                    size="large"
+                    onClick={handleCreateAnother}
+                    sx={{ fontWeight: 700, minWidth: 220 }}
                   >
-                    다시하기
+                    이 설정으로 새 영상 만들기
                   </Button>
                 </Box>
+                <Typography align="center" sx={{ fontSize: 12.5, color: '#888', mb: 2 }}>
+                  자막 스타일·음성·속도·장면 수는 그대로 유지됩니다.
+                </Typography>
               </Box>
             </>
           )}
