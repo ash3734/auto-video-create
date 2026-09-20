@@ -12,6 +12,7 @@ from services.account_service import get_user_if_active, check_user_credits, get
 from services.ai_background import generate_backgrounds_parallel, FALLBACK_URL as DEFAULT_BG_FALLBACK_URL
 from services.image_mirror import maybe_mirror
 from services.scene_media import image_slot_variables
+from services import render_store, webhooks
 from services.alerting import alert
 # cycle-3: 자막 스타일 편집 신규 서비스
 from services.font_service import get_korean_fonts, get_allowed_font_families
@@ -462,6 +463,8 @@ def generate_video(request: Request, req: GenerateVideoRequest,
             title=req.title,
             user_id=user["id"],  # 크레딧 체크/차감을 위해 user_id 전달
             scene_count=scene_count,
+            webhook_url=webhooks.webhook_url(),
+            metadata=user["id"],  # 웹훅에 그대로 실려 온다 (문자열만 허용)
             **variables
         )
         # Creatomate 응답 처리
@@ -488,6 +491,14 @@ def generate_video(request: Request, req: GenerateVideoRequest,
                 "message": "Creatomate 응답에 렌더링 ID가 없습니다.",
                 "error_type": "creatomate_no_render_id",
             }
+
+        # 접수 기록. 화면이 기다리다 포기해도 이 기록으로 결과를 다시 찾을 수 있다.
+        render_store.save_submitted(
+            render_id,
+            user["id"],
+            title=req.title,
+            scene_count=scene_count,
+        )
 
         poll_url = f"https://api.creatomate.com/v1/renders/{render_id}"
         return {"status": "started", "render_id": render_id, "poll_url": poll_url}
@@ -518,13 +529,70 @@ def generate_video(request: Request, req: GenerateVideoRequest,
         )
         return {"status": "error", "message": str(e)}
 
+def _fetch_render(render_id: str) -> dict:
+    """Creatomate 에서 렌더 상태를 직접 조회한다 (이 응답만 믿는다)."""
+    resp = requests.get(
+        f"https://api.creatomate.com/v1/renders/{render_id}",
+        headers={"Authorization": f"Bearer {os.environ['CREATOMATE_API_KEY']}"},
+        timeout=20,
+    )
+    data = resp.json()
+    return data[0] if isinstance(data, list) and data else data
+
+
 @router.get("/poll-video")
 def poll_video(render_id: str, user=Depends(require_active_subscription)):
-    CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
-    url = f"https://api.creatomate.com/v1/renders/{render_id}"
-    headers = {"Authorization": f"Bearer {CREATOMATE_API_KEY}"}
-    resp = requests.get(url, headers=headers)
-    return resp.json()
+    """렌더 상태. 웹훅으로 이미 결과를 받아 둔 건이면 저장소에서 바로 돌려준다."""
+    saved = render_store.get(render_id)
+    if saved and saved.get("status") in ("succeeded", "failed"):
+        return {"status": saved["status"], "url": saved.get("url"), "source": "webhook"}
+
+    data = _fetch_render(render_id)
+    # 웹훅이 안 왔거나 늦은 경우에도 기록은 최신으로 맞춰 둔다.
+    if isinstance(data, dict) and data.get("status") in ("succeeded", "failed"):
+        render_store.update_result(render_id, data["status"], url=data.get("url"),
+                                   duration=data.get("duration"))
+    return data
+
+
+@router.post("/creatomate-webhook")
+def creatomate_webhook(payload: Dict[str, Any], token: str = ""):
+    """Creatomate 가 렌더 완료·실패를 알려주는 자리 (로그인 없이 외부에서 호출).
+
+    문서에 서명이 없어서 두 겹으로 막는다 — URL 토큰 확인 + Creatomate 재조회.
+    본문의 status/url 은 참고만 하고, 실제로 저장하는 값은 재조회 결과다.
+    """
+    if not webhooks.token_ok(token):
+        print("[webhook] 토큰 불일치 — 무시")
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    render_id = payload.get("id") if isinstance(payload, dict) else None
+    if not render_id:
+        print(f"[webhook] render_id 없음: {str(payload)[:200]}")
+        raise HTTPException(status_code=400, detail="missing id")
+
+    try:
+        data = _fetch_render(render_id)
+    except Exception as e:
+        # 재조회 실패로 웹훅을 잃지 않는다 — Creatomate 는 재시도할 수 있고,
+        # 화면도 여전히 직접 상태를 물어볼 수 있다.
+        print(f"[webhook] 재조회 실패: {e}")
+        raise HTTPException(status_code=503, detail="verify failed")
+
+    status = data.get("status")
+    render_store.update_result(render_id, status, url=data.get("url"),
+                               duration=data.get("duration"))
+    print(f"[webhook] {render_id} status={status}")
+    if status == "failed":
+        alert("creatomate", "렌더 실패 (웹훅)", render_id=render_id,
+              error=str(data.get("error_message"))[:200])
+    return {"status": "ok"}
+
+
+@router.get("/my-renders")
+def my_renders(user=Depends(require_active_subscription)):
+    """내가 만든 영상 목록. 화면이 기다리다 놓친 결과를 다시 찾기 위한 것."""
+    return {"renders": render_store.list_for_user(user["id"])}
 
 @router.get("/credits")
 def get_user_credits(user=Depends(require_active_subscription)):
