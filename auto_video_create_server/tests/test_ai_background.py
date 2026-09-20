@@ -105,6 +105,32 @@ class TestGenerate(unittest.TestCase):
             bg.generate_background_for_slot("양양에서 서핑을 배웠어요", 0)
         self.assertIn("양양에서 서핑", client.images.generate.call_args.kwargs["prompt"])
 
+    def test_prompt_asks_for_illustration_not_photo(self):
+        """사진처럼 만들면 가보지도 않은 가게의 가짜 사진이 후기 영상에 들어간다.
+
+        "AI가 지어낸 게 아니라 창작자가 직접 찍은 사진으로 만든다"는 제품의 약속과
+        정면으로 부딪히는 지점이라, 프롬프트에서 못 박는다.
+        """
+        item = mock.Mock(spec=["b64_json"]); item.b64_json = PNG
+        client = _fake_client(item)
+        with mock.patch.object(bg.openai, "OpenAI", return_value=client):
+            bg.generate_background_for_slot("화양동 매장이 넓고 직원분들이 친절했어요", 0)
+        prompt = client.images.generate.call_args.kwargs["prompt"]
+        self.assertIn("일러스트", prompt)
+        self.assertIn("사진처럼 보이지 않게", prompt)
+        self.assertNotIn("추상", prompt)   # 추상 배경은 내용과 무관한 벽지가 된다
+
+    def test_cache_key_includes_prompt_version(self):
+        """프롬프트를 바꿔도 캐시가 옛 그림을 돌려주면 바꾼 의미가 없다."""
+        seen = []
+        item = mock.Mock(spec=["b64_json"]); item.b64_json = PNG
+        with mock.patch.object(bg.openai, "OpenAI", return_value=_fake_client(item)), \
+             mock.patch.object(bg, "_public_url", side_effect=lambda k: seen.append(k) or k):
+            bg.generate_background_for_slot("같은 대본", 0)
+            with mock.patch.object(bg, "PROMPT_VERSION", "v99"):
+                bg.generate_background_for_slot("같은 대본", 0)
+        self.assertNotEqual(seen[0], seen[1])
+
     def test_cache_hit_skips_api(self):
         with mock.patch.object(bg, "_exists_in_s3", return_value=True), \
              mock.patch.object(bg.openai, "OpenAI") as cli:

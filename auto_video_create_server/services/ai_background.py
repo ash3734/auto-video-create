@@ -39,6 +39,9 @@ import requests
 IMAGE_MODEL = "gpt-image-2"
 IMAGE_SIZE = "1024x1536"   # 세로. 영상 틀(720×1280)과 방향이 같다.
 IMAGE_QUALITY = "low"      # 배경으로 깔리는 그림이라 low 로 충분하다 (약 $0.006)
+# 프롬프트를 바꾸면 이 값을 올린다 — 캐시 키에 들어가서, 옛 프롬프트로 만든 그림이
+# 계속 나오는 것을 막는다. (v1: 추상 배경 / v2: 장면을 그린 일러스트)
+PROMPT_VERSION = "v2"
 
 BUCKET = "auto-video-tts-files"
 CACHE_PREFIX = "ai-backgrounds"
@@ -81,7 +84,7 @@ def generate_background_for_slot(script_text: str, slot_idx: int) -> str:
     캐시 적중 시 즉시 반환. miss 시 DALL-E 3 호출 → S3 캐시 → URL 반환.
     실패 시 fallback PNG URL 반환.
     """
-    cache_input = f"{script_text or ''}|{slot_idx}|{IMAGE_MODEL}|{IMAGE_SIZE}"
+    cache_input = f"{script_text or ''}|{slot_idx}|{IMAGE_MODEL}|{IMAGE_SIZE}|{PROMPT_VERSION}"
     cache_key = hashlib.sha256(cache_input.encode("utf-8")).hexdigest()[:16]
     s3_key = f"{CACHE_PREFIX}/{cache_key}.png"
 
@@ -95,10 +98,14 @@ def generate_background_for_slot(script_text: str, slot_idx: int) -> str:
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY 미설정")
 
+        # 추상 배경을 요구하면 내용과 무관한 벽지가 나온다(2026-09-20 PO 피드백).
+        # 장면을 그리되 **일러스트**로 못 박는다 — 사진처럼 만들면 가보지도 않은 가게의
+        # 가짜 사진이 후기 영상에 들어가고, "지어내지 않는다"는 우리 약속과 어긋난다.
         prompt = (
-            "세로형 배경 이미지. 글자·로고·워터마크 없음. 심플하고 모던한 추상 배경, "
-            "부드러운 색감, 가운데는 비워서 자막이 잘 보이게. "
-            f"장면 내용: {(script_text or '')[:200]}"
+            "일러스트 스타일의 세로 배경 그림. 사진처럼 보이지 않게 손그림 느낌으로. "
+            "글자·로고·워터마크 없음. 사람 얼굴은 그리지 마. "
+            f"장면을 그대로 그린다: {(script_text or '')[:200]} "
+            "아래 3분의 1은 자막이 들어가니 어둡고 단순하게 비워둘 것."
         )
         client = openai.OpenAI(api_key=api_key)
         resp = client.images.generate(
