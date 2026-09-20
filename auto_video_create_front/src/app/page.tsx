@@ -140,6 +140,7 @@ export default function Home() {
   // 늦게 끝난 쪽이 화면을 덮어써서 엉킨다.
   const cancelWaitRef = useRef(false);
   const pollAbortRef = useRef<AbortController | null>(null);
+  const [aiBgLoading, setAiBgLoading] = useState(false);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMsg, setSnackbarMsg] = useState("");
   const [zoomImg, setZoomImg] = useState<string | null>(null);
@@ -501,6 +502,7 @@ export default function Home() {
           });
           setSectionMedia(filled);
           setAutoFilledImageCount(imageCount);
+          void fetchAiBackgrounds(filled, scriptList);
         } else {
           setAutoFilledImageCount(0);
           // cycle-2: BE 가 default_slot_count 만큼 부족 슬롯을 알려주면 후반부를 AI 기본 배경으로 채움
@@ -513,6 +515,7 @@ export default function Home() {
             }
           }
           setSectionMedia(base);
+          void fetchAiBackgrounds(base, scriptList);
         }
         setStep('select');
       } else {
@@ -600,6 +603,38 @@ export default function Home() {
       });
       setGenerateError(GENERATE_ERROR_MESSAGE);
       setStep('select');
+    }
+  };
+
+  /** AI 기본 배경을 미리 받아 슬롯에 채운다 (이미지 선택 화면에서 바로 보이게).
+   *
+   * 유저가 그 슬롯에 사진을 직접 넣으면 만든 이미지는 버려진다. 그래도 미리 만든다 —
+   * 결과를 못 보고 영상까지 가는 것보다 낫다는 PO 결정(2026-09-20).
+   * 실패해도 조용히 넘어간다. 배경은 영상 만들 때 서버가 다시 채워 준다.
+   */
+  const fetchAiBackgrounds = async (sections: (SectionMedia | null)[], scriptList: string[]) => {
+    const slots = sections
+      .map((s, i) => ({ s, i }))
+      .filter(({ s }) => s?.type === 'default' && !s.url)
+      .map(({ i }) => ({ slot: i, script: scriptList[i] ?? "" }));
+    if (slots.length === 0) return;
+    setAiBgLoading(true);
+    try {
+      const res = await authFetch(`${API_BASE_URL}/api/blog/ai-backgrounds`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slots }),
+      });
+      const data = await res.json();
+      const map = (data?.backgrounds ?? {}) as Record<string, string>;
+      dlog("AI 기본 배경 수신", { 요청: slots.length, 받음: Object.keys(map).length });
+      setSectionMedia(prev => prev.map((s, i) => (
+        s?.type === 'default' && map[String(i)] ? { ...s, url: map[String(i)] } : s
+      )));
+    } catch (e) {
+      derr("AI 기본 배경 미리 받기 실패 — 영상 만들 때 서버가 채웁니다", { message: (e as Error)?.message });
+    } finally {
+      setAiBgLoading(false);
     }
   };
 
@@ -1040,12 +1075,30 @@ export default function Home() {
                             >
                               {section.type === 'default' ? (
                                 <>
-                                  <Box sx={{
-                                    width: '100%',
-                                    height: 200,
-                                    borderRadius: 2,
-                                    background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
-                                  }} />
+                                  {section.url ? (
+                                    // 선택 화면에서 미리 만든 AI 배경. 영상에서도 같은 이미지가 쓰인다.
+                                    <img
+                                      src={section.url}
+                                      alt={`스크립트 ${idx + 1} AI 배경`}
+                                      style={{ width: '100%', height: 200, objectFit: 'contain', background: '#333', borderRadius: 8 }}
+                                    />
+                                  ) : (
+                                    <Box sx={{
+                                      width: '100%',
+                                      height: 200,
+                                      borderRadius: 2,
+                                      background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: 1,
+                                    }}>
+                                      {aiBgLoading && <CircularProgress size={18} />}
+                                      <Typography sx={{ fontSize: 13, color: '#7a8aa0' }}>
+                                        {aiBgLoading ? 'AI 배경을 만들고 있어요' : '영상 만들 때 AI 배경이 들어갑니다'}
+                                      </Typography>
+                                    </Box>
+                                  )}
                                   <Box sx={{
                                     position: 'absolute',
                                     top: 8,
@@ -1093,7 +1146,7 @@ export default function Home() {
                           )}
                           {section?.type === 'default' && (
                             <Typography variant="body2" color="text.secondary" sx={{ mt: 1, wordBreak: 'keep-all' }}>
-                              AI가 어울리는 배경을 채워뒀어요. 오른쪽에서 직접 바꿀 수 있어요.
+                              AI가 만든 배경이에요. 마음에 안 들면 오른쪽에서 사진을 직접 고르세요.
                             </Typography>
                           )}
                         </Paper>
@@ -1262,12 +1315,29 @@ export default function Home() {
                       {section?.type === 'default' && (
                         <>
                           <Box sx={{ mt: 1, position: 'relative' }}>
-                            <Box sx={{
-                              width: '100%',
-                              height: 120,
-                              borderRadius: 2,
-                              background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
-                            }} />
+                            {section.url ? (
+                              <img
+                                src={section.url}
+                                alt={`스크립트 ${idx + 1} AI 배경`}
+                                style={{ width: '100%', height: 120, objectFit: 'contain', background: '#333', borderRadius: 8 }}
+                              />
+                            ) : (
+                              <Box sx={{
+                                width: '100%',
+                                height: 120,
+                                borderRadius: 2,
+                                background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 1,
+                              }}>
+                                {aiBgLoading && <CircularProgress size={16} />}
+                                <Typography sx={{ fontSize: 12, color: '#7a8aa0' }}>
+                                  {aiBgLoading ? 'AI 배경 만드는 중' : '영상 만들 때 들어갑니다'}
+                                </Typography>
+                              </Box>
+                            )}
                             <Box sx={{
                               position: 'absolute',
                               top: 6,
@@ -1282,7 +1352,7 @@ export default function Home() {
                             }}>AI 기본 배경</Box>
                           </Box>
                           <Typography variant="body2" color="text.secondary" sx={{ mt: 1, wordBreak: 'keep-all' }}>
-                            AI가 어울리는 배경을 채워뒀어요. 아래에서 직접 바꿀 수 있어요.
+                            AI가 만든 배경이에요. 마음에 안 들면 아래에서 사진을 직접 고르세요.
                           </Typography>
                         </>
                       )}

@@ -409,10 +409,11 @@ def generate_video(request: Request, req: GenerateVideoRequest,
 
         # 3. 섹션별 미디어 타입에 따라 Creatomate 변수 생성
         # cycle-2: type='default' 슬롯은 AI 배경을 lazy 병렬 생성 (ADR-4).
+        # 선택 화면에서 이미 만들어 URL 을 들고 온 슬롯은 다시 만들지 않는다.
         default_pairs = [
             (i, req.scripts[i] if i < len(req.scripts) else "")
             for i, section in enumerate(req.sections)
-            if section.type == "default"
+            if section.type == "default" and not section.url
         ]
         ai_bg_urls = {}
         if default_pairs:
@@ -438,7 +439,8 @@ def generate_video(request: Request, req: GenerateVideoRequest,
                 variables[f"image{i}.visible"] = "false"
                 variables[f"video{i}.visible"] = "true"
             else:  # 'default' — AI 생성 배경 (이미지로 처리)
-                bg_url = ai_bg_urls.get(zero_idx, DEFAULT_BG_FALLBACK_URL)
+                # 선택 화면에서 이미 만들어 둔 URL 이 오면 그걸 쓴다 (같은 캐시라 동일 이미지).
+                bg_url = section.url or ai_bg_urls.get(zero_idx, DEFAULT_BG_FALLBACK_URL)
                 variables[f"image{i}.source"] = bg_url
                 variables[f"image{i}.visible"] = "true"
                 variables[f"video{i}.visible"] = "false"
@@ -600,6 +602,35 @@ def creatomate_webhook(payload: Dict[str, Any], token: str = ""):
               waited_sec=round(waited), video_sec=data.get("duration"),
               title=record.get("title"), url=data.get("url"))
     return {"status": "ok"}
+
+
+class AiBackgroundRequest(BaseModel):
+    # [{"slot": 0-based 슬롯 번호, "script": "그 장면 대본"}, ...]
+    slots: List[Dict[str, Any]]
+
+
+@router.post("/ai-backgrounds")
+def ai_backgrounds(req: AiBackgroundRequest, user=Depends(require_active_subscription)):
+    """AI 기본 배경을 미리 만들어 URL 을 돌려준다 (이미지 선택 화면용).
+
+    전에는 영상 만들 때 처음 생성해서, 선택 화면에는 회색 판만 보이고 결과를 미리
+    볼 수 없었다. PO 결정(2026-09-20): 유저가 사진을 직접 넣어 그 이미지가 버려지더라도
+    **선택 화면에서 보이는 편이 낫다.**
+
+    같은 대본·슬롯이면 S3 캐시가 그대로 쓰이므로, 영상 만들 때 다시 만들지 않는다.
+    """
+    pairs = []
+    for item in req.slots[:8]:          # 장면 수 상한(8)을 넘는 요청은 자른다
+        try:
+            pairs.append((int(item.get("slot")), str(item.get("script") or "")))
+        except (TypeError, ValueError):
+            continue
+    if not pairs:
+        return {"backgrounds": {}}
+
+    urls = generate_backgrounds_parallel(pairs, max_workers=5)
+    print(f"[ai_backgrounds] 슬롯 {[i for i, _ in pairs]} → {len(urls)}장")
+    return {"backgrounds": {str(k): v for k, v in urls.items()}}
 
 
 @router.get("/my-renders")

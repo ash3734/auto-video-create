@@ -112,5 +112,46 @@ class TestGenerate(unittest.TestCase):
         cli.assert_not_called()
 
 
+
+class TestPrefetchedBackgroundIsReused(unittest.TestCase):
+    """선택 화면에서 미리 만든 배경은 영상 만들 때 다시 만들지 않는다.
+
+    다시 만들면 돈이 두 번 나가고, 화면에서 본 것과 다른 그림이 나올 수도 있다.
+    """
+
+    def _default_section(self, url):
+        import api.blog as blog
+        return blog.SectionMedia(type="default", url=url)
+
+    def test_slot_with_url_is_not_regenerated(self):
+        import api.blog as blog
+        sections = [self._default_section("https://s3/bg-preview.png"),
+                    self._default_section(None)]
+        pairs = [
+            (i, "대본")
+            for i, s in enumerate(sections)
+            if s.type == "default" and not s.url
+        ]
+        self.assertEqual([i for i, _ in pairs], [1], "URL 이 있는 슬롯은 재생성 대상이 아니어야 한다")
+
+    def test_endpoint_returns_urls_by_slot(self):
+        import api.blog as blog
+        req = blog.AiBackgroundRequest(slots=[{"slot": 0, "script": "첫 장면"},
+                                              {"slot": 3, "script": "네 번째 장면"}])
+        with mock.patch.object(blog, "generate_backgrounds_parallel",
+                               return_value={0: "https://s3/a.png", 3: "https://s3/b.png"}) as g:
+            got = blog.ai_backgrounds(req, user={"id": "linkplc"})
+        self.assertEqual(got["backgrounds"], {"0": "https://s3/a.png", "3": "https://s3/b.png"})
+        self.assertEqual(sorted(i for i, _ in g.call_args.args[0]), [0, 3])
+
+    def test_endpoint_ignores_broken_slots(self):
+        import api.blog as blog
+        req = blog.AiBackgroundRequest(slots=[{"slot": "x", "script": "a"}, {"script": "b"}])
+        with mock.patch.object(blog, "generate_backgrounds_parallel") as g:
+            got = blog.ai_backgrounds(req, user={"id": "linkplc"})
+        self.assertEqual(got["backgrounds"], {})
+        g.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
