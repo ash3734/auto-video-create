@@ -1,6 +1,6 @@
 "use client";
 import { Box, Button, TextField, Typography, CircularProgress, LinearProgress, Snackbar, Alert, Paper, Dialog, IconButton, ImageListItem } from "@mui/material";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useMediaQuery } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
@@ -84,7 +84,14 @@ const GENERATE_ERROR_MESSAGE =
 // 렌더 완료를 기다리는 최대 시간. 생성 중 화면의 "최대 5분" 안내와 같은 값이어야 한다.
 const RENDER_POLL_TIMEOUT_MS = 5 * 60 * 1000;
 // 이 시간이 지나면 "생각보다 오래 걸리고 있어요"로 안내를 바꾼다.
+// 서버도 같은 기준(2분)으로 관리자에게 알림을 보낸다 (services/webhooks.py SLOW_SECONDS).
 const RENDER_SLOW_NOTICE_MS = 2 * 60 * 1000;
+
+// 5분을 기다려도 안 끝난 경우. 실패가 아니다 — 영상은 계속 만들어지고 있고,
+// 서버가 완료를 받으면 관리자에게 알림이 간다. 유저에게 실패라고 하면 다시 눌러
+// 같은 영상을 두 번 만들게 된다 (크레딧도 두 번 빠진다).
+const RENDER_TIMEOUT_MESSAGE =
+  "영상이 아직 만들어지고 있어요. 평소보다 오래 걸리는 상황이라 관리자에게 알림이 갔고, 확인 후 안내드릴게요. 다시 시도하면 크레딧이 한 번 더 사용되니 잠시만 기다려 주세요.";
 
 // ── 브라우저 콘솔 디버그 로그 ──────────────────────────────────────────────
 // FE 오류 수집 도구(Sentry 등)가 없고 Amplify 에서도 클라이언트 로그를 볼 수 없어서,
@@ -127,6 +134,13 @@ export default function Home() {
   // 렌더가 평소보다 오래 걸릴 때 안내를 바꾼다. 그대로 두면 멈춘 줄 알고 다시 눌러
   // 같은 영상이 두 번 만들어진다 (2026-09-15, Creatomate 음성 인식 지연 18분).
   const [generateSlow, setGenerateSlow] = useState(false);
+  // 기다리기를 멈추면 화면만 2페이지로 돌아간다. 렌더는 서버에서 계속되고,
+  // 결과는 나중에 "내 영상" 목록(서버 API 준비됨)에서 보게 할 계획이다.
+  // 화면에서 그 렌더로 "돌아가는" 기능은 두지 않는다 — 기다리는 루프가 둘이 되면
+  // 늦게 끝난 쪽이 화면을 덮어써서 엉킨다.
+  const cancelWaitRef = useRef(false);
+  const pollAbortRef = useRef<AbortController | null>(null);
+  const [aiBgLoading, setAiBgLoading] = useState(false);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMsg, setSnackbarMsg] = useState("");
   const [zoomImg, setZoomImg] = useState<string | null>(null);
@@ -488,6 +502,7 @@ export default function Home() {
           });
           setSectionMedia(filled);
           setAutoFilledImageCount(imageCount);
+          void fetchAiBackgrounds(filled, scriptList);
         } else {
           setAutoFilledImageCount(0);
           // cycle-2: BE 가 default_slot_count 만큼 부족 슬롯을 알려주면 후반부를 AI 기본 배경으로 채움
@@ -500,6 +515,7 @@ export default function Home() {
             }
           }
           setSectionMedia(base);
+          void fetchAiBackgrounds(base, scriptList);
         }
         setStep('select');
       } else {
@@ -565,42 +581,7 @@ export default function Home() {
         return;
       }
       if (data.status === "started" && data.render_id) {
-        // Creatomate polling via backend proxy.
-        // 횟수가 아니라 경과 시간으로 끊는다 — 폴링 응답 시간만큼 실제 대기가 늘어나기 때문.
-        // 화면 안내("최대 5분")와 같은 값이어야 한다. 이전엔 3분에 끊어, 늦게라도 완성될
-        // 영상을 실패로 보여줬다.
-        let pollCount = 0;
-        let videoUrl = null;
-        const pollStartedAt = Date.now();
-        setGenerateSlow(false);
-        while (Date.now() - pollStartedAt < RENDER_POLL_TIMEOUT_MS) {
-          if (Date.now() - pollStartedAt > RENDER_SLOW_NOTICE_MS) setGenerateSlow(true);
-          const pollController = new AbortController();
-          const pollTimeoutId = setTimeout(() => pollController.abort(), 180000); // 3분
-          const pollRes = await authFetch(`${API_BASE_URL}/api/blog/poll-video?render_id=${data.render_id}`, { signal: pollController.signal });
-          clearTimeout(pollTimeoutId);
-          const pollData = await pollRes.json();
-          if (pollData.status === "succeeded" && pollData.url) {
-            dlog(`렌더 완료 (폴링 ${pollCount + 1}회)`, pollData.url);
-            videoUrl = pollData.url;
-            break;
-          } else if (pollData.status === "failed") {
-            derr("렌더 실패 (Creatomate)", pollData);
-            setGenerateError(GENERATE_ERROR_MESSAGE);
-            setStep('select');
-            return;
-          }
-          await new Promise(r => setTimeout(r, 3000)); // 3초 대기
-          pollCount++;
-        }
-        if (videoUrl) {
-          setVideoUrl(videoUrl);
-          setStep('done');
-        } else {
-          derr(`렌더 폴링 타임아웃 (${RENDER_POLL_TIMEOUT_MS / 60000}분 초과, ${pollCount}회)`, { render_id: data.render_id });
-          setGenerateError(GENERATE_ERROR_MESSAGE);
-          setStep('select');
-        }
+        await waitForRender(String(data.render_id));
       } else {
         // 서버가 실패 사유를 내려준 경우.
         derr("generate-video 실패 응답", data);
@@ -623,6 +604,125 @@ export default function Home() {
       setGenerateError(GENERATE_ERROR_MESSAGE);
       setStep('select');
     }
+  };
+
+  /** AI 기본 배경을 미리 받아 슬롯에 채운다 (이미지 선택 화면에서 바로 보이게).
+   *
+   * 유저가 그 슬롯에 사진을 직접 넣으면 만든 이미지는 버려진다. 그래도 미리 만든다 —
+   * 결과를 못 보고 영상까지 가는 것보다 낫다는 PO 결정(2026-09-20).
+   * 실패해도 조용히 넘어간다. 배경은 영상 만들 때 서버가 다시 채워 준다.
+   */
+  const fetchAiBackgrounds = async (sections: (SectionMedia | null)[], scriptList: string[]) => {
+    const slots = sections
+      .map((s, i) => ({ s, i }))
+      .filter(({ s }) => s?.type === 'default' && !s.url)
+      .map(({ i }) => ({ slot: i, script: scriptList[i] ?? "" }));
+    if (slots.length === 0) return;
+    setAiBgLoading(true);
+    try {
+      const res = await authFetch(`${API_BASE_URL}/api/blog/ai-backgrounds`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slots }),
+      });
+      const data = await res.json();
+      const map = (data?.backgrounds ?? {}) as Record<string, string>;
+      dlog("AI 기본 배경 수신", { 요청: slots.length, 받음: Object.keys(map).length });
+      setSectionMedia(prev => prev.map((s, i) => (
+        s?.type === 'default' && map[String(i)] ? { ...s, url: map[String(i)] } : s
+      )));
+    } catch (e) {
+      derr("AI 기본 배경 미리 받기 실패 — 영상 만들 때 서버가 채웁니다", { message: (e as Error)?.message });
+    } finally {
+      setAiBgLoading(false);
+    }
+  };
+
+  /** 렌더가 끝날 때까지 기다린다. 생성 직후와 "상태 다시 확인" 양쪽에서 쓴다.
+   *
+   * 횟수가 아니라 경과 시간으로 끊는다 — 확인 요청에 걸리는 시간만큼 실제 대기가 늘어난다.
+   * 화면 안내("최대 5분")와 같은 값이어야 한다.
+   * 중간에 유저가 "기다리기 중단"을 누르면 cancelWaitRef 로 빠져나온다. 이때 렌더 자체는
+   * 서버에서 계속 진행되므로, render_id 를 남겨 두었다가 다시 확인할 수 있게 한다.
+   */
+  const waitForRender = async (renderId: string) => {
+    cancelWaitRef.current = false;
+    setStep('generating');
+    setGenerateError(null);
+    setGenerateSlow(false);
+    const pollStartedAt = Date.now();
+    let pollCount = 0;
+    // 3초 대기를 잘게 쪼개 기다린다. 통째로 기다리면 중단을 눌러도 그만큼 늦게 반응한다.
+    const sleepUnlessCancelled = async (ms: number) => {
+      const until = Date.now() + ms;
+      while (Date.now() < until) {
+        if (cancelWaitRef.current) return;
+        await new Promise(r => setTimeout(r, 100));
+      }
+    };
+    while (Date.now() - pollStartedAt < RENDER_POLL_TIMEOUT_MS) {
+      if (cancelWaitRef.current) {
+        // 화면 전환은 버튼 핸들러가 이미 했다. 여기서는 조용히 빠져나온다.
+        dlog("기다리기 중단 (유저)", { render_id: renderId, pollCount });
+        return;
+      }
+      if (Date.now() - pollStartedAt > RENDER_SLOW_NOTICE_MS) setGenerateSlow(true);
+      const pollController = new AbortController();
+      const pollTimeoutId = setTimeout(() => pollController.abort(), 180000); // 3분
+      pollAbortRef.current = pollController;   // 중단 시 진행 중인 요청도 끊는다
+      let pollData: Record<string, unknown>;
+      try {
+        const pollRes = await authFetch(`${API_BASE_URL}/api/blog/poll-video?render_id=${renderId}`, { signal: pollController.signal });
+        pollData = await pollRes.json();
+      } catch (e) {
+        if (cancelWaitRef.current) return;     // 중단으로 끊긴 요청 — 정상 경로
+        throw e;
+      } finally {
+        clearTimeout(pollTimeoutId);
+        pollAbortRef.current = null;
+      }
+      if (cancelWaitRef.current) return;
+      if (pollData.status === "succeeded" && pollData.url) {
+        dlog(`렌더 완료 (확인 ${pollCount + 1}회)`, pollData.url);
+        setVideoUrl(String(pollData.url));
+        setStep('done');
+        return;
+      }
+      if (pollData.status === "failed") {
+        derr("렌더 실패 (Creatomate)", pollData);
+        setGenerateError(GENERATE_ERROR_MESSAGE);
+        setStep('select');
+        return;
+      }
+      await sleepUnlessCancelled(3000);
+      pollCount++;
+    }
+    if (cancelWaitRef.current) return;
+    derr(`렌더 확인 타임아웃 (${RENDER_POLL_TIMEOUT_MS / 60000}분 초과, ${pollCount}회)`, { render_id: renderId });
+    setGenerateError(RENDER_TIMEOUT_MESSAGE);
+    setStep('select');
+  };
+
+  /** 기다리기 중단 — 누른 즉시 화면을 2페이지로 돌린다.
+   *  진행 중인 확인 요청도 끊는다. 예전엔 루프가 다음 차례에 플래그를 읽을 때까지
+   *  몇 초씩 반응이 없었다. */
+  const handleStopWaiting = () => {
+    cancelWaitRef.current = true;
+    pollAbortRef.current?.abort();
+    setGenerateSlow(false);
+    setStep('select');
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  /** 완료 화면 → 이미지 선택 화면으로. 같은 글의 대본·이미지·설정을 그대로 두고
+   *  사진이나 자막만 바꿔 다시 만들 수 있게 한다. 글 자체를 바꾸려면 "다른 글로 만들기". */
+  const handleBackToSelect = () => {
+    setVideoUrl(null);
+    setSeo(null);
+    setGenerateError(null);
+    setGenerateSlow(false);
+    setStep('select');
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleReset = () => {
@@ -975,12 +1075,30 @@ export default function Home() {
                             >
                               {section.type === 'default' ? (
                                 <>
-                                  <Box sx={{
-                                    width: '100%',
-                                    height: 200,
-                                    borderRadius: 2,
-                                    background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
-                                  }} />
+                                  {section.url ? (
+                                    // 선택 화면에서 미리 만든 AI 배경. 영상에서도 같은 이미지가 쓰인다.
+                                    <img
+                                      src={section.url}
+                                      alt={`스크립트 ${idx + 1} AI 배경`}
+                                      style={{ width: '100%', height: 200, objectFit: 'contain', background: '#333', borderRadius: 8 }}
+                                    />
+                                  ) : (
+                                    <Box sx={{
+                                      width: '100%',
+                                      height: 200,
+                                      borderRadius: 2,
+                                      background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: 1,
+                                    }}>
+                                      {aiBgLoading && <CircularProgress size={18} />}
+                                      <Typography sx={{ fontSize: 13, color: '#7a8aa0' }}>
+                                        {aiBgLoading ? 'AI 배경을 만들고 있어요' : '영상 만들 때 AI 배경이 들어갑니다'}
+                                      </Typography>
+                                    </Box>
+                                  )}
                                   <Box sx={{
                                     position: 'absolute',
                                     top: 8,
@@ -1028,7 +1146,7 @@ export default function Home() {
                           )}
                           {section?.type === 'default' && (
                             <Typography variant="body2" color="text.secondary" sx={{ mt: 1, wordBreak: 'keep-all' }}>
-                              AI가 어울리는 배경을 채워뒀어요. 오른쪽에서 직접 바꿀 수 있어요.
+                              AI가 만든 배경이에요. 마음에 안 들면 오른쪽에서 사진을 직접 고르세요.
                             </Typography>
                           )}
                         </Paper>
@@ -1197,12 +1315,29 @@ export default function Home() {
                       {section?.type === 'default' && (
                         <>
                           <Box sx={{ mt: 1, position: 'relative' }}>
-                            <Box sx={{
-                              width: '100%',
-                              height: 120,
-                              borderRadius: 2,
-                              background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
-                            }} />
+                            {section.url ? (
+                              <img
+                                src={section.url}
+                                alt={`스크립트 ${idx + 1} AI 배경`}
+                                style={{ width: '100%', height: 120, objectFit: 'contain', background: '#333', borderRadius: 8 }}
+                              />
+                            ) : (
+                              <Box sx={{
+                                width: '100%',
+                                height: 120,
+                                borderRadius: 2,
+                                background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 1,
+                              }}>
+                                {aiBgLoading && <CircularProgress size={16} />}
+                                <Typography sx={{ fontSize: 12, color: '#7a8aa0' }}>
+                                  {aiBgLoading ? 'AI 배경 만드는 중' : '영상 만들 때 들어갑니다'}
+                                </Typography>
+                              </Box>
+                            )}
                             <Box sx={{
                               position: 'absolute',
                               top: 6,
@@ -1217,7 +1352,7 @@ export default function Home() {
                             }}>AI 기본 배경</Box>
                           </Box>
                           <Typography variant="body2" color="text.secondary" sx={{ mt: 1, wordBreak: 'keep-all' }}>
-                            AI가 어울리는 배경을 채워뒀어요. 아래에서 직접 바꿀 수 있어요.
+                            AI가 만든 배경이에요. 마음에 안 들면 아래에서 사진을 직접 고르세요.
                           </Typography>
                         </>
                       )}
@@ -1355,12 +1490,25 @@ export default function Home() {
               </Typography>
               <Typography variant="body2" align="center" color="text.secondary" sx={{ mb: 4 }}>
                 {generateSlow
-                  ? '생각보다 오래 걸리고 있어요. 영상은 계속 만들어지고 있으니 창을 닫지 말고 조금만 더 기다려 주세요.'
+                  ? '생각보다 오래 걸리고 있어요. 관리자에게도 알림이 가고 있어서, 오래 걸리면 확인 후 안내드릴게요. 조금만 더 기다려 주세요.'
                   : '최대 5분 정도 소요될 수 있습니다. 잠시만 기다려 주세요.'}
               </Typography>
               <Box sx={{ width: 300, maxWidth: '90%' }}>
                 <LinearProgress color="primary" sx={{ height: 4, borderRadius: 2 }} />
               </Box>
+              {/* 기다리기 중단 — 렌더는 서버에서 계속된다. "취소"라고 쓰면 영상이 취소되는
+                  것으로 읽혀서(크레딧은 이미 차감됨) 문구를 그대로 쓰지 않는다. */}
+              <Button
+                variant="text"
+                color="inherit"
+                onClick={handleStopWaiting}
+                sx={{ mt: 3, color: '#888', fontSize: 13 }}
+              >
+                기다리지 않고 이미지 선택으로 돌아가기
+              </Button>
+              <Typography align="center" sx={{ fontSize: 12, color: '#aaa', mt: 0.5, maxWidth: 360, lineHeight: 1.6 }}>
+                돌아가면 이 영상은 받아볼 수 없고, 사용한 크레딧도 돌아오지 않아요.
+              </Typography>
             </Box>
           )}
           {step === 'done' && videoUrl && (
@@ -1390,16 +1538,31 @@ export default function Home() {
 
                 {seo && <PublishKit seo={seo} />}
 
-                <Box sx={{ width: '100%', maxWidth: 1000, mx: 'auto', mt: 4, mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                {/* 완료 후 이어서 작업 — 같은 글을 손보려면 2페이지로, 새 글이면 1페이지로.
+                    한 번 만든 사람이 곧바로 다음 편을 만드는 경우가 많다 (하루 10편 만든 고객). */}
+                <Box sx={{ width: '100%', maxWidth: 1000, mx: 'auto', mt: 4, mb: 1, display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    size="large"
+                    onClick={handleBackToSelect}
+                    sx={{ fontWeight: 700, minWidth: 220 }}
+                  >
+                    사진·자막 바꿔 다시 만들기
+                  </Button>
                   <Button
                     variant="outlined"
                     color="primary"
+                    size="large"
                     onClick={handleReset}
-                    sx={{ fontWeight: 600, minWidth: 100 }}
+                    sx={{ fontWeight: 600, minWidth: 160 }}
                   >
-                    다시하기
+                    다른 글로 만들기
                   </Button>
                 </Box>
+                <Typography align="center" sx={{ fontSize: 12.5, color: '#888', mb: 2 }}>
+                  두 경우 모두 자막 스타일·음성·속도·장면 수는 그대로 유지됩니다.
+                </Typography>
               </Box>
             </>
           )}

@@ -12,6 +12,7 @@ from services.account_service import get_user_if_active, check_user_credits, get
 from services.ai_background import generate_backgrounds_parallel, FALLBACK_URL as DEFAULT_BG_FALLBACK_URL
 from services.image_mirror import maybe_mirror
 from services.scene_media import image_slot_variables
+from services import render_store, webhooks
 from services.alerting import alert
 # cycle-3: 자막 스타일 편집 신규 서비스
 from services.font_service import get_korean_fonts, get_allowed_font_families
@@ -408,10 +409,11 @@ def generate_video(request: Request, req: GenerateVideoRequest,
 
         # 3. 섹션별 미디어 타입에 따라 Creatomate 변수 생성
         # cycle-2: type='default' 슬롯은 AI 배경을 lazy 병렬 생성 (ADR-4).
+        # 선택 화면에서 이미 만들어 URL 을 들고 온 슬롯은 다시 만들지 않는다.
         default_pairs = [
             (i, req.scripts[i] if i < len(req.scripts) else "")
             for i, section in enumerate(req.sections)
-            if section.type == "default"
+            if section.type == "default" and not section.url
         ]
         ai_bg_urls = {}
         if default_pairs:
@@ -437,7 +439,8 @@ def generate_video(request: Request, req: GenerateVideoRequest,
                 variables[f"image{i}.visible"] = "false"
                 variables[f"video{i}.visible"] = "true"
             else:  # 'default' — AI 생성 배경 (이미지로 처리)
-                bg_url = ai_bg_urls.get(zero_idx, DEFAULT_BG_FALLBACK_URL)
+                # 선택 화면에서 이미 만들어 둔 URL 이 오면 그걸 쓴다 (같은 캐시라 동일 이미지).
+                bg_url = section.url or ai_bg_urls.get(zero_idx, DEFAULT_BG_FALLBACK_URL)
                 variables[f"image{i}.source"] = bg_url
                 variables[f"image{i}.visible"] = "true"
                 variables[f"video{i}.visible"] = "false"
@@ -462,6 +465,8 @@ def generate_video(request: Request, req: GenerateVideoRequest,
             title=req.title,
             user_id=user["id"],  # 크레딧 체크/차감을 위해 user_id 전달
             scene_count=scene_count,
+            webhook_url=webhooks.webhook_url(),
+            metadata=user["id"],  # 웹훅에 그대로 실려 온다 (문자열만 허용)
             **variables
         )
         # Creatomate 응답 처리
@@ -488,6 +493,14 @@ def generate_video(request: Request, req: GenerateVideoRequest,
                 "message": "Creatomate 응답에 렌더링 ID가 없습니다.",
                 "error_type": "creatomate_no_render_id",
             }
+
+        # 접수 기록. 화면이 기다리다 포기해도 이 기록으로 결과를 다시 찾을 수 있다.
+        render_store.save_submitted(
+            render_id,
+            user["id"],
+            title=req.title,
+            scene_count=scene_count,
+        )
 
         poll_url = f"https://api.creatomate.com/v1/renders/{render_id}"
         return {"status": "started", "render_id": render_id, "poll_url": poll_url}
@@ -518,13 +531,112 @@ def generate_video(request: Request, req: GenerateVideoRequest,
         )
         return {"status": "error", "message": str(e)}
 
+def _fetch_render(render_id: str) -> dict:
+    """Creatomate 에서 렌더 상태를 직접 조회한다 (이 응답만 믿는다)."""
+    resp = requests.get(
+        f"https://api.creatomate.com/v1/renders/{render_id}",
+        headers={"Authorization": f"Bearer {os.environ['CREATOMATE_API_KEY']}"},
+        timeout=20,
+    )
+    data = resp.json()
+    return data[0] if isinstance(data, list) and data else data
+
+
 @router.get("/poll-video")
 def poll_video(render_id: str, user=Depends(require_active_subscription)):
-    CREATOMATE_API_KEY = os.environ["CREATOMATE_API_KEY"]
-    url = f"https://api.creatomate.com/v1/renders/{render_id}"
-    headers = {"Authorization": f"Bearer {CREATOMATE_API_KEY}"}
-    resp = requests.get(url, headers=headers)
-    return resp.json()
+    """렌더 상태. 웹훅으로 이미 결과를 받아 둔 건이면 저장소에서 바로 돌려준다."""
+    saved = render_store.get(render_id)
+    if saved and saved.get("status") in ("succeeded", "failed"):
+        return {"status": saved["status"], "url": saved.get("url"), "source": "webhook"}
+
+    data = _fetch_render(render_id)
+    # 웹훅이 안 왔거나 늦은 경우에도 기록은 최신으로 맞춰 둔다.
+    if isinstance(data, dict) and data.get("status") in ("succeeded", "failed"):
+        render_store.update_result(render_id, data["status"], url=data.get("url"),
+                                   duration=data.get("duration"))
+    return data
+
+
+@router.post("/creatomate-webhook")
+def creatomate_webhook(payload: Dict[str, Any], token: str = ""):
+    """Creatomate 가 렌더 완료·실패를 알려주는 자리 (로그인 없이 외부에서 호출).
+
+    문서에 서명이 없어서 두 겹으로 막는다 — URL 토큰 확인 + Creatomate 재조회.
+    본문의 status/url 은 참고만 하고, 실제로 저장하는 값은 재조회 결과다.
+    """
+    if not webhooks.token_ok(token):
+        print("[webhook] 토큰 불일치 — 무시")
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    render_id = payload.get("id") if isinstance(payload, dict) else None
+    if not render_id:
+        print(f"[webhook] render_id 없음: {str(payload)[:200]}")
+        raise HTTPException(status_code=400, detail="missing id")
+
+    try:
+        data = _fetch_render(render_id)
+    except Exception as e:
+        # 재조회 실패로 웹훅을 잃지 않는다 — Creatomate 는 재시도할 수 있고,
+        # 화면도 여전히 직접 상태를 물어볼 수 있다.
+        print(f"[webhook] 재조회 실패: {e}")
+        raise HTTPException(status_code=503, detail="verify failed")
+
+    status = data.get("status")
+    record = render_store.get(render_id) or {}
+    waited = render_store.elapsed_seconds(record)
+    render_store.update_result(render_id, status, url=data.get("url"),
+                               duration=data.get("duration"),
+                               waited_seconds=round(waited) or None)
+    print(f"[webhook] {render_id} status={status} 대기 {waited:.0f}초")
+
+    # 관리자 알림 — 실패했거나, 평소(20~30초)보다 크게 늦어진 건만.
+    # 화면은 유저에게 "관리자가 확인해서 알려드린다"고 안내하므로 이 메일이 그 약속이다.
+    if status == "failed":
+        alert("creatomate", "렌더 실패 (웹훅)", render_id=render_id,
+              user=record.get("user_id"), waited_sec=round(waited),
+              error=str(data.get("error_message"))[:200])
+    elif status == "succeeded" and waited >= webhooks.SLOW_SECONDS:
+        alert("creatomate",
+              f"렌더가 {round(waited)}초 만에 끝났습니다 (평소 20~30초) — 유저가 기다리다 화면을 놓쳤을 수 있습니다",
+              render_id=render_id, user=record.get("user_id"),
+              waited_sec=round(waited), video_sec=data.get("duration"),
+              title=record.get("title"), url=data.get("url"))
+    return {"status": "ok"}
+
+
+class AiBackgroundRequest(BaseModel):
+    # [{"slot": 0-based 슬롯 번호, "script": "그 장면 대본"}, ...]
+    slots: List[Dict[str, Any]]
+
+
+@router.post("/ai-backgrounds")
+def ai_backgrounds(req: AiBackgroundRequest, user=Depends(require_active_subscription)):
+    """AI 기본 배경을 미리 만들어 URL 을 돌려준다 (이미지 선택 화면용).
+
+    전에는 영상 만들 때 처음 생성해서, 선택 화면에는 회색 판만 보이고 결과를 미리
+    볼 수 없었다. PO 결정(2026-09-20): 유저가 사진을 직접 넣어 그 이미지가 버려지더라도
+    **선택 화면에서 보이는 편이 낫다.**
+
+    같은 대본·슬롯이면 S3 캐시가 그대로 쓰이므로, 영상 만들 때 다시 만들지 않는다.
+    """
+    pairs = []
+    for item in req.slots[:8]:          # 장면 수 상한(8)을 넘는 요청은 자른다
+        try:
+            pairs.append((int(item.get("slot")), str(item.get("script") or "")))
+        except (TypeError, ValueError):
+            continue
+    if not pairs:
+        return {"backgrounds": {}}
+
+    urls = generate_backgrounds_parallel(pairs, max_workers=5)
+    print(f"[ai_backgrounds] 슬롯 {[i for i, _ in pairs]} → {len(urls)}장")
+    return {"backgrounds": {str(k): v for k, v in urls.items()}}
+
+
+@router.get("/my-renders")
+def my_renders(user=Depends(require_active_subscription)):
+    """내가 만든 영상 목록. 화면이 기다리다 놓친 결과를 다시 찾기 위한 것."""
+    return {"renders": render_store.list_for_user(user["id"])}
 
 @router.get("/credits")
 def get_user_credits(user=Depends(require_active_subscription)):

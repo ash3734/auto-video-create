@@ -31,7 +31,7 @@ def _extract_render_id(result):
     return None
 
 
-def create_creatomate_video(audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, user_id=None, scene_count=5, **kwargs):
+def create_creatomate_video(audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, user_id=None, scene_count=5, webhook_url=None, metadata=None, **kwargs):
     print("create_creatomate_video 호출")
 
     scene_count = normalize_scene_count(scene_count)
@@ -69,6 +69,13 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
         "template_id": template_id,
         "modifications": variables
     }
+    # 렌더가 끝나면 알려달라고 한다. 주소가 없으면(미설정 환경) 기존처럼 화면이 물어본다.
+    # webhook_url·metadata 는 modifications 가 아니라 요청 본문의 형제 필드다 —
+    # variables 에 섞이면 Creatomate 가 그런 요소를 못 찾아 400 을 낸다.
+    if webhook_url:
+        payload["webhook_url"] = webhook_url
+    if metadata:
+        payload["metadata"] = metadata
     
     try:
         response = requests.post(

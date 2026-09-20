@@ -1,20 +1,47 @@
-"""AI 기본 배경 이미지 생성 — DALL-E 3 lazy 생성 + S3 캐시 + fallback.
+"""AI 기본 배경 이미지 생성 — lazy 생성 + S3 캐시 + fallback.
 
 cycle-2 신규. ADR-4 (architecture.md) 참조.
 
 - 호출 시점: generate-video 단계에서 슬롯 type='default' 일 때만
-- 모델: DALL-E 3 (1024×1024, standard, n=1) — 약 $0.04/이미지
-- 캐시: sha256(script + slot_idx)[:16] 키로 S3 'ai-backgrounds/' prefix
-- Fallback: DALL-E 호출 실패 또는 타임아웃 시 정적 그라디언트 PNG (B-1 에서 업로드)
+- 모델: gpt-image-2 (1024×1536 세로, quality=low) — 약 $0.006/이미지
+- 캐시: sha256(script + slot_idx + 모델/크기)[:16] 키로 S3 'ai-backgrounds/' prefix
+- Fallback: 호출 실패 시 정적 배경 PNG
+
+## 2026-09-20 — 하얀 화면 버그
+
+`dall-e-3` 가 OpenAI 에서 내려가 모든 호출이 400 으로 실패하고 있었다
+("The model 'dall-e-3' does not exist"). 실패하면 fallback 으로 넘어가는데 그게
+단색 배경이라, 유저에게는 **AI 배경 자리가 늘 하얀 화면**으로 보였다.
+캐시 폴더도 내내 비어 있었다 — 한 장도 만들어진 적이 없다는 뜻이다.
+
+고치면서 두 가지를 같이 바꿨다.
+
+1. **응답 형식.** gpt-image 계열은 url 이 아니라 **b64_json** 으로 준다.
+   모델명만 바꿨다면 `resp.data[0].url` 이 None 이라 또 fallback 으로 떨어졌다.
+2. **크기.** 영상이 720×1280 세로인데 정사각형(1024×1024)을 만들고 있었다.
+   이제 1024×1536 세로로 만든다 — 좌우가 잘려 나가지 않는다.
+
+모델을 gpt-image-2 로 고른 이유: gpt-image-1 은 2026-10-23,
+gpt-image-1.5 는 2026-12-01 종료 예정이라 지금 갈아타면 또 깨진다.
 """
+import base64
 import hashlib
 import os
 from typing import Optional
 
-import boto3
 from utils.s3_utils import s3_client
+from .alerting import alert
 import openai
 import requests
+
+# 모델을 바꾸면 캐시 키도 바뀌어야 한다 — 예전 모델로 만든 이미지를 계속 쓰면
+# 바꾼 의미가 없다. 크기도 같은 이유로 키에 넣는다.
+IMAGE_MODEL = "gpt-image-2"
+IMAGE_SIZE = "1024x1536"   # 세로. 영상 틀(720×1280)과 방향이 같다.
+IMAGE_QUALITY = "low"      # 배경으로 깔리는 그림이라 low 로 충분하다 (약 $0.006)
+# 프롬프트를 바꾸면 이 값을 올린다 — 캐시 키에 들어가서, 옛 프롬프트로 만든 그림이
+# 계속 나오는 것을 막는다. (v1: 추상 배경 / v2: 장면을 그린 일러스트)
+PROMPT_VERSION = "v2"
 
 BUCKET = "auto-video-tts-files"
 CACHE_PREFIX = "ai-backgrounds"
@@ -57,7 +84,7 @@ def generate_background_for_slot(script_text: str, slot_idx: int) -> str:
     캐시 적중 시 즉시 반환. miss 시 DALL-E 3 호출 → S3 캐시 → URL 반환.
     실패 시 fallback PNG URL 반환.
     """
-    cache_input = f"{script_text or ''}|{slot_idx}"
+    cache_input = f"{script_text or ''}|{slot_idx}|{IMAGE_MODEL}|{IMAGE_SIZE}|{PROMPT_VERSION}"
     cache_key = hashlib.sha256(cache_input.encode("utf-8")).hexdigest()[:16]
     s3_key = f"{CACHE_PREFIX}/{cache_key}.png"
 
@@ -71,24 +98,41 @@ def generate_background_for_slot(script_text: str, slot_idx: int) -> str:
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY 미설정")
 
+        # 추상 배경을 요구하면 내용과 무관한 벽지가 나온다(2026-09-20 PO 피드백).
+        # 장면을 그리되 **일러스트**로 못 박는다 — 사진처럼 만들면 가보지도 않은 가게의
+        # 가짜 사진이 후기 영상에 들어가고, "지어내지 않는다"는 우리 약속과 어긋난다.
         prompt = (
-            "심플하고 모던한 배경 이미지, 텍스트 없음, 추상적, 한국적 분위기. "
-            f"주제 힌트: {(script_text or '')[:120]}"
+            "일러스트 스타일의 세로 배경 그림. 사진처럼 보이지 않게 손그림 느낌으로. "
+            "글자·로고·워터마크 없음. 사람 얼굴은 그리지 마. "
+            f"장면을 그대로 그린다: {(script_text or '')[:200]} "
+            "아래 3분의 1은 자막이 들어가니 어둡고 단순하게 비워둘 것."
         )
         client = openai.OpenAI(api_key=api_key)
         resp = client.images.generate(
-            model="dall-e-3",
+            model=IMAGE_MODEL,
             prompt=prompt,
-            size="1024x1024",
-            quality="standard",
+            size=IMAGE_SIZE,
+            quality=IMAGE_QUALITY,
             n=1,
         )
-        img_url = resp.data[0].url
-        img_bytes = requests.get(img_url, timeout=20).content
+        item = resp.data[0]
+        # gpt-image 계열은 b64_json 으로 온다. url 은 옛 모델(dall-e)의 방식이라
+        # 둘 다 받아 둔다 — 없는 쪽을 쓰면 조용히 fallback(하얀 화면)으로 떨어진다.
+        b64 = getattr(item, "b64_json", None)
+        if b64:
+            img_bytes = base64.b64decode(b64)
+        else:
+            img_url = getattr(item, "url", None)
+            if not img_url:
+                raise RuntimeError("이미지 응답에 b64_json·url 이 모두 없음")
+            img_bytes = requests.get(img_url, timeout=20).content
         _upload_png_to_s3(s3_key, img_bytes)
         return _public_url(s3_key)
     except Exception as e:
-        print(f"[ai_background] DALL-E 실패 — fallback 사용: {e}")
+        # 조용히 넘어가면 안 된다 — dall-e-3 가 내려간 뒤 모든 호출이 실패하는데도
+        # fallback(단색 배경)만 나가서, 몇 주 동안 아무도 모르고 하얀 화면이 나갔다.
+        alert("ai_background", f"AI 배경 생성 실패 — 단색 배경으로 대체: {e}",
+              model=IMAGE_MODEL, slot=slot_idx)
         return FALLBACK_URL
 
 
