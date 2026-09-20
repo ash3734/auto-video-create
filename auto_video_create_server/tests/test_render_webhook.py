@@ -113,6 +113,38 @@ class TestWebhookEndpoint(unittest.TestCase):
         self.assertEqual(up.call_args.args[1], "failed")
         self.assertIsNone(up.call_args.kwargs.get("url"))
 
+    def _webhook_with(self, status, waited):
+        """지연 시간을 정해 웹훅을 한 번 처리하고, alert 목 객체를 돌려준다."""
+        rec = {"render_id": "r1", "user_id": "linkplc", "submitted_at": "x", "title": "제목"}
+        with mock.patch.object(self.blog, "_fetch_render",
+                               return_value={"id": "r1", "status": status, "duration": 25.0}), \
+             mock.patch.object(self.blog.render_store, "get", return_value=rec), \
+             mock.patch.object(self.blog.render_store, "elapsed_seconds", return_value=waited), \
+             mock.patch.object(self.blog.render_store, "update_result"), \
+             mock.patch.object(self.blog, "alert") as a:
+            self.blog.creatomate_webhook({"id": "r1"}, token="s3cret")
+        return a
+
+    def test_slow_success_alerts_admin(self):
+        """평소(20~30초)보다 크게 늦은 완료는 관리자에게 알린다."""
+        a = self._webhook_with("succeeded", 900)
+        a.assert_called_once()
+        self.assertEqual(a.call_args.kwargs["waited_sec"], 900)
+        self.assertEqual(a.call_args.kwargs["user"], "linkplc")
+
+    def test_normal_success_does_not_alert(self):
+        """정상 속도까지 알리면 하루 수십 통이 되어 알림을 안 보게 된다."""
+        self._webhook_with("succeeded", 25).assert_not_called()
+
+    def test_threshold_is_two_minutes(self):
+        from services import webhooks as w
+        self.assertEqual(w.SLOW_SECONDS, 120)
+        self._webhook_with("succeeded", w.SLOW_SECONDS - 1).assert_not_called()
+        self._webhook_with("succeeded", w.SLOW_SECONDS).assert_called_once()
+
+    def test_failed_render_alerts_even_when_fast(self):
+        self._webhook_with("failed", 10).assert_called_once()
+
     def test_failed_render_alerts(self):
         with mock.patch.object(self.blog, "_fetch_render",
                                return_value={"id": "r1", "status": "failed"}), \

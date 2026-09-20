@@ -580,12 +580,25 @@ def creatomate_webhook(payload: Dict[str, Any], token: str = ""):
         raise HTTPException(status_code=503, detail="verify failed")
 
     status = data.get("status")
+    record = render_store.get(render_id) or {}
+    waited = render_store.elapsed_seconds(record)
     render_store.update_result(render_id, status, url=data.get("url"),
-                               duration=data.get("duration"))
-    print(f"[webhook] {render_id} status={status}")
+                               duration=data.get("duration"),
+                               waited_seconds=round(waited) or None)
+    print(f"[webhook] {render_id} status={status} 대기 {waited:.0f}초")
+
+    # 관리자 알림 — 실패했거나, 평소(20~30초)보다 크게 늦어진 건만.
+    # 화면은 유저에게 "관리자가 확인해서 알려드린다"고 안내하므로 이 메일이 그 약속이다.
     if status == "failed":
         alert("creatomate", "렌더 실패 (웹훅)", render_id=render_id,
+              user=record.get("user_id"), waited_sec=round(waited),
               error=str(data.get("error_message"))[:200])
+    elif status == "succeeded" and waited >= webhooks.SLOW_SECONDS:
+        alert("creatomate",
+              f"렌더가 {round(waited)}초 만에 끝났습니다 (평소 20~30초) — 유저가 기다리다 화면을 놓쳤을 수 있습니다",
+              render_id=render_id, user=record.get("user_id"),
+              waited_sec=round(waited), video_sec=data.get("duration"),
+              title=record.get("title"), url=data.get("url"))
     return {"status": "ok"}
 
 

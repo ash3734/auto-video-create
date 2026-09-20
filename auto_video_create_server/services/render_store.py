@@ -113,6 +113,17 @@ def get(render_id: str):
     return _read(_key(render_id))
 
 
+def elapsed_seconds(record) -> float:
+    """접수부터 지금까지 걸린 시간(초). 알 수 없으면 0 — 알림을 안 보내는 쪽으로."""
+    try:
+        started = datetime.fromisoformat(record["submitted_at"])
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=KST)
+        return max(0.0, (datetime.now(KST) - started).total_seconds())
+    except Exception:
+        return 0.0
+
+
 def list_for_user(user_id: str, limit: int = 20) -> list:
     """그 유저의 최근 렌더 기록. 목록이 깨져 있어도 빈 목록으로 돌려준다."""
     try:

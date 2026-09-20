@@ -84,7 +84,14 @@ const GENERATE_ERROR_MESSAGE =
 // 렌더 완료를 기다리는 최대 시간. 생성 중 화면의 "최대 5분" 안내와 같은 값이어야 한다.
 const RENDER_POLL_TIMEOUT_MS = 5 * 60 * 1000;
 // 이 시간이 지나면 "생각보다 오래 걸리고 있어요"로 안내를 바꾼다.
+// 서버도 같은 기준(2분)으로 관리자에게 알림을 보낸다 (services/webhooks.py SLOW_SECONDS).
 const RENDER_SLOW_NOTICE_MS = 2 * 60 * 1000;
+
+// 5분을 기다려도 안 끝난 경우. 실패가 아니다 — 영상은 계속 만들어지고 있고,
+// 서버가 완료를 받으면 관리자에게 알림이 간다. 유저에게 실패라고 하면 다시 눌러
+// 같은 영상을 두 번 만들게 된다 (크레딧도 두 번 빠진다).
+const RENDER_TIMEOUT_MESSAGE =
+  "영상이 아직 만들어지고 있어요. 평소보다 오래 걸리는 상황이라 관리자에게 알림이 갔고, 확인 후 안내드릴게요. 다시 시도하면 크레딧이 한 번 더 사용되니 잠시만 기다려 주세요.";
 
 // ── 브라우저 콘솔 디버그 로그 ──────────────────────────────────────────────
 // FE 오류 수집 도구(Sentry 등)가 없고 Amplify 에서도 클라이언트 로그를 볼 수 없어서,
@@ -598,7 +605,7 @@ export default function Home() {
           setStep('done');
         } else {
           derr(`렌더 폴링 타임아웃 (${RENDER_POLL_TIMEOUT_MS / 60000}분 초과, ${pollCount}회)`, { render_id: data.render_id });
-          setGenerateError(GENERATE_ERROR_MESSAGE);
+          setGenerateError(RENDER_TIMEOUT_MESSAGE);
           setStep('select');
         }
       } else {
@@ -1355,7 +1362,7 @@ export default function Home() {
               </Typography>
               <Typography variant="body2" align="center" color="text.secondary" sx={{ mb: 4 }}>
                 {generateSlow
-                  ? '생각보다 오래 걸리고 있어요. 영상은 계속 만들어지고 있으니 창을 닫지 말고 조금만 더 기다려 주세요.'
+                  ? '생각보다 오래 걸리고 있어요. 관리자에게도 알림이 가고 있어서, 오래 걸리면 확인 후 안내드릴게요. 조금만 더 기다려 주세요.'
                   : '최대 5분 정도 소요될 수 있습니다. 잠시만 기다려 주세요.'}
               </Typography>
               <Box sx={{ width: 300, maxWidth: '90%' }}>

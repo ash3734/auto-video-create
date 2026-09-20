@@ -17,6 +17,12 @@ import os
 
 PATH = "/api/blog/creatomate-webhook"
 
+# 이 시간을 넘겨 끝난 렌더는 관리자에게 알린다.
+# prod 영상 94편의 실제 소요는 20~30초였고 가장 느린 것도 2분이었다(2026-09-16 측정).
+# 그래서 2분 초과는 비정상으로 본다. 모든 완료를 알리면 하루 수십 통이 되어
+# 알림을 안 보게 된다 — 늦은 건과 실패한 건만 알린다.
+SLOW_SECONDS = 120
+
 
 def _base() -> str:
     return (os.environ.get("WEBHOOK_BASE_URL") or "").rstrip("/")
