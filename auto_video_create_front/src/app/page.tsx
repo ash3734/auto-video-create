@@ -134,9 +134,10 @@ export default function Home() {
   // 렌더가 평소보다 오래 걸릴 때 안내를 바꾼다. 그대로 두면 멈춘 줄 알고 다시 눌러
   // 같은 영상이 두 번 만들어진다 (2026-09-15, Creatomate 음성 인식 지연 18분).
   const [generateSlow, setGenerateSlow] = useState(false);
-  // 기다리기를 중단해도 렌더는 서버에서 계속된다. 그 render_id 를 들고 있다가
-  // "상태 다시 확인"으로 돌아갈 수 있게 한다 (크레딧은 이미 차감됐으므로 재생성은 낭비다).
-  const [pendingRenderId, setPendingRenderId] = useState<string | null>(null);
+  // 기다리기를 멈추면 화면만 2페이지로 돌아간다. 렌더는 서버에서 계속되고,
+  // 결과는 나중에 "내 영상" 목록(서버 API 준비됨)에서 보게 할 계획이다.
+  // 화면에서 그 렌더로 "돌아가는" 기능은 두지 않는다 — 기다리는 루프가 둘이 되면
+  // 늦게 끝난 쪽이 화면을 덮어써서 엉킨다.
   const cancelWaitRef = useRef(false);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMsg, setSnackbarMsg] = useState("");
@@ -576,7 +577,6 @@ export default function Home() {
         return;
       }
       if (data.status === "started" && data.render_id) {
-        setPendingRenderId(String(data.render_id));
         await waitForRender(String(data.render_id));
       } else {
         // 서버가 실패 사유를 내려준 경우.
@@ -631,14 +631,12 @@ export default function Home() {
       const pollData = await pollRes.json();
       if (pollData.status === "succeeded" && pollData.url) {
         dlog(`렌더 완료 (확인 ${pollCount + 1}회)`, pollData.url);
-        setPendingRenderId(null);
         setVideoUrl(pollData.url);
         setStep('done');
         return;
       }
       if (pollData.status === "failed") {
         derr("렌더 실패 (Creatomate)", pollData);
-        setPendingRenderId(null);
         setGenerateError(GENERATE_ERROR_MESSAGE);
         setStep('select');
         return;
@@ -651,10 +649,14 @@ export default function Home() {
     setStep('select');
   };
 
-  /** 완료 화면 → 새 영상 만들기. 자막·음성·속도·장면 수 설정은 그대로 두고 글만 바꾼다. */
-  const handleCreateAnother = () => {
-    handleReset();
-    handleBetaAlert("자막·음성·속도 설정은 그대로 두었어요. 새 글 주소만 넣어주세요.");
+  /** 완료 화면 → 이미지 선택 화면으로. 같은 글의 대본·이미지·설정을 그대로 두고
+   *  사진이나 자막만 바꿔 다시 만들 수 있게 한다. 글 자체를 바꾸려면 "다른 글로 만들기". */
+  const handleBackToSelect = () => {
+    setVideoUrl(null);
+    setSeo(null);
+    setGenerateError(null);
+    setGenerateSlow(false);
+    setStep('select');
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -668,7 +670,6 @@ export default function Home() {
     setStep('input');
     setVideoUrl(null);
     setGenerateError(null);
-    setPendingRenderId(null);   // 다른 글로 가는 것이므로 직전 렌더 안내도 지운다
     setSectionMedia(Array(sceneCount).fill(null));
     setAutoFilledImageCount(0);
     setEditingIdx(null);
@@ -687,24 +688,6 @@ export default function Home() {
       return () => clearTimeout(timer);
     }
   }, [step, videoUrl]);
-
-  /* 기다리기를 멈췄거나 5분을 넘긴 뒤, 그 영상으로 돌아가는 줄.
-     다시 만들면 크레딧이 또 빠지므로 "상태 확인"을 먼저 권한다. */
-  const pendingBar = (pendingRenderId && step === 'select') ? (
-    <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4, mt: 2 }}>
-      <Alert
-        severity="info"
-        action={
-          <Button color="inherit" size="small" onClick={() => waitForRender(pendingRenderId)}>
-            상태 확인
-          </Button>
-        }
-        onClose={() => setPendingRenderId(null)}
-      >
-        직전에 만들던 영상이 있어요. 다시 만들면 크레딧이 한 번 더 사용됩니다.
-      </Alert>
-    </Box>
-  ) : null;
 
   return (
     <AuthGuard>
@@ -897,7 +880,6 @@ export default function Home() {
                     </Alert>
                   </Box>
                 )}
-                {pendingBar}
                 {/* cycle-3: 자막 스타일 설정 (Row 1 — 접힘 기본) */}
                 <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4, mt: 2 }}>
                   <SubtitleStyleEditor onSettingsChange={setSubtitleSettings} />
@@ -1398,7 +1380,6 @@ export default function Home() {
                     {generateError}
                   </Alert>
                 )}
-                {pendingBar}
               </Box>
             )
           )}
@@ -1423,10 +1404,11 @@ export default function Home() {
                 onClick={() => { cancelWaitRef.current = true; }}
                 sx={{ mt: 3, color: '#888', fontSize: 13 }}
               >
-                기다리지 않고 나가기
+                기다리지 않고 이미지 선택으로 돌아가기
               </Button>
-              <Typography align="center" sx={{ fontSize: 12, color: '#aaa', mt: 0.5 }}>
-                나가셔도 영상은 계속 만들어집니다. 잠시 뒤 “상태 확인”으로 결과를 볼 수 있어요.
+              <Typography align="center" sx={{ fontSize: 12, color: '#aaa', mt: 0.5, maxWidth: 360, lineHeight: 1.6 }}>
+                돌아가도 이 영상은 계속 만들어지지만, 화면에는 더 이상 나타나지 않아요.
+                새로 만들면 크레딧이 한 번 더 사용됩니다.
               </Typography>
             </Box>
           )}
@@ -1457,21 +1439,30 @@ export default function Home() {
 
                 {seo && <PublishKit seo={seo} />}
 
-                {/* 완료 후 이어서 만들기 — 자막·음성·속도·장면 수는 그대로 두고 글만 바꾼다.
-                    한 번 만든 사람이 곧바로 다음 글을 만드는 경우가 많다 (하루 10편 만든 고객). */}
-                <Box sx={{ width: '100%', maxWidth: 1000, mx: 'auto', mt: 4, mb: 2, display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
+                {/* 완료 후 이어서 작업 — 같은 글을 손보려면 2페이지로, 새 글이면 1페이지로.
+                    한 번 만든 사람이 곧바로 다음 편을 만드는 경우가 많다 (하루 10편 만든 고객). */}
+                <Box sx={{ width: '100%', maxWidth: 1000, mx: 'auto', mt: 4, mb: 1, display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
                   <Button
                     variant="contained"
                     color="primary"
                     size="large"
-                    onClick={handleCreateAnother}
+                    onClick={handleBackToSelect}
                     sx={{ fontWeight: 700, minWidth: 220 }}
                   >
-                    이 설정으로 새 영상 만들기
+                    사진·자막 바꿔 다시 만들기
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="primary"
+                    size="large"
+                    onClick={handleReset}
+                    sx={{ fontWeight: 600, minWidth: 160 }}
+                  >
+                    다른 글로 만들기
                   </Button>
                 </Box>
                 <Typography align="center" sx={{ fontSize: 12.5, color: '#888', mb: 2 }}>
-                  자막 스타일·음성·속도·장면 수는 그대로 유지됩니다.
+                  두 경우 모두 자막 스타일·음성·속도·장면 수는 그대로 유지됩니다.
                 </Typography>
               </Box>
             </>
