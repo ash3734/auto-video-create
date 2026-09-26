@@ -42,6 +42,7 @@ from services.trial import blocked_on_prod, check_and_count, client_ip, is_trial
 from services.speeds import available_speeds, normalize_speed, to_tempo
 from services.voices import available_voices, normalize_voice_id
 from services.voice_preview import get_preview_url
+from services import music
 from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
 import os
@@ -212,6 +213,19 @@ def get_voices():
     return {"voices": available_voices()}
 
 
+@router.get("/music")
+def get_music(user=Depends(require_active_subscription)):
+    """GET /api/blog/music
+
+    고를 수 있는 배경음악 목록 (컨셉 4종 × 5곡) 과 곡별 미리듣기 주소.
+
+    preview_url 은 **만료되는 presigned URL** 이다 (10분). Pixabay 라이선스가 음원
+    파일 자체의 재배포를 금지하므로 영구 공개 주소를 만들지 않는다 — FE 는 저장해
+    두고 재사용하지 말고 화면을 열 때마다 이 엔드포인트를 다시 불러야 한다.
+    """
+    return music.available_tracks()
+
+
 class VoicePreviewRequest(BaseModel):
     voice_id: str
     # 유저가 화면에서 보고 있는 실제 스크립트. 제네릭 샘플이 아니라 이걸 읽힌다.
@@ -349,6 +363,9 @@ class GenerateVideoRequest(BaseModel):
     voice_id: Optional[str] = None
     # 나레이션 배속(상대값, 1.0 = 지금 속도). 미전송/무효 시 1.0 — 기존 결과물 유지.
     speed: Optional[float] = None
+    # 배경음악 (2026-09-27). 미전송/무효 시 템플릿 기본 음악 그대로 — 기존 결과물 유지.
+    # "none" 을 보내면 음악 없이 만든다. 목록은 GET /api/blog/music.
+    bgm_id: Optional[str] = None
 
 class GenerateVideoResponse(BaseModel):
     status: str
@@ -444,6 +461,13 @@ def generate_video(request: Request, req: GenerateVideoRequest,
                 variables[f"image{i}.source"] = bg_url
                 variables[f"image{i}.visible"] = "true"
                 variables[f"video{i}.visible"] = "false"
+
+        # 3-1. 배경음악 (2026-09-27). 요청값을 그대로 믿지 않고 목록으로 검증한다 —
+        # 임의의 URL 을 실어 보내면 남의 음원이 우리 영상에 들어간다. 미전송/무효면
+        # 빈 dict 라 템플릿 기본 음악이 그대로 나간다(기존 동작).
+        bgm_vars = music.bgm_variables(req.bgm_id)
+        variables.update(bgm_vars)
+        print(f"[generate_video] 배경음악 bgm_id={req.bgm_id!r} 적용={bool(bgm_vars)}")
 
         # 4. cycle-3: subtitle_settings 가 있으면 Creatomate modifications 에 주입
         if req.subtitle_settings:
