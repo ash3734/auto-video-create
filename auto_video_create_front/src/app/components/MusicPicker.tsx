@@ -241,12 +241,9 @@ export default function MusicPicker({
   const shown = tracks.filter(t => t.concept === concept);
 
   return (
-    <Box sx={{ mb: 2 }}>
-      <Typography sx={{ fontSize: 13, fontWeight: 700, mb: 0.5 }}>
-        배경음악
-        <Box component="span" sx={{ fontSize: 11, fontWeight: 500, color: '#888', ml: 1 }}>
-          ▶ 로 미리 들어보세요
-        </Box>
+    <Box>
+      <Typography sx={{ fontSize: 11.5, color: '#888', mb: 0.75 }}>
+        ▶ 로 미리 들어보세요
       </Typography>
 
       {/* 컨셉 탭 */}
