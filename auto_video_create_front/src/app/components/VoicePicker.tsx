@@ -14,10 +14,10 @@
  *   "눌렀는데 반응이 없다"가 된다 (2026-08-06 에 같은 문제를 겪었다)
  * - 실패해도 선택은 계속 가능 — 미리듣기는 부가 기능이고 영상 제작이 본체다
  *
- * ## 배속 (2026-08-29)
- * 음성과 배속은 같이 듣고 정하는 것이라 한 블록에 둔다. 미리듣기도 선택한 배속으로
- * 나가므로 **만들기 전에 실제 결과물과 같은 속도**를 확인할 수 있다.
- * 배속은 상대값이고 1배가 지금까지의 속도라, 안 건드리면 결과물이 그대로다.
+ * ## 배속 (2026-08-29 도입 → 2026-09-27 SpeedPicker 로 분리)
+ * 배속 UI 자체는 떼어냈지만 **미리듣기는 여전히 선택한 배속으로 나간다** —
+ * 만들기 전에 실제 결과물과 같은 속도를 확인할 수 있어야 하기 때문이다.
+ * 그래서 selectedSpeed 는 UI 가 없어도 계속 받는다 (캐시 키에도 들어간다).
  */
 import * as React from 'react';
 import { Box, Typography, CircularProgress, IconButton } from '@mui/material';
@@ -32,21 +32,13 @@ export type Voice = {
   is_default: boolean;
 };
 
-export type Speed = {
-  value: number;
-  name: string;
-  description: string;
-  is_default: boolean;
-};
 
 type Props = {
   voices: Voice[];
   selected: string;
   onSelect: (voiceId: string) => void;
-  /** 선택 가능한 배속. 목록을 못 받으면 빈 배열 → 배속 UI 를 숨긴다 */
-  speeds: Speed[];
+  /** 미리듣기를 실제 결과물과 같은 속도로 내보내기 위해 받는다 (UI 는 SpeedPicker) */
   selectedSpeed: number;
-  onSelectSpeed: (value: number) => void;
   /** 미리듣기 기준 문장 — select 화면의 스크립트 1 */
   previewText: string;
   /** 스크립트 편집 중이거나 영상 생성 중이면 잠근다 */
@@ -61,9 +53,7 @@ export default function VoicePicker({
   voices,
   selected,
   onSelect,
-  speeds,
   selectedSpeed,
-  onSelectSpeed,
   previewText,
   disabled = false,
   previewBlockedReason = null,
@@ -151,12 +141,9 @@ export default function VoicePicker({
   const previewDisabled = disabled || !!previewBlockedReason || !previewText.trim();
 
   return (
-    <Box sx={{ mb: 2 }}>
-      <Typography sx={{ fontSize: 13, fontWeight: 700, mb: 0.5 }}>
-        음성
-        <Box component="span" sx={{ fontSize: 11, fontWeight: 500, color: '#888', ml: 1 }}>
-          {previewBlockedReason ?? '▶ 로 스크립트 1을 들어보세요'}
-        </Box>
+    <Box>
+      <Typography sx={{ fontSize: 11.5, color: '#888', mb: 0.75 }}>
+        {previewBlockedReason ?? '▶ 로 스크립트 1을 들어보세요'}
       </Typography>
 
       <Box sx={{ border: '1px solid #e3e6ef', borderRadius: 2, overflow: 'hidden' }}>
@@ -244,54 +231,6 @@ export default function VoicePicker({
         })}
       </Box>
 
-      {/* 배속 — 목록을 못 받으면 통째로 숨긴다. 서버가 기본값(1배)으로 처리하므로
-          UI 가 없다고 영상 생성이 막히지는 않는다. */}
-      {speeds.length > 0 && (
-        <Box sx={{ mt: 1.5 }}>
-          <Typography sx={{ fontSize: 13, fontWeight: 700, mb: 0.5 }}>
-            말하는 속도
-            <Box component="span" sx={{ fontSize: 11, fontWeight: 500, color: '#888', ml: 1 }}>
-              ▶ 로 바뀐 속도를 들어볼 수 있어요
-            </Box>
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            {speeds.map(s => {
-              const isSelected = Math.abs(selectedSpeed - s.value) < 1e-6;
-              return (
-                <Box
-                  key={s.value}
-                  onClick={() => !disabled && onSelectSpeed(s.value)}
-                  sx={{
-                    flex: 1,
-                    textAlign: 'center',
-                    py: 0.9,
-                    borderRadius: 2,
-                    cursor: disabled ? 'default' : 'pointer',
-                    opacity: disabled ? 0.5 : 1,
-                    border: `1.5px solid ${isSelected ? '#1976d2' : '#e3e6ef'}`,
-                    bgcolor: isSelected ? 'rgba(25, 118, 210, 0.07)' : '#fff',
-                    transition: 'background-color 0.15s',
-                  }}
-                >
-                  <Typography
-                    sx={{
-                      fontSize: 13.5,
-                      fontWeight: 700,
-                      lineHeight: 1.3,
-                      color: isSelected ? '#1976d2' : '#333',
-                    }}
-                  >
-                    {s.name}
-                  </Typography>
-                  <Typography sx={{ fontSize: 11, color: '#888', lineHeight: 1.4 }}>
-                    {s.description}
-                  </Typography>
-                </Box>
-              );
-            })}
-          </Box>
-        </Box>
-      )}
     </Box>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 import { Box, Button, TextField, Typography, CircularProgress, LinearProgress, Snackbar, Alert, Paper, Dialog, IconButton, ImageListItem } from "@mui/material";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Image from "next/image";
 import { useMediaQuery } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
@@ -13,8 +13,11 @@ import AuthGuard from "../components/AuthGuard";
 import { normalizeBlogUrl } from "./utils/blogUrl";
 import LogoutButton from "../components/LogoutButton";
 import ChangePasswordButton from "../components/ChangePasswordButton";
-import SubtitleStyleEditor, { SubtitleSettings } from "./components/SubtitleStyleEditor";
-import VoicePicker, { Voice, Speed } from "./components/VoicePicker";
+import { SubtitleSettings } from "./components/SubtitleStyleEditor";
+import SettingsPanel from "./components/SettingsPanel";
+import { Voice } from "./components/VoicePicker";
+import { Speed } from "./components/SpeedPicker";
+import { MusicTrack, MusicConcept, BGM_TEMPLATE_DEFAULT } from "./components/MusicPicker";
 import PublishKit, { SeoCopy } from "./components/PublishKit";
 
 interface MediaList {
@@ -158,6 +161,13 @@ export default function Home() {
   const [speedOptions, setSpeedOptions] = useState<Speed[]>([]);
   const [speed, setSpeed] = useState<number>(1);
 
+  // 배경음악 (2026-09-27). 목록을 못 받으면 빈 배열 → 선택 UI 를 숨기고, bgmId 는
+  // 기본값('')이라 BE 에 아무것도 안 보낸다 = 템플릿 기본 음악 그대로.
+  const [musicTracks, setMusicTracks] = useState<MusicTrack[]>([]);
+  const [musicConcepts, setMusicConcepts] = useState<MusicConcept[]>([]);
+  const [musicNoneId, setMusicNoneId] = useState<string>("none");
+  const [bgmId, setBgmId] = useState<string>(BGM_TEMPLATE_DEFAULT);
+
   // 장면 수 선택 (4~8). 스크립트/이미지 슬롯 개수가 이 값을 따른다. 기본 5 = 기존 동작.
   const [sceneCount, setSceneCount] = useState<number>(5);
   const [availableSceneCounts, setAvailableSceneCounts] = useState<{ scene_count: number; available: boolean }[]>([]);
@@ -209,6 +219,25 @@ export default function Home() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // 배경음악 목록. 미리듣기 주소가 10분 만료라 재사용하지 않고 그때그때 받는다.
+  // 실패해도 영상 제작은 막지 않는다 — UI 만 숨기고 BE 가 기본 음악으로 흐른다.
+  const fetchMusic = useCallback(async (): Promise<MusicTrack[] | null> => {
+    try {
+      const res = await authFetch(`${API_BASE_URL}/api/blog/music`);
+      const data = await res.json();
+      if (!Array.isArray(data?.tracks) || data.tracks.length === 0) return null;
+      setMusicTracks(data.tracks);
+      if (Array.isArray(data.concepts)) setMusicConcepts(data.concepts);
+      if (typeof data.none_id === "string") setMusicNoneId(data.none_id);
+      return data.tracks as MusicTrack[];
+    } catch (e) {
+      derr("배경음악 목록 로드 실패 — 기본 음악으로 진행", { error: String(e) });
+      return null;
+    }
+  }, []);
+
+  useEffect(() => { void fetchMusic(); }, [fetchMusic]);
 
   // 배속 목록. 실패해도 영상 생성을 막지 않는다 — UI 만 숨기고 BE 기본값으로 흐른다.
   useEffect(() => {
@@ -565,6 +594,8 @@ export default function Home() {
           ...(voiceId ? { voice_id: voiceId } : {}),
           // 목록을 못 받았으면 보내지 않는다 — BE 가 기본값(1배)으로 흐른다
           ...(speedOptions.length > 0 ? { speed } : {}),
+          // 빈 문자열(기본 음악)이면 보내지 않는다 — 템플릿 음악이 그대로 나간다
+          ...(bgmId ? { bgm_id: bgmId } : {}),
         }),
         signal: controller.signal,
       });
@@ -902,7 +933,7 @@ export default function Home() {
                       생성된 스크립트에 알맞는 이미지를 선택해 주세요.
                     </Typography>
                     <Typography variant="body2" sx={{ color: '#666' }}>
-                      자막 스타일을 미리 설정하고 이미지를 선택하면 영상이 생성됩니다.
+                      자막·음성·배경음악은 위에서 바꿀 수 있어요. 이미지를 고르면 영상이 만들어집니다.
                     </Typography>
                   </Box>
                   {/* 오른쪽: 액션 버튼 2개 */}
@@ -945,9 +976,35 @@ export default function Home() {
                     </Alert>
                   </Box>
                 )}
-                {/* cycle-3: 자막 스타일 설정 (Row 1 — 접힘 기본) */}
+                {/* 영상 설정 모음 (자막·음성·속도·배경음악 — 전부 접힘 기본) */}
                 <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4, mt: 2 }}>
-                  <SubtitleStyleEditor onSettingsChange={setSubtitleSettings} />
+                  <SettingsPanel
+                    onSubtitleSettingsChange={setSubtitleSettings}
+                    voices={voices}
+                    voiceId={voiceId}
+                    onSelectVoice={setVoiceId}
+                    previewText={scripts[0] ?? ""}
+                    previewBlockedReason={
+                      editingIdx === 0 ? "스크립트 1 수정을 마치면 들어볼 수 있어요" : null
+                    }
+                    apiBaseUrl={API_BASE_URL}
+                    authHeaders={() => ({
+                      "X-USER-ID":
+                        (typeof window !== "undefined"
+                          ? localStorage.getItem("user_id")
+                          : "") ?? "",
+                    })}
+                    speeds={speedOptions}
+                    speed={speed}
+                    onSelectSpeed={setSpeed}
+                    musicConcepts={musicConcepts}
+                    musicTracks={musicTracks}
+                    musicNoneId={musicNoneId}
+                    bgmId={bgmId}
+                    onSelectBgm={setBgmId}
+                    onMusicExpired={fetchMusic}
+                    disabled={loading}
+                  />
                   {/* Row 경계 시선 유도 */}
                   <Typography
                     variant="body2"
@@ -986,32 +1043,6 @@ export default function Home() {
                       helperText="GPT가 생성한 제목이에요. 자유롭게 수정할 수 있어요."
                     />
 
-                    {/* 음성 선택 — 미리듣기는 스크립트 1을 기준 문장으로 쓴다.
-                        음성끼리 비교하려면 텍스트가 같아야 하기 때문. */}
-                    {voices.length > 0 && (
-                      <VoicePicker
-                        voices={voices}
-                        selected={voiceId}
-                        onSelect={setVoiceId}
-                        speeds={speedOptions}
-                        selectedSpeed={speed}
-                        onSelectSpeed={setSpeed}
-                        previewText={scripts[0] ?? ""}
-                        disabled={loading}
-                        previewBlockedReason={
-                          editingIdx === 0
-                            ? "스크립트 1 수정을 마치면 들어볼 수 있어요"
-                            : null
-                        }
-                        apiBaseUrl={API_BASE_URL}
-                        authHeaders={() => ({
-                          "X-USER-ID":
-                            (typeof window !== "undefined"
-                              ? localStorage.getItem("user_id")
-                              : "") ?? "",
-                        })}
-                      />
-                    )}
 
                     {scripts.map((script, idx) => {
                       const section = sectionMedia[idx];
@@ -1256,18 +1287,15 @@ export default function Home() {
                   helperText="GPT가 생성한 제목이에요. 자유롭게 수정할 수 있어요."
                 />
 
-                {/* 음성 선택 (모바일) — PC 분기와 동일. 유저 대부분이 모바일이라
-                    한쪽에만 넣으면 사실상 없는 기능이 된다. */}
-                {voices.length > 0 && (
-                  <VoicePicker
+                {/* 영상 설정 모음 (모바일) — PC 와 같은 컴포넌트. 유저 대부분이
+                    모바일이라 한쪽에만 넣으면 사실상 없는 기능이 된다. */}
+                <Box sx={{ mb: 2 }}>
+                  <SettingsPanel
+                    onSubtitleSettingsChange={setSubtitleSettings}
                     voices={voices}
-                    selected={voiceId}
-                    onSelect={setVoiceId}
-                    speeds={speedOptions}
-                    selectedSpeed={speed}
-                    onSelectSpeed={setSpeed}
+                    voiceId={voiceId}
+                    onSelectVoice={setVoiceId}
                     previewText={scripts[0] ?? ""}
-                    disabled={loading}
                     previewBlockedReason={
                       editingIdx === 0 ? "스크립트 1 수정을 마치면 들어볼 수 있어요" : null
                     }
@@ -1278,8 +1306,18 @@ export default function Home() {
                           ? localStorage.getItem("user_id")
                           : "") ?? "",
                     })}
+                    speeds={speedOptions}
+                    speed={speed}
+                    onSelectSpeed={setSpeed}
+                    musicConcepts={musicConcepts}
+                    musicTracks={musicTracks}
+                    musicNoneId={musicNoneId}
+                    bgmId={bgmId}
+                    onSelectBgm={setBgmId}
+                    onMusicExpired={fetchMusic}
+                    disabled={loading}
                   />
-                )}
+                </Box>
 
                 {scripts.map((script, idx) => {
                   const section = sectionMedia[idx];
