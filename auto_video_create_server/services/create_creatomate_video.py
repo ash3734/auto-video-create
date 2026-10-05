@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from .account_service import check_user_credits, deduct_credits, get_current_credits
 from .alerting import alert
 from .scene_counts import get_template_id, normalize_scene_count
+from .layouts import DEFAULT_LAYOUT, get_source
 
 load_dotenv()
 
@@ -31,7 +32,7 @@ def _extract_render_id(result):
     return None
 
 
-def create_creatomate_video(audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, user_id=None, scene_count=5, webhook_url=None, metadata=None, **kwargs):
+def create_creatomate_video(audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, user_id=None, scene_count=5, webhook_url=None, metadata=None, layout=DEFAULT_LAYOUT, **kwargs):
     print("create_creatomate_video 호출")
 
     scene_count = normalize_scene_count(scene_count)
@@ -65,10 +66,15 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
     if title:
         variables["title.text"] = title
     variables.update(kwargs)
-    payload = {
-        "template_id": template_id,
-        "modifications": variables
-    }
+    # 2026-10-05: 저장된 템플릿(template_id) 대신 코드에 든 템플릿 JSON(source)으로 렌더한다
+    # — 배치를 코드로 늘리기 위해서다 (services/layouts.py). 파일을 못 읽으면 예전처럼
+    # template_id 로 렌더한다. 결과는 같다 — 지금 배치의 JSON 은 그 템플릿의 복사본이다.
+    source = get_source(layout, scene_count)
+    if source is not None:
+        payload = {"source": source, "modifications": variables}
+    else:
+        alert("config", "템플릿 JSON 없음 — template_id 로 렌더", layout=layout, scene_count=scene_count)
+        payload = {"template_id": template_id, "modifications": variables}
     # 렌더가 끝나면 알려달라고 한다. 주소가 없으면(미설정 환경) 기존처럼 화면이 물어본다.
     # webhook_url·metadata 는 modifications 가 아니라 요청 본문의 형제 필드다 —
     # variables 에 섞이면 Creatomate 가 그런 요소를 못 찾아 400 을 낸다.
@@ -99,6 +105,7 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
         # Authorization 헤더는 절대 로그에 남기지 않는다.
         print(
             f"[create_creatomate_video] template_id={template_id} "
+            f"render={'source:' + str(layout) if 'source' in payload else 'template_id'} "
             f"status={response.status_code} body={str(result)[:500] if result is not None else (response.text or '')[:500]}"
         )
 
