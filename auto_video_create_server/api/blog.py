@@ -48,6 +48,7 @@ from utils.s3_utils import load_json_from_s3
 import os
 from typing import Any, Dict, List, Optional, Literal
 import requests
+import time
 import traceback
 from urllib.parse import urlparse
 
@@ -581,6 +582,11 @@ def poll_video(render_id: str, user=Depends(require_active_subscription)):
     return data
 
 
+# 완료 웹훅 직후 재조회가 아직 끝나지 않았다고 답할 때 다시 물어볼 횟수·간격(초).
+WEBHOOK_REFETCH_TRIES = 3
+WEBHOOK_REFETCH_WAIT = 2
+
+
 @router.post("/creatomate-webhook")
 def creatomate_webhook(payload: Dict[str, Any], token: str = ""):
     """Creatomate 가 렌더 완료·실패를 알려주는 자리 (로그인 없이 외부에서 호출).
@@ -599,6 +605,14 @@ def creatomate_webhook(payload: Dict[str, Any], token: str = ""):
 
     try:
         data = _fetch_render(render_id)
+        # 완료 웹훅을 받은 직후 재조회하면 아직 "rendering" 이 올 때가 있다 (2026-10-05
+        # test 로그에서 확인 — 9/20 기록 2건이 "rendering" 으로 멈춘 원인). 그러면 결과도
+        # 못 남기고 S3 복사도 건너뛴다. 잠깐 기다렸다 몇 번 더 물어본다.
+        for _ in range(WEBHOOK_REFETCH_TRIES):
+            if data.get("status") in ("succeeded", "failed"):
+                break
+            time.sleep(WEBHOOK_REFETCH_WAIT)
+            data = _fetch_render(render_id)
     except Exception as e:
         # 재조회 실패로 웹훅을 잃지 않는다 — Creatomate 는 재시도할 수 있고,
         # 화면도 여전히 직접 상태를 물어볼 수 있다.

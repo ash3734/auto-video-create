@@ -116,6 +116,45 @@ class TestWebhookMirrors(unittest.TestCase):
         self.assertEqual(up.call_count, 1, "결과 기록은 남고, 파일 필드 갱신만 빠진다")
 
 
+class TestWebhookRefetch(unittest.TestCase):
+    """완료 웹훅 직후 재조회가 아직 rendering 이라고 답하는 경우 (2026-10-05 test 로그)."""
+    ENV = {"WEBHOOK_BASE_URL": "https://api", "WEBHOOK_SECRET": "s3cret"}
+
+    def setUp(self):
+        import api.blog as blog
+        self.blog = blog
+        p = mock.patch.dict(os.environ, self.ENV, clear=False); p.start(); self.addCleanup(p.stop)
+
+    def _run(self, answers):
+        seq = iter(answers)
+        with mock.patch.object(self.blog, "_fetch_render", side_effect=lambda rid: next(seq)) as f, \
+             mock.patch.object(self.blog.time, "sleep") as sl, \
+             mock.patch.object(self.blog.render_store, "get", return_value={}), \
+             mock.patch.object(self.blog.render_store, "update_result") as up, \
+             mock.patch.object(self.blog.render_files, "mirror", return_value=None) as mi, \
+             mock.patch.object(self.blog, "alert"):
+            self.blog.creatomate_webhook({"id": "r1"}, token="s3cret")
+        return f, sl, up, mi
+
+    def test_retries_until_final(self):
+        f, sl, up, mi = self._run([{"status": "rendering"}, {"status": "rendering"},
+                                   {"status": "succeeded", "url": "https://c/r1.mp4"}])
+        self.assertEqual(f.call_count, 3)
+        self.assertEqual(up.call_args_list[0].args[:2], ("r1", "succeeded"))
+        mi.assert_called_once()                 # 결과를 확인했으니 S3 복사도 한다
+
+    def test_gives_up_after_limit(self):
+        """끝내 안 끝나면 받은 상태를 남기고 끝낸다 — 웹훅 응답이 너무 늦어지면 안 된다."""
+        f, sl, up, mi = self._run([{"status": "rendering"}] * 10)
+        self.assertEqual(f.call_count, 1 + self.blog.WEBHOOK_REFETCH_TRIES)
+        self.assertEqual(up.call_args_list[0].args[1], "rendering")
+        mi.assert_not_called()
+
+    def test_final_on_first_try_does_not_wait(self):
+        _, sl, _, _ = self._run([{"status": "succeeded", "url": "u"}])
+        sl.assert_not_called()
+
+
 class TestMyRenders(unittest.TestCase):
     def setUp(self):
         import api.blog as blog
