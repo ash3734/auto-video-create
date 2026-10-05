@@ -13,6 +13,7 @@ import AuthGuard from "../components/AuthGuard";
 import { normalizeBlogUrl } from "./utils/blogUrl";
 import LogoutButton from "../components/LogoutButton";
 import ChangePasswordButton from "../components/ChangePasswordButton";
+import MyVideosButton from "../components/MyVideosButton";
 import { SubtitleSettings } from "./components/SubtitleStyleEditor";
 import SettingsPanel from "./components/SettingsPanel";
 import { Voice } from "./components/VoicePicker";
@@ -94,7 +95,7 @@ const RENDER_SLOW_NOTICE_MS = 2 * 60 * 1000;
 // 서버가 완료를 받으면 관리자에게 알림이 간다. 유저에게 실패라고 하면 다시 눌러
 // 같은 영상을 두 번 만들게 된다 (크레딧도 두 번 빠진다).
 const RENDER_TIMEOUT_MESSAGE =
-  "영상이 아직 만들어지고 있어요. 평소보다 오래 걸리는 상황이라 관리자에게 알림이 갔고, 확인 후 안내드릴게요. 다시 시도하면 크레딧이 한 번 더 사용되니 잠시만 기다려 주세요.";
+  "영상이 아직 만들어지고 있어요. 평소보다 오래 걸리는 상황이라 관리자에게도 알림이 갔어요. 완성되면 위의 '내 영상'에서 볼 수 있어요. 다시 시도하면 크레딧이 한 번 더 사용되니 잠시만 기다려 주세요.";
 
 // ── 브라우저 콘솔 디버그 로그 ──────────────────────────────────────────────
 // FE 오류 수집 도구(Sentry 등)가 없고 Amplify 에서도 클라이언트 로그를 볼 수 없어서,
@@ -789,13 +790,13 @@ export default function Home() {
     <AuthGuard>
       <Box sx={{ minHeight: "100vh", bgcolor: "#fff", display: "flex", flexDirection: "column" }}>
         {/* 헤더 */}
-        <Box sx={{ width: "100%", height: 64, display: "flex", alignItems: "center", justifyContent: "space-between", px: 4, borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
+        <Box sx={{ width: "100%", height: 64, display: "flex", alignItems: "center", justifyContent: "space-between", px: { xs: 1.5, sm: 4 }, borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10, bgcolor: "#fff" }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <Link href="/" passHref legacyBehavior>
               <Box
                 component="a"
                 sx={{
-                  width: 120,
+                  width: { xs: 84, sm: 120 },
                   height: 48,
                   display: 'flex',
                   alignItems: 'center',
@@ -804,7 +805,7 @@ export default function Home() {
                   cursor: 'pointer',
                   textDecoration: 'none',
                   color: 'inherit',
-                  marginRight: 2 // theme.spacing(2) = 16px
+                  marginRight: { xs: 1, sm: 2 }
                 }}
                 onClick={e => { e.preventDefault(); window.location.href = '/'; }}
               >
@@ -819,9 +820,10 @@ export default function Home() {
               </Box>
             </Link>
           </Box>
-          <Box sx={{ display: "flex", gap: 1, alignItems: 'center' }}>
+          <Box sx={{ display: "flex", gap: { xs: 0.75, sm: 1 }, alignItems: 'center' }}>
             {isLoggedIn ? (
               <>
+                <MyVideosButton />
                 <ChangePasswordButton />
                 <LogoutButton />
               </>
@@ -1545,7 +1547,7 @@ export default function Home() {
                 기다리지 않고 이미지 선택으로 돌아가기
               </Button>
               <Typography align="center" sx={{ fontSize: 12, color: '#aaa', mt: 0.5, maxWidth: 360, lineHeight: 1.6 }}>
-                돌아가면 이 영상은 받아볼 수 없고, 사용한 크레딧도 돌아오지 않아요.
+                돌아가도 영상은 계속 만들어지고, 완성되면 위의 '내 영상'에서 볼 수 있어요. 사용한 크레딧은 돌아오지 않아요.
               </Typography>
             </Box>
           )}

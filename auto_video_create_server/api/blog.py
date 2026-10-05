@@ -12,7 +12,7 @@ from services.account_service import get_user_if_active, check_user_credits, get
 from services.ai_background import generate_backgrounds_parallel, FALLBACK_URL as DEFAULT_BG_FALLBACK_URL
 from services.image_mirror import maybe_mirror
 from services.scene_media import image_slot_variables
-from services import render_store, webhooks
+from services import render_store, render_files, webhooks
 from services.alerting import alert
 # cycle-3: 자막 스타일 편집 신규 서비스
 from services.font_service import get_korean_fonts, get_allowed_font_families
@@ -613,6 +613,14 @@ def creatomate_webhook(payload: Dict[str, Any], token: str = ""):
                                waited_seconds=round(waited) or None)
     print(f"[webhook] {render_id} status={status} 대기 {waited:.0f}초")
 
+    # Creatomate 는 결과를 30일만 보관한다 — "내가 만든 영상"이 깨지지 않게 지금 옮겨 둔다.
+    # 웹훅은 유저가 기다리는 경로가 아니라서 여기서 몇 초 쓰는 건 괜찮다. 실패하면
+    # 목록 조회 때 다시 시도된다 (my_renders).
+    if status == "succeeded":
+        files = render_files.mirror(render_id, data.get("url"))
+        if files:
+            render_store.update_result(render_id, status, **files)
+
     # 관리자 알림 — 실패했거나, 평소(20~30초)보다 크게 늦어진 건만.
     # 화면은 유저에게 "관리자가 확인해서 알려드린다"고 안내하므로 이 메일이 그 약속이다.
     if status == "failed":
@@ -657,10 +665,117 @@ def ai_backgrounds(req: AiBackgroundRequest, user=Depends(require_active_subscri
     return {"backgrounds": {str(k): v for k, v in urls.items()}}
 
 
+# ── 내가 만든 영상 (백로그 4-1, 2026-10-05) ─────────────────────────────────
+
+MY_RENDERS_LIMIT = 30
+# 이보다 오래 "만드는 중"인 기록은 Creatomate 에 직접 물어본다. 평소 렌더는 20~30초다.
+# 웹훅이 오지 않았고 유저도 화면을 닫았으면, 이게 없을 때 기록은 영원히 "만드는 중"이다.
+# (2026-09-20 기록 2건이 실제로 그렇게 남아 있었다)
+STALE_SECONDS = 120
+# 한 번 조회에서 고칠 기록 수 상한. API Gateway 는 29초에 끊는다 — 오래 걸리는 일을
+# 한꺼번에 하지 않고, 남은 건 다음 조회 때 이어서 고친다.
+MAX_REPAIRS_PER_CALL = 3
+_FINAL = ("succeeded", "failed")
+_RETENTION_SECONDS = render_files.CREATOMATE_RETENTION_DAYS * 86400
+
+
+def _repair_records(records: list) -> None:
+    """목록을 보여주기 전에 고칠 수 있는 기록을 고친다 (제자리 수정).
+
+    1. 오래 "만드는 중"인 기록 → Creatomate 에 다시 물어 결과를 반영
+    2. 완성됐는데 아직 우리 S3 로 안 옮긴 영상 → 옮김 (웹훅에서 실패한 건의 안전망)
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    stale = [
+        r for r in records
+        if r.get("status") not in _FINAL
+        and STALE_SECONDS <= render_store.elapsed_seconds(r) < _RETENTION_SECONDS
+    ][:MAX_REPAIRS_PER_CALL]
+
+    def refresh(r):
+        try:
+            data = _fetch_render(r["render_id"])
+        except Exception as e:
+            print(f"[my_renders] 상태 재조회 실패 {r.get('render_id')}: {e}")
+            return
+        st = data.get("status") if isinstance(data, dict) else None
+        if st in _FINAL:
+            render_store.update_result(r["render_id"], st, url=data.get("url"),
+                                       duration=data.get("duration"))
+            r["status"] = st
+            r["url"] = data.get("url") or r.get("url")
+            r["duration"] = data.get("duration") or r.get("duration")
+
+    with ThreadPoolExecutor(max_workers=MAX_REPAIRS_PER_CALL) as ex:
+        list(ex.map(refresh, stale))
+
+    unmirrored = [
+        r for r in records
+        if r.get("status") == "succeeded" and r.get("url") and not r.get("video_key")
+        and render_store.elapsed_seconds(r) < _RETENTION_SECONDS
+    ][:MAX_REPAIRS_PER_CALL]
+
+    def copy(r):
+        files = render_files.mirror(r["render_id"], r["url"])
+        if files:
+            render_store.update_result(r["render_id"], "succeeded", **files)
+            r.update(files)
+
+    with ThreadPoolExecutor(max_workers=MAX_REPAIRS_PER_CALL) as ex:
+        list(ex.map(copy, unmirrored))
+
+
+def _render_view(r: dict) -> dict:
+    """화면에 줄 모양. 내부 키(S3 경로, user_id)는 내보내지 않는다.
+
+    state:
+      ready    재생·다운로드 가능
+      making   아직 만드는 중
+      failed   렌더 실패
+      expired  우리 S3 로 옮기기 전에 Creatomate 보관 기간(30일)이 지나 사라짐
+    """
+    age = render_store.elapsed_seconds(r)
+    view = {
+        "render_id": r.get("render_id"),
+        "title": r.get("title"),
+        "scene_count": r.get("scene_count"),
+        "duration": r.get("duration"),
+        "submitted_at": r.get("submitted_at"),
+        "state": "making",
+        "video_url": None,
+        "download_url": None,
+    }
+    status = r.get("status")
+    if status == "succeeded":
+        if r.get("video_key"):
+            view["state"] = "ready"
+            view["video_url"] = render_files.presign(r["video_key"])
+            view["download_url"] = render_files.presign(
+                r["video_key"], render_files.download_name(r.get("title"), r.get("submitted_at")))
+        elif r.get("url") and age < _RETENTION_SECONDS:
+            # 아직 못 옮겼지만 Creatomate 에 남아 있는 동안은 그 주소로 보여준다.
+            view["state"] = "ready"
+            view["video_url"] = view["download_url"] = r["url"]
+        else:
+            view["state"] = "expired"
+    elif status == "failed":
+        view["state"] = "failed"
+    elif age >= _RETENTION_SECONDS:
+        view["state"] = "expired"
+    return view
+
+
 @router.get("/my-renders")
 def my_renders(user=Depends(require_active_subscription)):
-    """내가 만든 영상 목록. 화면이 기다리다 놓친 결과를 다시 찾기 위한 것."""
-    return {"renders": render_store.list_for_user(user["id"])}
+    """GET /api/blog/my-renders — 내가 만든 영상 (최신 30편).
+
+    영상 주소는 1시간 뒤 만료되는 presigned URL 이다. 화면을 열 때마다 새로 받는다.
+    렌더 기록은 2026-09-20 부터 남기 시작했으므로 그 전 영상은 목록에 없다.
+    """
+    records = render_store.list_for_user(user["id"], limit=MY_RENDERS_LIMIT)
+    _repair_records(records)
+    return {"renders": [_render_view(r) for r in records]}
 
 @router.get("/credits")
 def get_user_credits(user=Depends(require_active_subscription)):

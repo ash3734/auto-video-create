@@ -101,7 +101,7 @@ export default function ChangePasswordButton() {
         variant="outlined"
         color="inherit"
         size="small"
-        sx={{ fontWeight: 600, borderRadius: 2, px: 2, py: 0.5 }}
+        sx={{ fontWeight: 600, borderRadius: 2, px: { xs: 1.25, sm: 2 }, minWidth: 0, py: 0.5, whiteSpace: 'nowrap' }}
         onClick={() => setOpen(true)}
       >
         비밀번호 변경
