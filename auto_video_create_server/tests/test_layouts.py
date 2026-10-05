@@ -77,6 +77,88 @@ class TestLetterboxSnapshots(unittest.TestCase):
             self.assertEqual((src["width"], src["height"]), (720, 1280))
 
 
+class TestBlurFillLayout(unittest.TestCase):
+    """코드로 만드는 첫 배치. 기본 배치와 같은 이름 규칙을 지켜야 공통 코드가 그대로 먹는다."""
+
+    def _src(self, env, n):
+        with mock.patch.dict(os.environ, {"ENV": "production" if env == "prod" else "test"}):
+            return layouts.get_source("blur_fill", n)
+
+    def test_every_element_we_fill_exists(self):
+        for n in ALLOWED_SCENE_COUNTS:
+            for env in ("prod", "test"):
+                names = set(_names(self._src(env, n)))
+                need = {"title", BGM_ELEMENT}
+                for i in range(1, n + 1):
+                    need |= {f"image{i}", f"video{i}", f"audio{i}", f"bg{i}"}
+                need |= {f"Subtitles-{s}" for s in SCENE_COUNT_CONFIG[n]["subtitle_suffixes"]}
+                self.assertFalse(need - names, f"{env}_{n}: {need - names}")
+                self.assertNotIn(f"image{n + 1}", names)
+
+    def test_watermark_only_on_test(self):
+        for n in ALLOWED_SCENE_COUNTS:
+            self.assertNotIn(WATERMARK_TEXT, json.dumps(self._src("prod", n), ensure_ascii=False))
+            self.assertIn(WATERMARK_TEXT, json.dumps(self._src("test", n), ensure_ascii=False))
+
+    def test_each_subtitle_listens_to_its_own_scene(self):
+        """자막이 다른 장면의 음성을 받아쓰면 화면과 자막이 어긋난다."""
+        src = self._src("prod", 6)
+        comps = [e for e in src["elements"] if (e.get("name") or "").startswith("composition_") and e["name"][-1].isdigit()]
+        self.assertEqual(len(comps), 6)
+        for i, c in enumerate(comps, 1):
+            sub = next(e for e in c["elements"] if e["name"].startswith("Subtitles-"))
+            self.assertEqual(sub["transcript_source"], f"audio{i}")
+        self.assertEqual(comps[0].get("time"), 0)
+        self.assertIn("animations", comps[-1])              # 마지막 장면 페이드
+
+    def test_photo_is_never_cropped(self):
+        """사진 잘림 수정(fit=contain)이 이 배치에서 무의미해지면 안 된다. 배경만 cover."""
+        src = self._src("prod", 5)
+        self.assertEqual(layouts._find(src, "image1")["fit"], "contain")
+        self.assertEqual(layouts._find(src, "bg1")["fit"], "cover")
+
+    def test_same_fonts_and_music_as_default(self):
+        """폰트 자산·배경음악 요소가 같아야 자막 스타일·음악 선택이 이 배치에도 먹는다."""
+        a, b = self._src("prod", 5), layouts.get_source("letterbox", 5)
+        with mock.patch.dict(os.environ, {"ENV": "production"}):
+            b = layouts.get_source("letterbox", 5)
+        self.assertEqual(a["fonts"], b["fonts"])
+        self.assertEqual(layouts._find(a, BGM_ELEMENT)["source"], layouts._find(b, BGM_ELEMENT)["source"])
+
+    def test_builder_failure_falls_back_to_default(self):
+        with mock.patch.dict(layouts._BUILDERS, {"blur_fill": mock.Mock(side_effect=RuntimeError("x"))}):
+            self.assertEqual(layouts.get_source("blur_fill", 5), layouts.get_source("letterbox", 5))
+
+
+class TestExtraModifications(unittest.TestCase):
+    def test_photo_scene_gets_blurred_background(self):
+        v = {"image1.source": "https://p/1.jpg", "image1.visible": "true",
+             "video2.source": "https://v/2.mp4", "image2.visible": "false"}
+        got = layouts.extra_modifications("blur_fill", v, 2)
+        self.assertEqual(got["bg1.source"], "https://p/1.jpg")
+        self.assertEqual(got["bg1.visible"], "true")
+        self.assertEqual(got["bg2.visible"], "false")      # 영상 장면은 배경을 끈다
+        self.assertNotIn("bg2.source", got)
+
+    def test_default_layout_adds_nothing(self):
+        """기본 배치에는 bg 요소가 없다 — 보내면 Creatomate 가 400 을 낸다."""
+        self.assertEqual(layouts.extra_modifications("letterbox", {"image1.source": "x", "image1.visible": "true"}, 1), {})
+        self.assertEqual(layouts.extra_modifications(None, {"image1.source": "x", "image1.visible": "true"}, 1), {})
+
+
+class TestLayoutApi(unittest.TestCase):
+    def test_listing(self):
+        import api.blog as blog
+        got = blog.get_layouts()["layouts"]
+        self.assertEqual([x["id"] for x in got if x["is_default"]], ["letterbox"])
+        self.assertIn("blur_fill", [x["id"] for x in got])
+
+    def test_request_layout_optional(self):
+        import api.blog as blog
+        self.assertIsNone(blog.GenerateVideoRequest(title="t", scripts=["a"], sections=[]).layout)
+        self.assertEqual(blog.GenerateVideoRequest(title="t", scripts=["a"], sections=[], layout="blur_fill").layout, "blur_fill")
+
+
 class TestGetSource(unittest.TestCase):
     def test_env_picks_prod_or_test(self):
         with mock.patch.dict(os.environ, {"ENV": "production"}):

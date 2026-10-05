@@ -43,6 +43,7 @@ from services.speeds import available_speeds, normalize_speed, to_tempo
 from services.voices import available_voices, normalize_voice_id
 from services.voice_preview import get_preview_url
 from services import music
+from services import layouts
 from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
 import os
@@ -214,6 +215,16 @@ def get_voices():
     return {"voices": available_voices()}
 
 
+@router.get("/layouts")
+def get_layouts():
+    """GET /api/blog/layouts — 고를 수 있는 화면 배치. is_default=true 가 지금까지의 배치다."""
+    return {"layouts": [
+        {"id": k, "name": v["name"], "description": v["description"],
+         "is_default": k == layouts.DEFAULT_LAYOUT}
+        for k, v in layouts.LAYOUTS.items()
+    ]}
+
+
 @router.get("/music")
 def get_music(user=Depends(require_active_subscription)):
     """GET /api/blog/music
@@ -367,6 +378,8 @@ class GenerateVideoRequest(BaseModel):
     # 배경음악 (2026-09-27). 미전송/무효 시 템플릿 기본 음악 그대로 — 기존 결과물 유지.
     # "none" 을 보내면 음악 없이 만든다. 목록은 GET /api/blog/music.
     bgm_id: Optional[str] = None
+    # 화면 배치 (2026-10-05). 미전송/무효 시 기본 배치(letterbox) — 기존 결과물 유지.
+    layout: Optional[str] = None
 
 class GenerateVideoResponse(BaseModel):
     status: str
@@ -492,6 +505,7 @@ def generate_video(request: Request, req: GenerateVideoRequest,
             scene_count=scene_count,
             webhook_url=webhooks.webhook_url(),
             metadata=user["id"],  # 웹훅에 그대로 실려 온다 (문자열만 허용)
+            layout=layouts.normalize_layout(req.layout),
             **variables
         )
         # Creatomate 응답 처리

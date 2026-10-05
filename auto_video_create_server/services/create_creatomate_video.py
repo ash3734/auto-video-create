@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from .account_service import check_user_credits, deduct_credits, get_current_credits
 from .alerting import alert
 from .scene_counts import get_template_id, normalize_scene_count
-from .layouts import DEFAULT_LAYOUT, get_source
+from .layouts import DEFAULT_LAYOUT, extra_modifications, get_source
 
 load_dotenv()
 
@@ -66,6 +66,8 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
     if title:
         variables["title.text"] = title
     variables.update(kwargs)
+    # 배치마다 필요한 추가 값 (예: 흐린 배경형은 장면 사진을 배경에도 한 번 더 깐다)
+    variables.update(extra_modifications(layout, variables, scene_count))
     # 2026-10-05: 저장된 템플릿(template_id) 대신 코드에 든 템플릿 JSON(source)으로 렌더한다
     # — 배치를 코드로 늘리기 위해서다 (services/layouts.py). 파일을 못 읽으면 예전처럼
     # template_id 로 렌더한다. 결과는 같다 — 지금 배치의 JSON 은 그 템플릿의 복사본이다.
