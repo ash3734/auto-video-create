@@ -170,8 +170,17 @@ def render_url(sound_id: str) -> Optional[str]:
         return None
 
 
-def _audio(url: str) -> dict:
-    return {"name": "sfx", "type": "audio", "track": 9, "time": 0, "source": url, "volume": VOLUME}
+# 소리마다 원본 크기가 다르다 — 같은 45% 로 넣었더니 띵이 휙보다 약 7배 작게 들렸다
+# (2026-10-19 측정: 가장 큰 200ms 구간 RMS 휙 0.186 · 스윽 0.225 · 톡 0.168 · 띵 0.031).
+# 휙 45% 를 기준으로 RMS 를 맞춘 값이다. 띵은 맞추려면 266% 가 필요하지만 Creatomate 는
+# 200% 까지만 받는다 ("Expected a value between 0 and 200" 로 렌더 실패 — 2026-10-19).
+# 200% 면 다른 소리의 약 3/4 크기라, 가볍게 울리는 소리로는 충분하다.
+VOLUMES = {"whoosh": "45%", "swipe": "37%", "pop": "50%", "ding": "200%"}
+
+
+def _audio(url: str, sound_id: str = "") -> dict:
+    return {"name": "sfx", "type": "audio", "track": 9, "time": 0, "source": url,
+            "volume": VOLUMES.get(sound_id, VOLUME)}
 
 
 def apply(source: dict, sound=None, plan=None) -> dict:
@@ -203,10 +212,10 @@ def apply(source: dict, sound=None, plan=None) -> dict:
 
     for comp, sid in zip(scenes, steps):
         if sid and url_for(sid):
-            comp.setdefault("elements", []).append(_audio(url_for(sid)))
+            comp.setdefault("elements", []).append(_audio(url_for(sid), sid))
     for comp in src.get("elements") or []:
         if comp.get("name") == "composition_outro" and url_for(outro_sound):
-            comp.setdefault("elements", []).append(_audio(url_for(outro_sound)))
+            comp.setdefault("elements", []).append(_audio(url_for(outro_sound), outro_sound))
     return src
 
 

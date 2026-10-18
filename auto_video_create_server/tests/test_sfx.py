@@ -110,6 +110,17 @@ class TestAuto(unittest.TestCase):
         got = self._sounds(sfx.apply(src, "auto", [None, None, None, None, None]))
         self.assertEqual(got, {"composition_outro": "ding"})
 
+    def test_volumes_within_creatomate_limit(self):
+        """Creatomate 는 0~200% 만 받는다 — 넘으면 렌더 전체가 실패한다 (2026-10-19 확인)."""
+        for sid, vol in sfx.VOLUMES.items():
+            self.assertLessEqual(int(vol.rstrip("%")), 200, sid)
+        self.assertEqual(set(sfx.VOLUMES), {k for k in sfx.SOUNDS if k != "none"})
+
+    def test_quiet_chime_is_boosted(self):
+        got = sfx.apply(self.src, "auto", [None, "ding", None, None, None])
+        el = next(e for e in got["elements"][2]["elements"] if e.get("name") == "sfx")
+        self.assertEqual(el["volume"], sfx.VOLUMES["ding"])
+
     def test_clean_plan_rules(self):
         self.assertEqual(sfx.clean_plan(["ding", "pop", "x", None], 4), [None, "pop", None, None])  # 1번·모르는 값 제거
         full = sfx.clean_plan(["pop"] * 6, 6)
