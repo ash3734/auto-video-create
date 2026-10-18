@@ -230,6 +230,20 @@ def get_effects():
             "sounds": sfx.available_sounds()}
 
 
+class SfxPlanRequest(BaseModel):
+    scripts: List[str]
+
+
+@router.post("/sfx-plan")
+def sfx_plan(req: SfxPlanRequest, user=Depends(require_active_subscription)):
+    """POST /api/blog/sfx-plan — 대본을 보고 장면별 효과음 계획 (효과음 "자동"일 때).
+
+    영상 만들기 직전에 화면이 부른다. generate-video 안에서 부르지 않는 이유: 그 요청은
+    음성 생성까지 해서 API Gateway 29초에 이미 빠듯하다. 실패해도 기본 규칙 계획을 준다.
+    """
+    return {"plan": sfx.plan_sounds(req.scripts[:8])}
+
+
 class PlaceInfoRequest(BaseModel):
     text: str           # extract-all 이 돌려준 블로그 본문
 
@@ -429,7 +443,8 @@ class GenerateVideoRequest(BaseModel):
     outro: Optional[str] = None         # none | comment | follow | blog | custom
     outro_text: Optional[str] = None    # outro=custom 일 때
     # 효과음 (2026-10-18). 미전송/무효 시 없음 — 기존 결과물 유지.
-    sound: Optional[str] = None         # none | whoosh | swipe | pop | ding
+    sound: Optional[str] = None         # none | auto  (예전 화면은 소리 이름을 보낼 수 있다)
+    sfx_plan: Optional[List[Optional[str]]] = None   # sound=auto 일 때 POST /sfx-plan 이 준 계획
     # 맛집 정보카드 배치의 카드 내용 (2026-10-18). 다른 배치에서는 쓰지 않는다.
     place_name: Optional[str] = None
     place_location: Optional[str] = None
@@ -567,6 +582,7 @@ def generate_video(request: Request, req: GenerateVideoRequest,
             outro=bookends.normalize_outro(req.outro),
             outro_text=bookends.clean_text(req.outro_text),
             sound=sfx.normalize_sound(req.sound),
+            sfx_plan=req.sfx_plan,
             place=layouts.clean_place({"name": req.place_name, "location": req.place_location,
                                        "price": req.place_price}),
             **variables

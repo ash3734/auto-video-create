@@ -75,12 +75,61 @@ class TestStorage(unittest.TestCase):
             self.assertTrue(v["source_page"].startswith("https://pixabay.com/"), k)
             self.assertEqual(v["license"], "Pixabay Content License")
 
-    def test_listing_does_not_leak_cdn_or_bucket(self):
-        with mock.patch.object(sfx, "s3_client") as c:
-            c.return_value.generate_presigned_url.return_value = "https://signed"
-            blob = json.dumps(sfx.available_sounds())
-        self.assertNotIn("cdn.pixabay.com", blob)
-        self.assertNotIn(sfx.BUCKET, blob)
+    def test_choices_are_only_on_off(self):
+        """유저는 켤지 말지만 정한다 — 소리 종류는 AI 가 고른다 (2026-10-19 PO)."""
+        self.assertEqual([x["id"] for x in sfx.available_sounds()], ["none", "auto"])
+        self.assertNotIn("cdn.pixabay.com", json.dumps(sfx.available_sounds()))
+
+
+class TestAuto(unittest.TestCase):
+    def setUp(self):
+        self.src = layouts.get_source("letterbox", 5)
+        p = mock.patch.object(sfx, "render_url", side_effect=lambda sid: f"https://s3/{sid}.mp3?sig")
+        p.start(); self.addCleanup(p.stop)
+
+    def _sounds(self, src):
+        out = {}
+        for c in src["elements"]:
+            for e in c.get("elements") or []:
+                if e.get("name") == "sfx":
+                    out[c["name"]] = e["source"].split("/")[-1].split(".")[0]
+        return out
+
+    def test_follows_plan(self):
+        got = self._sounds(sfx.apply(self.src, "auto", [None, "ding", None, "pop", None]))
+        self.assertEqual(got, {"composition_2": "ding", "composition_4": "pop"})
+
+    def test_no_plan_uses_fallback_rule(self):
+        got = self._sounds(sfx.apply(self.src, "auto", None))
+        self.assertEqual(set(got.values()), {"whoosh"})
+        self.assertNotIn("composition_1", got)
+
+    def test_outro_gets_closing_ding(self):
+        v = {"image5.source": "x", "image5.visible": "true"}
+        src = bookends.apply(self.src, "none", None, "comment", None, v)
+        got = self._sounds(sfx.apply(src, "auto", [None, None, None, None, None]))
+        self.assertEqual(got, {"composition_outro": "ding"})
+
+    def test_clean_plan_rules(self):
+        self.assertEqual(sfx.clean_plan(["ding", "pop", "x", None], 4), [None, "pop", None, None])  # 1번·모르는 값 제거
+        full = sfx.clean_plan(["pop"] * 6, 6)
+        self.assertLessEqual(sum(1 for x in full if x), 3)                                         # 절반까지
+        self.assertEqual(sfx.clean_plan("garbage", 3), [None, None, None])
+
+    def test_plan_sounds_uses_ai_and_falls_back(self):
+        import openai
+        with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}), mock.patch.object(openai, "OpenAI") as cli:
+            cli.return_value.chat.completions.create.return_value = mock.Mock(choices=[mock.Mock(
+                message=mock.Mock(content=json.dumps({"sounds": ["none", "swipe", "none", "ding"]})))])
+            self.assertEqual(sfx.plan_sounds(["a", "b", "c", "d"]), [None, "swipe", None, "ding"])
+            self.assertLessEqual(cli.call_args.kwargs["timeout"], 10)
+            cli.return_value.chat.completions.create.side_effect = TimeoutError("slow")
+            self.assertEqual(sfx.plan_sounds(["a", "b", "c"]), sfx.default_plan(3))
+
+    def test_old_fixed_sound_still_works(self):
+        """예전 화면이 소리 이름을 보내도 깨지지 않는다 (2번 장면부터 장면마다)."""
+        got = self._sounds(sfx.apply(self.src, "pop"))
+        self.assertEqual(len(got), 4)
 
 
 class TestWiring(unittest.TestCase):
@@ -94,8 +143,10 @@ class TestWiring(unittest.TestCase):
             c.create_creatomate_video(["a.mp3"], ["대본"], title="t", user_id=None, scene_count=5, sound="whoosh")
         self.assertIn("https://s3/sfx.mp3?sig", rq.post.call_args.kwargs["data"])
         self.assertIsNone(blog.GenerateVideoRequest(title="t", scripts=["a"], sections=[]).sound)
-        with mock.patch.object(sfx, "s3_client"):
-            self.assertIn("none", [x["id"] for x in blog.get_effects()["sounds"]])
+        self.assertIn("auto", [x["id"] for x in blog.get_effects()["sounds"]])
+        with mock.patch.object(blog.sfx, "plan_sounds", return_value=[None, "ding"]) as ps:
+            self.assertEqual(blog.sfx_plan(blog.SfxPlanRequest(scripts=["a", "b"]), user={"id": "u"})["plan"], [None, "ding"])
+        ps.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -690,6 +690,29 @@ export default function Home() {
     setGenerateError(null);
     setGenerateSlow(false);
     setVideoUrl(null);
+    // 효과음 "자동"이면 영상 요청 직전에 AI 계획을 받는다 (10초 상한). generate-video 안에서
+    // 하지 않는 이유는 그 요청이 이미 API Gateway 29초에 빠듯해서다. 실패하면 계획 없이 보내고,
+    // 서버가 기본 규칙(장면마다 휙)으로 넣는다.
+    let sfxPlan: (string | null)[] | null = null;
+    if (sound === "auto") {
+      const planCtl = new AbortController();
+      const planTimer = setTimeout(() => planCtl.abort(), 10000);
+      try {
+        const r = await authFetch(`${API_BASE_URL}/api/blog/sfx-plan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scripts }),
+          signal: planCtl.signal,
+        });
+        const d = await r.json();
+        if (Array.isArray(d?.plan)) sfxPlan = d.plan;
+        dlog("효과음 계획", sfxPlan);
+      } catch (e) {
+        derr("효과음 계획 실패 — 서버 기본 규칙으로", { error: String(e) });
+      } finally {
+        clearTimeout(planTimer);
+      }
+    }
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180000); // 3분
     const startedAt = Date.now();
@@ -717,7 +740,7 @@ export default function Home() {
             : {}),
           ...(motion !== "none" ? { motion } : {}),
           ...(transition !== "none" ? { transition } : {}),
-          ...(sound !== "none" ? { sound } : {}),
+          ...(sound !== "none" ? { sound, ...(sfxPlan ? { sfx_plan: sfxPlan } : {}) } : {}),
           // 첫 화면·끝 화면 — "none" 이면 보내지 않는다. 직접 입력일 때만 문구를 같이 보낸다.
           ...(intro !== "none" ? { intro, ...(intro === "custom" ? { intro_text: introText } : {}) } : {}),
           ...(outro !== "none" ? { outro, ...(outro === "custom" ? { outro_text: outroText } : {}) } : {}),

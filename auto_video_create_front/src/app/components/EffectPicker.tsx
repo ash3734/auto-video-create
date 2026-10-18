@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * 화면 효과 — 사진 움직임 · 장면 전환 (2026-10-18, 백로그 3-7) · 효과음 (3-5).
+ * 화면 효과 — 사진 움직임 · 장면 전환 (2026-10-18, 백로그 3-7) · 효과음 켜기/끄기 (3-5, 위치·종류는 AI).
  *
  * 두 줄로 나눈 이유: 둘은 서로 독립이다. "확대는 하고 전환은 없이"처럼 조합해서 고른다.
  * 기본값은 둘 다 "없음"이라, 안 건드리면 지금까지와 같은 영상이 나온다.
@@ -90,8 +90,8 @@ export default function EffectPicker({
   onSelectSound,
   disabled = false,
 }: Props) {
-  // 효과음은 글로는 고를 수 없다 — 누르면 한 번 들려준다. 주소가 만료됐으면 조용히 넘어간다
-  // (선택은 그대로 되고, 렌더 때는 서버가 새 주소를 만든다).
+  // 효과음은 켤지 말지만 고른다 — 어디에 어떤 소리를 넣을지는 AI 가 정한다 (2026-10-19 PO).
+  // 선택지에 미리듣기 주소가 있으면 한 번 들려준다 (지금 서버는 주지 않는다).
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
   React.useEffect(() => () => audioRef.current?.pause(), []);
   const pickSound = (id: string) => {
@@ -120,7 +120,7 @@ export default function EffectPicker({
       )}
       {sounds.length > 0 && (
         <Row
-          label="효과음 (장면이 바뀔 때 · 누르면 들어볼 수 있어요)"
+          label="효과음 (켜면 대본을 보고 어울리는 장면 전환에 AI가 넣어요)"
           options={sounds}
           selected={sound}
           onSelect={pickSound}

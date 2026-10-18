@@ -34,7 +34,7 @@ def _extract_render_id(result):
 
 
 def create_creatomate_video(audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, user_id=None, scene_count=5, webhook_url=None, metadata=None, layout=DEFAULT_LAYOUT, motion=None, transition=None,
-                            intro=None, intro_text=None, outro=None, outro_text=None, sound=None, place=None, **kwargs):
+                            intro=None, intro_text=None, outro=None, outro_text=None, sound=None, sfx_plan=None, place=None, **kwargs):
     print("create_creatomate_video 호출")
 
     scene_count = normalize_scene_count(scene_count)
@@ -82,7 +82,7 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
         # 첫 화면 문구·끝 화면 (services/bookends.py). 이것도 안 고르면 그대로.
         source = bookends.apply(source, intro, intro_text, outro, outro_text, variables)
         # 효과음은 끝 화면까지 붙은 뒤에 넣는다 — 끝 화면 시작에도 한 번 울리게 (services/sfx.py).
-        source = sfx.apply(source, sound)
+        source = sfx.apply(source, sound, sfx_plan)
         payload = {"source": source, "modifications": variables}
     else:
         alert("config", "템플릿 JSON 없음 — template_id 로 렌더", layout=layout, scene_count=scene_count)
