@@ -20,6 +20,7 @@ import { Voice } from "./components/VoicePicker";
 import { Speed } from "./components/SpeedPicker";
 import { MusicTrack, MusicConcept, BGM_TEMPLATE_DEFAULT } from "./components/MusicPicker";
 import { EffectOption } from "./components/EffectPicker";
+import { BookendOption } from "./components/BookendPicker";
 import PublishKit, { SeoCopy } from "./components/PublishKit";
 
 interface MediaList {
@@ -177,6 +178,15 @@ export default function Home() {
   const [motion, setMotion] = useState<string>("none");
   const [transition, setTransition] = useState<string>("none");
 
+  // 첫 화면 문구 · 끝 화면 (2026-10-18). 기본 "none" — 안 건드리면 기존 결과물 그대로.
+  const [introOptions, setIntroOptions] = useState<BookendOption[]>([]);
+  const [outroOptions, setOutroOptions] = useState<BookendOption[]>([]);
+  const [bookendMaxText, setBookendMaxText] = useState<number>(40);
+  const [intro, setIntro] = useState<string>("none");
+  const [introText, setIntroText] = useState<string>("");
+  const [outro, setOutro] = useState<string>("none");
+  const [outroText, setOutroText] = useState<string>("");
+
   // 장면 수 선택 (4~8). 스크립트/이미지 슬롯 개수가 이 값을 따른다. 기본 5 = 기존 동작.
   const [sceneCount, setSceneCount] = useState<number>(5);
   const [availableSceneCounts, setAvailableSceneCounts] = useState<{ scene_count: number; available: boolean }[]>([]);
@@ -260,6 +270,24 @@ export default function Home() {
         if (Array.isArray(data?.transitions)) setTransitionOptions(data.transitions);
       } catch (e) {
         derr("화면 효과 목록 로드 실패 — 효과 없이 진행", { error: String(e) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // 첫 화면·끝 화면 선택지. 실패해도 UI 만 숨긴다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch(`${API_BASE_URL}/api/blog/bookends`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (Array.isArray(data?.intros)) setIntroOptions(data.intros);
+        if (Array.isArray(data?.outros)) setOutroOptions(data.outros);
+        if (typeof data?.max_text === "number") setBookendMaxText(data.max_text);
+      } catch (e) {
+        derr("첫 화면·끝 화면 목록 로드 실패 — 없이 진행", { error: String(e) });
       }
     })();
     return () => { cancelled = true; };
@@ -625,6 +653,9 @@ export default function Home() {
           // "none" 이면 보내지 않는다 — BE 기본값(효과 없음)과 같다
           ...(motion !== "none" ? { motion } : {}),
           ...(transition !== "none" ? { transition } : {}),
+          // 첫 화면·끝 화면 — "none" 이면 보내지 않는다. 직접 입력일 때만 문구를 같이 보낸다.
+          ...(intro !== "none" ? { intro, ...(intro === "custom" ? { intro_text: introText } : {}) } : {}),
+          ...(outro !== "none" ? { outro, ...(outro === "custom" ? { outro_text: outroText } : {}) } : {}),
         }),
         signal: controller.signal,
       });
@@ -1039,6 +1070,17 @@ export default function Home() {
                     transition={transition}
                     onSelectMotion={setMotion}
                     onSelectTransition={setTransition}
+                    intros={introOptions}
+                    outros={outroOptions}
+                    intro={intro}
+                    introText={introText}
+                    outro={outro}
+                    outroText={outroText}
+                    bookendMaxText={bookendMaxText}
+                    onIntro={setIntro}
+                    onIntroText={setIntroText}
+                    onOutro={setOutro}
+                    onOutroText={setOutroText}
                     disabled={loading}
                   />
                   {/* Row 경계 시선 유도 */}
@@ -1357,6 +1399,17 @@ export default function Home() {
                     transition={transition}
                     onSelectMotion={setMotion}
                     onSelectTransition={setTransition}
+                    intros={introOptions}
+                    outros={outroOptions}
+                    intro={intro}
+                    introText={introText}
+                    outro={outro}
+                    outroText={outroText}
+                    bookendMaxText={bookendMaxText}
+                    onIntro={setIntro}
+                    onIntroText={setIntroText}
+                    onOutro={setOutro}
+                    onOutroText={setOutroText}
                     disabled={loading}
                   />
                 </Box>

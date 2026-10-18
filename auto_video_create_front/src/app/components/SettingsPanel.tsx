@@ -30,6 +30,7 @@ import VoicePicker, { Voice } from './VoicePicker';
 import SpeedPicker, { Speed } from './SpeedPicker';
 import MusicPicker, { MusicTrack, MusicConcept, BGM_TEMPLATE_DEFAULT } from './MusicPicker';
 import EffectPicker, { EffectOption } from './EffectPicker';
+import BookendPicker, { BookendOption } from './BookendPicker';
 
 type Props = {
   /** 자막 */
@@ -65,6 +66,19 @@ type Props = {
   onSelectMotion: (id: string) => void;
   onSelectTransition: (id: string) => void;
 
+  /** 첫 화면 문구 · 끝 화면 */
+  intros: BookendOption[];
+  outros: BookendOption[];
+  intro: string;
+  introText: string;
+  outro: string;
+  outroText: string;
+  bookendMaxText: number;
+  onIntro: (id: string) => void;
+  onIntroText: (t: string) => void;
+  onOutro: (id: string) => void;
+  onOutroText: (t: string) => void;
+
   disabled?: boolean;
 };
 
@@ -92,6 +106,17 @@ export default function SettingsPanel({
   transition,
   onSelectMotion,
   onSelectTransition,
+  intros,
+  outros,
+  intro,
+  introText,
+  outro,
+  outroText,
+  bookendMaxText,
+  onIntro,
+  onIntroText,
+  onOutro,
+  onOutroText,
   disabled = false,
 }: Props) {
   const voiceName = voices.find(v => v.voice_id === voiceId)?.name ?? '기본';
@@ -112,6 +137,16 @@ export default function SettingsPanel({
     motion === 'none' && transition === 'none'
       ? ['효과 없음']
       : [motion === 'none' ? '사진 고정' : motionName, transition === 'none' ? '바로 전환' : `전환 ${transitionName}`];
+
+  // 첫 화면·끝 화면 요약. "직접 입력"인데 비어 있으면 실제로 아무것도 안 붙으니 "없음"으로 보여준다.
+  const bookendChip = (opts: BookendOption[], id: string, text: string, prefix: string) => {
+    if (id === 'none' || (id === 'custom' && !text.trim())) return null;
+    return `${prefix} ${opts.find(o => o.id === id)?.name ?? ''}`.trim();
+  };
+  const bookendChips = [
+    bookendChip(intros, intro, introText, '첫'),
+    bookendChip(outros, outro, outroText, '끝'),
+  ].filter((x): x is string => !!x);
 
   return (
     <Box sx={{ width: '100%' }}>
@@ -176,6 +211,36 @@ export default function SettingsPanel({
             transition={transition}
             onSelectMotion={onSelectMotion}
             onSelectTransition={onSelectTransition}
+            disabled={disabled}
+          />
+        </CollapsibleSection>
+      )}
+
+      {/* 첫 화면 문구 · 끝 화면 (백로그 3-6) */}
+      {(intros.length > 0 || outros.length > 0) && (
+        <CollapsibleSection
+          title="첫 화면 · 끝 화면"
+          badge="선택 사항"
+          summary={
+            <>
+              {(bookendChips.length ? bookendChips : ['없음']).map(t => (
+                <SummaryChip key={t} text={t} />
+              ))}
+            </>
+          }
+        >
+          <BookendPicker
+            intros={intros}
+            outros={outros}
+            intro={intro}
+            introText={introText}
+            outro={outro}
+            outroText={outroText}
+            maxText={bookendMaxText}
+            onIntro={onIntro}
+            onIntroText={onIntroText}
+            onOutro={onOutro}
+            onOutroText={onOutroText}
             disabled={disabled}
           />
         </CollapsibleSection>

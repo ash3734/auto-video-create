@@ -45,6 +45,7 @@ from services.voice_preview import get_preview_url
 from services import music
 from services import layouts
 from services import effects
+from services import bookends
 from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
 import os
@@ -226,6 +227,18 @@ def get_effects():
             "transitions": rows(effects.TRANSITIONS, effects.DEFAULT_TRANSITION)}
 
 
+@router.get("/bookends")
+def get_bookends():
+    """GET /api/blog/bookends — 첫 화면 문구·끝 화면 선택지. preview 는 화면에 미리 보여줄 문구."""
+    return {
+        "intros": [{"id": k, "name": v["name"], "description": v["description"],
+                    "is_default": k == bookends.DEFAULT_INTRO} for k, v in bookends.INTROS.items()],
+        "outros": [{"id": k, "name": v["name"], "description": v["description"], "preview": v["text"],
+                    "is_default": k == bookends.DEFAULT_OUTRO} for k, v in bookends.OUTROS.items()],
+        "max_text": bookends.MAX_TEXT,
+    }
+
+
 @router.get("/layouts")
 def get_layouts():
     """GET /api/blog/layouts — 고를 수 있는 화면 배치. is_default=true 가 지금까지의 배치다."""
@@ -394,6 +407,11 @@ class GenerateVideoRequest(BaseModel):
     # 화면 효과 (2026-10-18). 미전송/무효 시 효과 없음 — 기존 결과물 유지.
     motion: Optional[str] = None        # none | zoom
     transition: Optional[str] = None    # none | fade | punch
+    # 첫 화면 문구·끝 화면 (2026-10-18). 미전송/무효 시 없음 — 기존 결과물 유지.
+    intro: Optional[str] = None         # none | title | custom
+    intro_text: Optional[str] = None    # intro=custom 일 때
+    outro: Optional[str] = None         # none | comment | follow | blog | custom
+    outro_text: Optional[str] = None    # outro=custom 일 때
 
 class GenerateVideoResponse(BaseModel):
     status: str
@@ -522,6 +540,10 @@ def generate_video(request: Request, req: GenerateVideoRequest,
             layout=layouts.normalize_layout(req.layout),
             motion=effects.normalize_motion(req.motion),
             transition=effects.normalize_transition(req.transition),
+            intro=bookends.normalize_intro(req.intro),
+            intro_text=bookends.clean_text(req.intro_text),
+            outro=bookends.normalize_outro(req.outro),
+            outro_text=bookends.clean_text(req.outro_text),
             **variables
         )
         # Creatomate 응답 처리
