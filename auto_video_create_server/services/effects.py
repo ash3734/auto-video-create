@@ -12,7 +12,6 @@
 ## 장면 전환 (transition)
   none   지금 그대로 (기본값)
   fade   다음 장면이 부드럽게 나타난다
-  slide  다음 장면이 옆에서 밀려 들어온다
   punch  다음 장면이 살짝 크게 시작해 제자리로 — 화면을 바로 덮어 빈 바탕이 안 보인다
 
 Creatomate 의 진짜 "전환"(transition: true)은 두 장면을 겹쳐 그 만큼 영상을 줄인다.
@@ -32,7 +31,6 @@ MOTIONS = {
 TRANSITIONS = {
     "none": {"name": "없음", "description": "장면이 바로 바뀌어요"},
     "fade": {"name": "부드럽게", "description": "다음 장면이 스르르 나타나요"},
-    "slide": {"name": "밀어서", "description": "다음 장면이 옆에서 밀려 들어와요"},
     "punch": {"name": "다가오며", "description": "다음 장면이 확 다가오며 바뀌어요"},
 }
 DEFAULT_MOTION = "none"
@@ -62,17 +60,16 @@ def _zoom():
 
 
 def _entrance(kind: str):
-    # fade·slide 는 들어오는 동안 뒤의 검은 바탕이 잠깐 보인다 (앞 장면은 이미 끝났으므로).
-    # fade 는 "검게 갔다 밝아지는" 연출로 읽히지만, slide 는 빈 띠가 보인다 — 2026-10-18
-    # 샘플에서 확인. punch 는 첫 프레임부터 화면을 덮어 빈 바탕이 없다.
+    # fade 는 들어오는 동안 뒤의 검은 바탕이 잠깐 보인다 (앞 장면은 이미 끝났으므로) —
+    # "검게 갔다 밝아지는" 연출로 읽힌다. punch 는 첫 프레임부터 화면을 덮어 빈 바탕이 없다.
+    # slide(옆에서 밀려 들어오기)도 있었는데, 들어오는 동안 한쪽에 검은 띠가 보여
+    # 2026-10-18 PO 결정으로 뺐다.
     if kind == "fade":
         return {"type": "fade", "time": "start", "duration": TRANSITION_SECONDS}
     if kind == "punch":
         return {"type": "scale", "time": "start", "duration": TRANSITION_SECONDS,
                 "start_scale": "115%", "end_scale": "100%", "fade": False, "easing": "quadratic-out"}
-    # 왼쪽(180°)에서 오른쪽으로 들어온다. fade 를 끄면 뒤의 빈 바탕이 덜 비친다.
-    return {"type": "slide", "time": "start", "duration": TRANSITION_SECONDS,
-            "direction": "180°", "distance": "100%", "fade": False, "easing": "quadratic-out"}
+    raise ValueError(f"모르는 전환: {kind}")
 
 
 def apply(source: dict, motion=None, transition=None, variables=None) -> dict:

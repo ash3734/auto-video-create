@@ -393,7 +393,7 @@ class GenerateVideoRequest(BaseModel):
     layout: Optional[str] = None
     # 화면 효과 (2026-10-18). 미전송/무효 시 효과 없음 — 기존 결과물 유지.
     motion: Optional[str] = None        # none | zoom
-    transition: Optional[str] = None    # none | fade | slide | punch
+    transition: Optional[str] = None    # none | fade | punch
 
 class GenerateVideoResponse(BaseModel):
     status: str

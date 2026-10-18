@@ -39,7 +39,7 @@ class TestApply(unittest.TestCase):
 
     def test_does_not_mutate_input(self):
         before = json.dumps(self.src)
-        effects.apply(self.src, "zoom", "slide")
+        effects.apply(self.src, "zoom", "punch")
         self.assertEqual(json.dumps(self.src), before)
 
     def test_zoom_on_photo_scenes_only(self):
@@ -57,7 +57,7 @@ class TestApply(unittest.TestCase):
 
     def test_transitions_never_overlap_scenes(self):
         """transition: true 는 두 장면을 겹쳐 나레이션이 동시에 들린다 — 쓰지 않는다."""
-        for t in ("fade", "slide", "punch"):
+        for t in ("fade", "punch"):
             out = effects.apply(self.src, "zoom", t)
             self.assertNotIn('"transition": true', json.dumps(out), t)
 
@@ -69,10 +69,15 @@ class TestApply(unittest.TestCase):
     def test_works_on_blur_layout_too(self):
         with mock.patch.dict(os.environ, {"ENV": "production"}):
             src = layouts.get_source("blur_fill", 6)
-        out = _scenes(effects.apply(src, "zoom", "slide", {f"image{i}.visible": "true" for i in range(1, 7)}))
+        out = _scenes(effects.apply(src, "zoom", "punch", {f"image{i}.visible": "true" for i in range(1, 7)}))
         self.assertEqual(len(out), 6)
         for i, comp in enumerate(out, 1):
             self.assertTrue(_child(comp, f"image{i}").get("animations"))
+
+    def test_slide_was_removed(self):
+        """밀어서는 검은 띠가 보여 뺐다 (2026-10-18). 예전 화면이 보내도 효과 없음으로 흐른다."""
+        self.assertNotIn("slide", effects.TRANSITIONS)
+        self.assertEqual(effects.normalize_transition("slide"), "none")
 
     def test_zoom_is_modest(self):
         """확대가 크면 사진 가장자리가 많이 잘린다 (사진 안 자르기 원칙)."""
