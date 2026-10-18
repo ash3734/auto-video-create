@@ -35,6 +35,14 @@ SOURCES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "layout_s
 
 DEFAULT_LAYOUT = "letterbox"
 
+# 배치 미리보기 이미지 (scripts/render_layout_previews.py 가 만든다). 우리가 만든 샘플이라
+# 공개 버킷에 둔다. 새 배치를 추가하면 그 스크립트를 다시 돌려야 미리보기가 생긴다.
+PREVIEW_BASE = "https://auto-video-tts-files.s3.ap-northeast-2.amazonaws.com/static/layout-previews"
+
+
+def preview_url(layout_id: str) -> str:
+    return f"{PREVIEW_BASE}/{layout_id}.jpg"
+
 # 화면에 노출할 배치 목록. 새 배치는 여기에 추가한다.
 #   snapshot  — layout_sources/{id}/{env}_{n}.json 을 그대로 쓴다 (에디터에서 만든 것)
 #   builder   — 코드가 장면 수만큼 만든다 (_BUILDERS)

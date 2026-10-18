@@ -246,7 +246,7 @@ def get_layouts():
     """GET /api/blog/layouts — 고를 수 있는 화면 배치. is_default=true 가 지금까지의 배치다."""
     return {"layouts": [
         {"id": k, "name": v["name"], "description": v["description"],
-         "is_default": k == layouts.DEFAULT_LAYOUT}
+         "preview_url": layouts.preview_url(k), "is_default": k == layouts.DEFAULT_LAYOUT}
         for k, v in layouts.LAYOUTS.items()
     ]}
 

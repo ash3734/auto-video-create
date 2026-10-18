@@ -21,6 +21,7 @@ import { Speed } from "./components/SpeedPicker";
 import { MusicTrack, MusicConcept, BGM_TEMPLATE_DEFAULT } from "./components/MusicPicker";
 import { EffectOption } from "./components/EffectPicker";
 import { BookendOption } from "./components/BookendPicker";
+import { LayoutOption } from "./components/LayoutPicker";
 import PublishKit, { SeoCopy } from "./components/PublishKit";
 
 interface MediaList {
@@ -173,6 +174,9 @@ export default function Home() {
 
   // 화면 효과 (2026-10-18). 목록을 못 받으면 빈 배열 → UI 를 숨기고 아무것도 안 보낸다.
   // 기본은 둘 다 "none" — BE 도 미전송이면 효과 없음이라 기존 결과물 그대로다.
+  // 화면 배치 (2026-10-18). 기본 "letterbox" — 안 건드리면 지금까지와 같은 배치다.
+  const [layoutOptions, setLayoutOptions] = useState<LayoutOption[]>([]);
+  const [layout, setLayout] = useState<string>("letterbox");
   const [motionOptions, setMotionOptions] = useState<EffectOption[]>([]);
   const [transitionOptions, setTransitionOptions] = useState<EffectOption[]>([]);
   const [motion, setMotion] = useState<string>("none");
@@ -273,6 +277,24 @@ export default function Home() {
         if (Array.isArray(data?.sounds)) setSoundOptions(data.sounds);
       } catch (e) {
         derr("화면 효과 목록 로드 실패 — 효과 없이 진행", { error: String(e) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // 화면 배치 목록. 실패하거나 하나뿐이면 선택 UI 를 숨긴다 — BE 가 기본 배치로 흐른다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch(`${API_BASE_URL}/api/blog/layouts`);
+        const data = await res.json();
+        if (cancelled || !Array.isArray(data?.layouts)) return;
+        setLayoutOptions(data.layouts);
+        const def = data.layouts.find((l: LayoutOption) => l.is_default);
+        if (def) setLayout(def.id);
+      } catch (e) {
+        derr("화면 배치 목록 로드 실패 — 기본 배치로 진행", { error: String(e) });
       }
     })();
     return () => { cancelled = true; };
@@ -654,6 +676,8 @@ export default function Home() {
           // 빈 문자열(기본 음악)이면 보내지 않는다 — 템플릿 음악이 그대로 나간다
           ...(bgmId ? { bgm_id: bgmId } : {}),
           // "none" 이면 보내지 않는다 — BE 기본값(효과 없음)과 같다
+          // 기본 배치면 보내지 않는다 — BE 기본값과 같다
+          ...(layoutOptions.some(l => l.id === layout && !l.is_default) ? { layout } : {}),
           ...(motion !== "none" ? { motion } : {}),
           ...(transition !== "none" ? { transition } : {}),
           ...(sound !== "none" ? { sound } : {}),
@@ -1044,6 +1068,9 @@ export default function Home() {
                 {/* 영상 설정 모음 (자막·음성·속도·배경음악 — 전부 접힘 기본) */}
                 <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4, mt: 2 }}>
                   <SettingsPanel
+                    layouts={layoutOptions}
+                    layout={layout}
+                    onSelectLayout={setLayout}
                     onSubtitleSettingsChange={setSubtitleSettings}
                     voices={voices}
                     voiceId={voiceId}
@@ -1376,6 +1403,9 @@ export default function Home() {
                     모바일이라 한쪽에만 넣으면 사실상 없는 기능이 된다. */}
                 <Box sx={{ mb: 2 }}>
                   <SettingsPanel
+                    layouts={layoutOptions}
+                    layout={layout}
+                    onSelectLayout={setLayout}
                     onSubtitleSettingsChange={setSubtitleSettings}
                     voices={voices}
                     voiceId={voiceId}

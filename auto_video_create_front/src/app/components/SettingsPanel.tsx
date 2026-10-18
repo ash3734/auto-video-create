@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * 영상 설정 모음 — 자막 / 음성 / 말하는 속도 / 화면 효과 / 배경음악 (2026-09-27, 효과 2026-10-18).
+ * 영상 설정 모음 — 화면 배치 / 자막 / 음성 / 말하는 속도 / 화면 효과 / 배경음악 (2026-09-27, 효과 2026-10-18).
  *
  * ## 왜 모았나
  * 설정이 늘어나는 동안 자리를 그때그때 잡았다. 자막 스타일만 접히는 카드로 위에
@@ -31,8 +31,14 @@ import SpeedPicker, { Speed } from './SpeedPicker';
 import MusicPicker, { MusicTrack, MusicConcept, BGM_TEMPLATE_DEFAULT } from './MusicPicker';
 import EffectPicker, { EffectOption } from './EffectPicker';
 import BookendPicker, { BookendOption } from './BookendPicker';
+import LayoutPicker, { LayoutOption } from './LayoutPicker';
 
 type Props = {
+  /** 화면 배치 */
+  layouts: LayoutOption[];
+  layout: string;
+  onSelectLayout: (id: string) => void;
+
   /** 자막 */
   onSubtitleSettingsChange: (s: SubtitleSettings) => void;
 
@@ -86,6 +92,9 @@ type Props = {
 };
 
 export default function SettingsPanel({
+  layouts,
+  layout,
+  onSelectLayout,
   onSubtitleSettingsChange,
   voices,
   voiceId,
@@ -161,6 +170,17 @@ export default function SettingsPanel({
 
   return (
     <Box sx={{ width: '100%' }}>
+      {/* 화면 배치 — 영상의 생김새를 가장 크게 바꾸는 선택이라 맨 위 (백로그 2-1) */}
+      {layouts.length > 1 && (
+        <CollapsibleSection
+          title="화면 배치"
+          badge="선택 사항"
+          summary={<SummaryChip text={layouts.find(l => l.id === layout)?.name ?? '기본'} />}
+        >
+          <LayoutPicker layouts={layouts} selected={layout} onSelect={onSelectLayout} disabled={disabled} />
+        </CollapsibleSection>
+      )}
+
       {/* 자막 — 이 카드는 자체 접힘 UI 를 갖고 있다 (헤더 모양이 같아 나란히 쌓인다) */}
       <SubtitleStyleEditor onSettingsChange={onSubtitleSettingsChange} />
 

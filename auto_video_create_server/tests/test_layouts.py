@@ -152,6 +152,8 @@ class TestLayoutApi(unittest.TestCase):
         got = blog.get_layouts()["layouts"]
         self.assertEqual([x["id"] for x in got if x["is_default"]], ["letterbox"])
         self.assertIn("blur_fill", [x["id"] for x in got])
+        for x in got:
+            self.assertTrue(x["preview_url"].endswith(f"/{x['id']}.jpg"), x)
 
     def test_request_layout_optional(self):
         import api.blog as blog
