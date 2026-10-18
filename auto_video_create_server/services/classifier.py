@@ -16,9 +16,14 @@ SYSTEM_PROMPT = (
     "답은 반드시 'restaurant' 또는 'general' 한 단어만 출력."
 )
 
+# 분류 호출의 시간 상한 (초). 실패하면 'general' 로 넘어가는 부가 단계라 짧게 둔다 —
+# 대본 생성(summarize.LLM_TIMEOUT_SECONDS)과 합쳐 API Gateway 29초 안에 끝나야 한다.
+CLASSIFY_TIMEOUT_SECONDS = 5
+
 
 def _classify_with_claude(text: str) -> str:
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"],
+                                 timeout=CLASSIFY_TIMEOUT_SECONDS, max_retries=0)
     resp = client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=10,
@@ -34,7 +39,8 @@ def _classify_with_openai(text: str) -> str:
     """OpenAI fallback — ANTHROPIC_API_KEY 미설정 배포 환경에서 기존 동작 유지."""
     import openai
 
-    client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"],
+                           timeout=CLASSIFY_TIMEOUT_SECONDS, max_retries=0)
     resp = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[

@@ -349,7 +349,8 @@ GENERAL_PROMPT = """
 
 def _generate_with_claude(prompt, schema=None):
     """Claude Sonnet 으로 title+scripts JSON 텍스트 생성. refusal 시 None."""
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"],
+                                 timeout=LLM_TIMEOUT_SECONDS, max_retries=0)
     # Sonnet 5 는 adaptive thinking 이 기본이라 max_tokens 에 사고 토큰 여유가 필요.
     # effort=low: 파이프라인 지연을 gpt-3.5 수준으로 유지.
     response = client.messages.create(
@@ -390,12 +391,21 @@ def _generate_with_claude(prompt, schema=None):
 # 중앙값 0.2s / 최대 12s 라 여유 안에 있다. gpt-4o-mini(11.6s)는 그래서 뺐다.
 OPENAI_MODEL = "gpt-4.1-mini"
 
+# 대본 생성 호출의 시간 상한 (초). 2026-10-18 prod 에서 OpenAI 호출 하나가 응답 없이
+# 멈춰 람다 60초를 다 쓰고 끊겼다. SDK 기본값은 600초 + 재시도 2회라 사실상 무한이다.
+# 그런데 유저 요청은 API Gateway 가 **29초**에 끊는다 — 그 뒤로는 유저에게 504 만 가고
+# 우리 쪽 에러 처리(extract-all 의 안내 문구·알림)가 돌지 못한다.
+# 크롤링·분류까지 합쳐 29초 안에 실패를 돌려주도록 20초, 재시도 없음.
+# (평소 소요 5~7초, 최근 최대 12초)
+LLM_TIMEOUT_SECONDS = 20
+
 
 def _generate_with_openai(prompt):
     """OpenAI fallback — ANTHROPIC_API_KEY 미설정 배포 환경에서 기존 동작 유지."""
     import openai
 
-    client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"],
+                           timeout=LLM_TIMEOUT_SECONDS, max_retries=0)
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[
