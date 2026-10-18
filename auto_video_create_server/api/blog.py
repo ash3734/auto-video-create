@@ -47,6 +47,7 @@ from services import layouts
 from services import effects
 from services import bookends
 from services import sfx
+from services.place_info import extract_place
 from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
 import os
@@ -227,6 +228,19 @@ def get_effects():
     return {"motions": rows(effects.MOTIONS, effects.DEFAULT_MOTION),
             "transitions": rows(effects.TRANSITIONS, effects.DEFAULT_TRANSITION),
             "sounds": sfx.available_sounds()}
+
+
+class PlaceInfoRequest(BaseModel):
+    text: str           # extract-all 이 돌려준 블로그 본문
+
+
+@router.post("/place-info")
+def place_info(req: PlaceInfoRequest, user=Depends(require_active_subscription)):
+    """POST /api/blog/place-info — 맛집 정보카드에 넣을 가게 이름·위치·가격을 글에서 뽑는다.
+
+    유저가 정보카드 배치를 고를 때만 화면이 부른다. 글에 없는 값은 빈 칸 (지어내지 않음).
+    """
+    return {"place": extract_place(req.text)}
 
 
 @router.get("/bookends")
@@ -416,6 +430,10 @@ class GenerateVideoRequest(BaseModel):
     outro_text: Optional[str] = None    # outro=custom 일 때
     # 효과음 (2026-10-18). 미전송/무효 시 없음 — 기존 결과물 유지.
     sound: Optional[str] = None         # none | whoosh | swipe | pop | ding
+    # 맛집 정보카드 배치의 카드 내용 (2026-10-18). 다른 배치에서는 쓰지 않는다.
+    place_name: Optional[str] = None
+    place_location: Optional[str] = None
+    place_price: Optional[str] = None
 
 class GenerateVideoResponse(BaseModel):
     status: str
@@ -549,6 +567,8 @@ def generate_video(request: Request, req: GenerateVideoRequest,
             outro=bookends.normalize_outro(req.outro),
             outro_text=bookends.clean_text(req.outro_text),
             sound=sfx.normalize_sound(req.sound),
+            place=layouts.clean_place({"name": req.place_name, "location": req.place_location,
+                                       "price": req.place_price}),
             **variables
         )
         # Creatomate 응답 처리

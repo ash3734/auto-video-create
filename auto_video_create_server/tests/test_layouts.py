@@ -130,6 +130,56 @@ class TestBlurFillLayout(unittest.TestCase):
             self.assertEqual(layouts.get_source("blur_fill", 5), layouts.get_source("letterbox", 5))
 
 
+BUILDER_LAYOUTS = [k for k, v in layouts.LAYOUTS.items() if v["kind"] == "builder"]
+
+
+class TestAllBuilderLayouts(unittest.TestCase):
+    """코드로 만드는 배치 전부가 지켜야 할 규칙 (2026-10-18 배치 5종 추가)."""
+
+    def _src(self, lid, env, n):
+        with mock.patch.dict(os.environ, {"ENV": "production" if env == "prod" else "test"}):
+            return layouts.get_source(lid, n)
+
+    def test_names_watermark_and_subtitle_mapping(self):
+        for lid in BUILDER_LAYOUTS:
+            for n in ALLOWED_SCENE_COUNTS:
+                for env in ("prod", "test"):
+                    src = self._src(lid, env, n)
+                    names = set(_names(src))
+                    need = {"title", BGM_ELEMENT}
+                    for i in range(1, n + 1):
+                        need |= {f"image{i}", f"video{i}", f"audio{i}"}
+                    need |= {f"Subtitles-{x}" for x in SCENE_COUNT_CONFIG[n]["subtitle_suffixes"]}
+                    self.assertFalse(need - names, f"{lid} {env}_{n}: {need - names}")
+                    blob = json.dumps(src, ensure_ascii=False)
+                    self.assertEqual(WATERMARK_TEXT in blob, env == "test", f"{lid} {env}")
+                comps = [e for e in self._src(lid, "prod", n)["elements"]
+                         if (e.get("name") or "").startswith("composition_") and e["name"][-1].isdigit()]
+                self.assertEqual(len(comps), n, lid)
+                for i, c in enumerate(comps, 1):
+                    sub = next(e for e in c["elements"] if e["name"].startswith("Subtitles-"))
+                    self.assertEqual(sub["transcript_source"], f"audio{i}", lid)
+
+    def test_one_element_per_track_inside_every_layer(self):
+        """같은 층에서 트랙이 겹치면 Creatomate 는 하나만 그린다 (2026-10-18 미리보기에서 제목·카드가 빠짐)."""
+        for lid in BUILDER_LAYOUTS:
+            src = self._src(lid, "prod", 6)
+            for comp in src["elements"]:
+                tracks = [e.get("track") for e in comp.get("elements") or []]
+                self.assertEqual(len(tracks), len(set(tracks)), f"{lid}/{comp.get('name')}: {tracks}")
+
+    def test_subtitles_above_youtube_bottom_ui(self):
+        for lid in BUILDER_LAYOUTS:
+            src = self._src(lid, "prod", 5)
+            sub = layouts._find(src, "Subtitles-6K5")
+            self.assertLessEqual(float(sub["y"].rstrip("%")), 80, lid)
+
+    def test_photos_not_cropped_except_fullscreen(self):
+        for lid in BUILDER_LAYOUTS:
+            fit = layouts._find(self._src(lid, "prod", 5), "image1")["fit"]
+            self.assertEqual(fit, "cover" if lid == "fullscreen" else "contain", lid)
+
+
 class TestExtraModifications(unittest.TestCase):
     def test_photo_scene_gets_blurred_background(self):
         v = {"image1.source": "https://p/1.jpg", "image1.visible": "true",
@@ -139,6 +189,26 @@ class TestExtraModifications(unittest.TestCase):
         self.assertEqual(got["bg1.visible"], "true")
         self.assertEqual(got["bg2.visible"], "false")      # 영상 장면은 배경을 끈다
         self.assertNotIn("bg2.source", got)
+
+    def test_fullscreen_overrides_contain(self):
+        """공통 코드가 넣는 fit=contain 을 풀스크린에서만 덮어쓴다."""
+        got = layouts.extra_modifications("fullscreen", {"image1.source": "x", "image1.fit": "contain"}, 1)
+        self.assertEqual(got["image1.fit"], "cover")
+
+    def test_sns_profile_uses_user_id(self):
+        self.assertEqual(layouts.extra_modifications("sns_feed", {}, 1, {"user_id": "linkplc"})["profile_name.text"], "@linkplc")
+
+    def test_info_card_fields_and_hidden_when_empty(self):
+        got = layouts.extra_modifications("info_card", {}, 1, {"place": {"name": "세광양대창", "location": "신논현", "price": ""}})
+        self.assertEqual(got["place_name.text"], "세광양대창")
+        self.assertEqual(got["place_location.text"], "위치  신논현")
+        self.assertNotIn("place_card.visible", got)
+        self.assertEqual(layouts.extra_modifications("info_card", {}, 1, {"place": {}})["place_card.visible"], "false")
+
+    def test_clean_place(self):
+        got = layouts.clean_place({"name": "  가\n게  ", "location": "x" * 99, "price": 18000, "extra": "무시"})
+        self.assertEqual(got, {"name": "가 게", "location": "x" * layouts.PLACE_MAX, "price": "18000"})
+        self.assertEqual(layouts.clean_place(None), {"name": "", "location": "", "price": ""})
 
     def test_default_layout_adds_nothing(self):
         """기본 배치에는 bg 요소가 없다 — 보내면 Creatomate 가 400 을 낸다."""

@@ -31,13 +31,17 @@ import SpeedPicker, { Speed } from './SpeedPicker';
 import MusicPicker, { MusicTrack, MusicConcept, BGM_TEMPLATE_DEFAULT } from './MusicPicker';
 import EffectPicker, { EffectOption } from './EffectPicker';
 import BookendPicker, { BookendOption } from './BookendPicker';
-import LayoutPicker, { LayoutOption } from './LayoutPicker';
+import LayoutPicker, { LayoutOption, PlaceInfo } from './LayoutPicker';
 
 type Props = {
   /** 화면 배치 */
   layouts: LayoutOption[];
   layout: string;
   onSelectLayout: (id: string) => void;
+  place: PlaceInfo;
+  onPlaceChange: (p: PlaceInfo) => void;
+  onFetchPlace: () => void;
+  placeLoading: boolean;
 
   /** 자막 */
   onSubtitleSettingsChange: (s: SubtitleSettings) => void;
@@ -95,6 +99,10 @@ export default function SettingsPanel({
   layouts,
   layout,
   onSelectLayout,
+  place,
+  onPlaceChange,
+  onFetchPlace,
+  placeLoading,
   onSubtitleSettingsChange,
   voices,
   voiceId,
@@ -177,7 +185,17 @@ export default function SettingsPanel({
           badge="선택 사항"
           summary={<SummaryChip text={layouts.find(l => l.id === layout)?.name ?? '기본'} />}
         >
-          <LayoutPicker layouts={layouts} selected={layout} onSelect={onSelectLayout} disabled={disabled} />
+          <LayoutPicker
+            layouts={layouts}
+            selected={layout}
+            onSelect={onSelectLayout}
+            place={place}
+            onPlaceChange={onPlaceChange}
+            onFetchPlace={onFetchPlace}
+            placeLoading={placeLoading}
+            placeMax={30}
+            disabled={disabled}
+          />
         </CollapsibleSection>
       )}
 

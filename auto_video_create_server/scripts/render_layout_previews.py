@@ -35,6 +35,9 @@ SAMPLE_TITLE = "가로수길 브런치 카페 후기"
 SAMPLE_SUBTITLE = "창가 자리가 정말 예뻐요"
 SCENES = 5
 SNAPSHOT_AT = 1.0
+# 정보카드·SNS 배치가 쓰는 부가 정보의 샘플
+SAMPLE_CONTEXT = {"user_id": "brunch_diary",
+                  "place": {"name": "카페 선데이브런치", "location": "서울 강남구 가로수길 21", "price": "브런치 플레이트 18,000원"}}
 
 
 def preview_key(layout_id: str) -> str:
@@ -64,7 +67,7 @@ def render(layout_id: str, key: str) -> str:
     src.update({"output_format": "jpg", "snapshot_time": SNAPSHOT_AT})
     mods = {"title.text": SAMPLE_TITLE, "image1.source": SAMPLE_IMAGE, "image1.fit": "contain",
             "image1.visible": "true", "video1.visible": "false"}
-    mods.update(layouts.extra_modifications(layout_id, mods, SCENES))
+    mods.update(layouts.extra_modifications(layout_id, mods, SCENES, SAMPLE_CONTEXT))
     rid = _api("POST", "renders", key, {"source": src, "modifications": mods, "render_scale": 0.5})["id"]
     for _ in range(40):
         r = _api("GET", f"renders/{rid}", key)

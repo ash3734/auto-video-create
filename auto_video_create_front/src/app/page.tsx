@@ -21,7 +21,7 @@ import { Speed } from "./components/SpeedPicker";
 import { MusicTrack, MusicConcept, BGM_TEMPLATE_DEFAULT } from "./components/MusicPicker";
 import { EffectOption } from "./components/EffectPicker";
 import { BookendOption } from "./components/BookendPicker";
-import { LayoutOption } from "./components/LayoutPicker";
+import { LayoutOption, PlaceInfo } from "./components/LayoutPicker";
 import PublishKit, { SeoCopy } from "./components/PublishKit";
 
 interface MediaList {
@@ -177,6 +177,12 @@ export default function Home() {
   // 화면 배치 (2026-10-18). 기본 "letterbox" — 안 건드리면 지금까지와 같은 배치다.
   const [layoutOptions, setLayoutOptions] = useState<LayoutOption[]>([]);
   const [layout, setLayout] = useState<string>("letterbox");
+  // 맛집 정보카드 배치용. 블로그 본문은 extract-all 응답에서 받아 두었다가, 그 배치를
+  // 고를 때 한 번 가게 정보를 뽑는 데 쓴다 (다른 배치에서는 호출하지 않는다).
+  const [blogText, setBlogText] = useState<string>("");
+  const [place, setPlace] = useState<PlaceInfo>({ name: "", location: "", price: "" });
+  const [placeLoading, setPlaceLoading] = useState(false);
+  const placeFetchedFor = useRef<string>("");
   const [motionOptions, setMotionOptions] = useState<EffectOption[]>([]);
   const [transitionOptions, setTransitionOptions] = useState<EffectOption[]>([]);
   const [motion, setMotion] = useState<string>("none");
@@ -299,6 +305,30 @@ export default function Home() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  const fetchPlace = useCallback(async () => {
+    if (!blogText.trim()) return;
+    setPlaceLoading(true);
+    try {
+      const res = await authFetch(`${API_BASE_URL}/api/blog/place-info`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: blogText }),
+      });
+      const data = await res.json();
+      if (data?.place) setPlace({ name: data.place.name || "", location: data.place.location || "", price: data.place.price || "" });
+      placeFetchedFor.current = blogText;
+    } catch (e) {
+      derr("가게 정보 가져오기 실패 — 직접 입력", { error: String(e) });
+    } finally {
+      setPlaceLoading(false);
+    }
+  }, [blogText]);
+
+  // 정보카드를 처음 고르면 한 번만 자동으로 채운다. 유저가 고친 값을 다시 덮어쓰지 않는다.
+  useEffect(() => {
+    if (layout === "info_card" && blogText && placeFetchedFor.current !== blogText) void fetchPlace();
+  }, [layout, blogText, fetchPlace]);
 
   // 첫 화면·끝 화면 선택지. 실패해도 UI 만 숨긴다.
   useEffect(() => {
@@ -574,6 +604,10 @@ export default function Home() {
         const scriptList: string[] = (data.scripts || []).map((s: { script: string } | string) => typeof s === 'string' ? s : s.script);
         setScripts(scriptList);
         setTitle(data.title || "");
+        // 글이 바뀌면 이전 글의 가게 정보는 버린다
+        setBlogText(typeof data.text === "string" ? data.text : "");
+        setPlace({ name: "", location: "", price: "" });
+        placeFetchedFor.current = "";
         // 배포용 문구. 구버전 BE 나 생성 실패 시 필드가 없으므로 방어적으로 읽는다.
         const rawSeo = data.seo;
         if (rawSeo && typeof rawSeo === "object") {
@@ -678,6 +712,9 @@ export default function Home() {
           // "none" 이면 보내지 않는다 — BE 기본값(효과 없음)과 같다
           // 기본 배치면 보내지 않는다 — BE 기본값과 같다
           ...(layoutOptions.some(l => l.id === layout && !l.is_default) ? { layout } : {}),
+          ...(layout === "info_card"
+            ? { place_name: place.name, place_location: place.location, place_price: place.price }
+            : {}),
           ...(motion !== "none" ? { motion } : {}),
           ...(transition !== "none" ? { transition } : {}),
           ...(sound !== "none" ? { sound } : {}),
@@ -1071,6 +1108,10 @@ export default function Home() {
                     layouts={layoutOptions}
                     layout={layout}
                     onSelectLayout={setLayout}
+                    place={place}
+                    onPlaceChange={setPlace}
+                    onFetchPlace={() => void fetchPlace()}
+                    placeLoading={placeLoading}
                     onSubtitleSettingsChange={setSubtitleSettings}
                     voices={voices}
                     voiceId={voiceId}
@@ -1406,6 +1447,10 @@ export default function Home() {
                     layouts={layoutOptions}
                     layout={layout}
                     onSelectLayout={setLayout}
+                    place={place}
+                    onPlaceChange={setPlace}
+                    onFetchPlace={() => void fetchPlace()}
+                    placeLoading={placeLoading}
                     onSubtitleSettingsChange={setSubtitleSettings}
                     voices={voices}
                     voiceId={voiceId}
