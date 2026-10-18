@@ -46,6 +46,7 @@ from services import music
 from services import layouts
 from services import effects
 from services import bookends
+from services import sfx
 from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
 import os
@@ -219,12 +220,13 @@ def get_voices():
 
 @router.get("/effects")
 def get_effects():
-    """GET /api/blog/effects — 사진 움직임·장면 전환 선택지. is_default=true 가 지금까지의 동작이다."""
+    """GET /api/blog/effects — 사진 움직임·장면 전환·효과음 선택지. is_default=true 가 지금까지의 동작이다."""
     def rows(table, default):
         return [{"id": k, "name": v["name"], "description": v["description"], "is_default": k == default}
                 for k, v in table.items()]
     return {"motions": rows(effects.MOTIONS, effects.DEFAULT_MOTION),
-            "transitions": rows(effects.TRANSITIONS, effects.DEFAULT_TRANSITION)}
+            "transitions": rows(effects.TRANSITIONS, effects.DEFAULT_TRANSITION),
+            "sounds": sfx.available_sounds()}
 
 
 @router.get("/bookends")
@@ -412,6 +414,8 @@ class GenerateVideoRequest(BaseModel):
     intro_text: Optional[str] = None    # intro=custom 일 때
     outro: Optional[str] = None         # none | comment | follow | blog | custom
     outro_text: Optional[str] = None    # outro=custom 일 때
+    # 효과음 (2026-10-18). 미전송/무효 시 없음 — 기존 결과물 유지.
+    sound: Optional[str] = None         # none | whoosh | swipe | pop | ding
 
 class GenerateVideoResponse(BaseModel):
     status: str
@@ -544,6 +548,7 @@ def generate_video(request: Request, req: GenerateVideoRequest,
             intro_text=bookends.clean_text(req.intro_text),
             outro=bookends.normalize_outro(req.outro),
             outro_text=bookends.clean_text(req.outro_text),
+            sound=sfx.normalize_sound(req.sound),
             **variables
         )
         # Creatomate 응답 처리

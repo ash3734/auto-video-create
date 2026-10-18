@@ -177,6 +177,8 @@ export default function Home() {
   const [transitionOptions, setTransitionOptions] = useState<EffectOption[]>([]);
   const [motion, setMotion] = useState<string>("none");
   const [transition, setTransition] = useState<string>("none");
+  const [soundOptions, setSoundOptions] = useState<EffectOption[]>([]);
+  const [sound, setSound] = useState<string>("none");
 
   // 첫 화면 문구 · 끝 화면 (2026-10-18). 기본 "none" — 안 건드리면 기존 결과물 그대로.
   const [introOptions, setIntroOptions] = useState<BookendOption[]>([]);
@@ -268,6 +270,7 @@ export default function Home() {
         if (cancelled) return;
         if (Array.isArray(data?.motions)) setMotionOptions(data.motions);
         if (Array.isArray(data?.transitions)) setTransitionOptions(data.transitions);
+        if (Array.isArray(data?.sounds)) setSoundOptions(data.sounds);
       } catch (e) {
         derr("화면 효과 목록 로드 실패 — 효과 없이 진행", { error: String(e) });
       }
@@ -653,6 +656,7 @@ export default function Home() {
           // "none" 이면 보내지 않는다 — BE 기본값(효과 없음)과 같다
           ...(motion !== "none" ? { motion } : {}),
           ...(transition !== "none" ? { transition } : {}),
+          ...(sound !== "none" ? { sound } : {}),
           // 첫 화면·끝 화면 — "none" 이면 보내지 않는다. 직접 입력일 때만 문구를 같이 보낸다.
           ...(intro !== "none" ? { intro, ...(intro === "custom" ? { intro_text: introText } : {}) } : {}),
           ...(outro !== "none" ? { outro, ...(outro === "custom" ? { outro_text: outroText } : {}) } : {}),
@@ -1070,6 +1074,9 @@ export default function Home() {
                     transition={transition}
                     onSelectMotion={setMotion}
                     onSelectTransition={setTransition}
+                    sounds={soundOptions}
+                    sound={sound}
+                    onSelectSound={setSound}
                     intros={introOptions}
                     outros={outroOptions}
                     intro={intro}
@@ -1399,6 +1406,9 @@ export default function Home() {
                     transition={transition}
                     onSelectMotion={setMotion}
                     onSelectTransition={setTransition}
+                    sounds={soundOptions}
+                    sound={sound}
+                    onSelectSound={setSound}
                     intros={introOptions}
                     outros={outroOptions}
                     intro={intro}

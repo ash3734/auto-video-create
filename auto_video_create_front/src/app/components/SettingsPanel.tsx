@@ -61,10 +61,13 @@ type Props = {
   /** 화면 효과 */
   motions: EffectOption[];
   transitions: EffectOption[];
+  sounds: EffectOption[];
   motion: string;
   transition: string;
+  sound: string;
   onSelectMotion: (id: string) => void;
   onSelectTransition: (id: string) => void;
+  onSelectSound: (id: string) => void;
 
   /** 첫 화면 문구 · 끝 화면 */
   intros: BookendOption[];
@@ -102,10 +105,13 @@ export default function SettingsPanel({
   onMusicExpired,
   motions,
   transitions,
+  sounds,
   motion,
   transition,
+  sound,
   onSelectMotion,
   onSelectTransition,
+  onSelectSound,
   intros,
   outros,
   intro,
@@ -133,10 +139,15 @@ export default function SettingsPanel({
   // 화면 효과 요약. 둘 다 "없음"이면 한 칩으로 — "없음 · 없음"은 읽기 어색하다.
   const motionName = motions.find(m => m.id === motion)?.name ?? '없음';
   const transitionName = transitions.find(t => t.id === transition)?.name ?? '없음';
+  const soundName = sounds.find(o => o.id === sound)?.name ?? '없음';
   const effectChips =
-    motion === 'none' && transition === 'none'
+    motion === 'none' && transition === 'none' && sound === 'none'
       ? ['효과 없음']
-      : [motion === 'none' ? '사진 고정' : motionName, transition === 'none' ? '바로 전환' : `전환 ${transitionName}`];
+      : [
+          motion === 'none' ? '사진 고정' : motionName,
+          transition === 'none' ? '바로 전환' : `전환 ${transitionName}`,
+          ...(sound === 'none' ? [] : [`소리 ${soundName}`]),
+        ];
 
   // 첫 화면·끝 화면 요약. "직접 입력"인데 비어 있으면 실제로 아무것도 안 붙으니 "없음"으로 보여준다.
   const bookendChip = (opts: BookendOption[], id: string, text: string, prefix: string) => {
@@ -198,7 +209,7 @@ export default function SettingsPanel({
       )}
 
       {/* 화면 효과 — 사진 움직임 · 장면 전환 (백로그 3-7) */}
-      {(motions.length > 0 || transitions.length > 0) && (
+      {(motions.length > 0 || transitions.length > 0 || sounds.length > 0) && (
         <CollapsibleSection
           title="화면 효과"
           badge="선택 사항"
@@ -207,10 +218,13 @@ export default function SettingsPanel({
           <EffectPicker
             motions={motions}
             transitions={transitions}
+            sounds={sounds}
             motion={motion}
             transition={transition}
+            sound={sound}
             onSelectMotion={onSelectMotion}
             onSelectTransition={onSelectTransition}
+            onSelectSound={onSelectSound}
             disabled={disabled}
           />
         </CollapsibleSection>
