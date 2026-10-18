@@ -44,6 +44,7 @@ from services.voices import available_voices, normalize_voice_id
 from services.voice_preview import get_preview_url
 from services import music
 from services import layouts
+from services import effects
 from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
 import os
@@ -215,6 +216,16 @@ def get_voices():
     return {"voices": available_voices()}
 
 
+@router.get("/effects")
+def get_effects():
+    """GET /api/blog/effects — 사진 움직임·장면 전환 선택지. is_default=true 가 지금까지의 동작이다."""
+    def rows(table, default):
+        return [{"id": k, "name": v["name"], "description": v["description"], "is_default": k == default}
+                for k, v in table.items()]
+    return {"motions": rows(effects.MOTIONS, effects.DEFAULT_MOTION),
+            "transitions": rows(effects.TRANSITIONS, effects.DEFAULT_TRANSITION)}
+
+
 @router.get("/layouts")
 def get_layouts():
     """GET /api/blog/layouts — 고를 수 있는 화면 배치. is_default=true 가 지금까지의 배치다."""
@@ -380,6 +391,9 @@ class GenerateVideoRequest(BaseModel):
     bgm_id: Optional[str] = None
     # 화면 배치 (2026-10-05). 미전송/무효 시 기본 배치(letterbox) — 기존 결과물 유지.
     layout: Optional[str] = None
+    # 화면 효과 (2026-10-18). 미전송/무효 시 효과 없음 — 기존 결과물 유지.
+    motion: Optional[str] = None        # none | zoom
+    transition: Optional[str] = None    # none | fade | slide | punch
 
 class GenerateVideoResponse(BaseModel):
     status: str
@@ -506,6 +520,8 @@ def generate_video(request: Request, req: GenerateVideoRequest,
             webhook_url=webhooks.webhook_url(),
             metadata=user["id"],  # 웹훅에 그대로 실려 온다 (문자열만 허용)
             layout=layouts.normalize_layout(req.layout),
+            motion=effects.normalize_motion(req.motion),
+            transition=effects.normalize_transition(req.transition),
             **variables
         )
         # Creatomate 응답 처리

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * 영상 설정 모음 — 자막 / 음성 / 말하는 속도 / 배경음악 (2026-09-27).
+ * 영상 설정 모음 — 자막 / 음성 / 말하는 속도 / 화면 효과 / 배경음악 (2026-09-27, 효과 2026-10-18).
  *
  * ## 왜 모았나
  * 설정이 늘어나는 동안 자리를 그때그때 잡았다. 자막 스타일만 접히는 카드로 위에
@@ -29,6 +29,7 @@ import SubtitleStyleEditor, { SubtitleSettings } from './SubtitleStyleEditor';
 import VoicePicker, { Voice } from './VoicePicker';
 import SpeedPicker, { Speed } from './SpeedPicker';
 import MusicPicker, { MusicTrack, MusicConcept, BGM_TEMPLATE_DEFAULT } from './MusicPicker';
+import EffectPicker, { EffectOption } from './EffectPicker';
 
 type Props = {
   /** 자막 */
@@ -56,6 +57,14 @@ type Props = {
   onSelectBgm: (id: string) => void;
   onMusicExpired: () => Promise<MusicTrack[] | null>;
 
+  /** 화면 효과 */
+  motions: EffectOption[];
+  transitions: EffectOption[];
+  motion: string;
+  transition: string;
+  onSelectMotion: (id: string) => void;
+  onSelectTransition: (id: string) => void;
+
   disabled?: boolean;
 };
 
@@ -77,6 +86,12 @@ export default function SettingsPanel({
   bgmId,
   onSelectBgm,
   onMusicExpired,
+  motions,
+  transitions,
+  motion,
+  transition,
+  onSelectMotion,
+  onSelectTransition,
   disabled = false,
 }: Props) {
   const voiceName = voices.find(v => v.voice_id === voiceId)?.name ?? '기본';
@@ -89,6 +104,14 @@ export default function SettingsPanel({
       : bgmId === musicNoneId
         ? '음악 없음'
         : (musicTracks.find(t => t.id === bgmId)?.title ?? '기본 음악');
+
+  // 화면 효과 요약. 둘 다 "없음"이면 한 칩으로 — "없음 · 없음"은 읽기 어색하다.
+  const motionName = motions.find(m => m.id === motion)?.name ?? '없음';
+  const transitionName = transitions.find(t => t.id === transition)?.name ?? '없음';
+  const effectChips =
+    motion === 'none' && transition === 'none'
+      ? ['효과 없음']
+      : [motion === 'none' ? '사진 고정' : motionName, transition === 'none' ? '바로 전환' : `전환 ${transitionName}`];
 
   return (
     <Box sx={{ width: '100%' }}>
@@ -134,6 +157,25 @@ export default function SettingsPanel({
             speeds={speeds}
             selected={speed}
             onSelect={onSelectSpeed}
+            disabled={disabled}
+          />
+        </CollapsibleSection>
+      )}
+
+      {/* 화면 효과 — 사진 움직임 · 장면 전환 (백로그 3-7) */}
+      {(motions.length > 0 || transitions.length > 0) && (
+        <CollapsibleSection
+          title="화면 효과"
+          badge="선택 사항"
+          summary={<>{effectChips.map(t => <SummaryChip key={t} text={t} />)}</>}
+        >
+          <EffectPicker
+            motions={motions}
+            transitions={transitions}
+            motion={motion}
+            transition={transition}
+            onSelectMotion={onSelectMotion}
+            onSelectTransition={onSelectTransition}
             disabled={disabled}
           />
         </CollapsibleSection>

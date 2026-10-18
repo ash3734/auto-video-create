@@ -7,6 +7,7 @@ from .account_service import check_user_credits, deduct_credits, get_current_cre
 from .alerting import alert
 from .scene_counts import get_template_id, normalize_scene_count
 from .layouts import DEFAULT_LAYOUT, extra_modifications, get_source
+from . import effects
 
 load_dotenv()
 
@@ -32,7 +33,7 @@ def _extract_render_id(result):
     return None
 
 
-def create_creatomate_video(audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, user_id=None, scene_count=5, webhook_url=None, metadata=None, layout=DEFAULT_LAYOUT, **kwargs):
+def create_creatomate_video(audio_paths, scripts, title=None, output_path="creatomate_result.mp4", video5=None, user_id=None, scene_count=5, webhook_url=None, metadata=None, layout=DEFAULT_LAYOUT, motion=None, transition=None, **kwargs):
     print("create_creatomate_video 호출")
 
     scene_count = normalize_scene_count(scene_count)
@@ -73,6 +74,9 @@ def create_creatomate_video(audio_paths, scripts, title=None, output_path="creat
     # template_id 로 렌더한다. 결과는 같다 — 지금 배치의 JSON 은 그 템플릿의 복사본이다.
     source = get_source(layout, scene_count)
     if source is not None:
+        # 화면 효과(사진 확대·장면 전환)는 배치와 상관없이 렌더 직전에 얹는다 (services/effects.py).
+        # 안 고르면 그대로 — 기존 결과물이 바뀌지 않는다.
+        source = effects.apply(source, motion, transition, variables)
         payload = {"source": source, "modifications": variables}
     else:
         alert("config", "템플릿 JSON 없음 — template_id 로 렌더", layout=layout, scene_count=scene_count)
