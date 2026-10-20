@@ -90,6 +90,14 @@ class TestRefresh(unittest.TestCase):
         with mock.patch.object(naver_video, "resolve", return_value=None):
             self.assertEqual(naver_video.refresh(self.URL), self.URL)
 
+    def test_refresh_akamai_host(self):
+        # Lambda 에서 받으면 이 주소가 온다 — 만료 시각이 박혀 있어 꼭 새로 받아야 한다
+        url = ("https://a01-g-naver-vod.akamaized.net/blog/a/%s/pd/x.mp4"
+               "?__gda__=1792502056_abc&in_out_flag=1&avc_inkey=K" % VID)
+        with mock.patch.object(naver_video, "resolve", return_value="fresh") as r:
+            self.assertEqual(naver_video.refresh(url), "fresh")
+        r.assert_called_once_with(VID, "K")
+
     def test_other_hosts_untouched(self):
         with mock.patch.object(naver_video, "resolve") as r:
             self.assertEqual(naver_video.refresh("https://example.com/a.mp4"), "https://example.com/a.mp4")

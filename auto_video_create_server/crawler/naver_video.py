@@ -8,8 +8,8 @@ naver.py 는 `<video>` 태그만 찾았기 때문에 영상이 한 번도 잡히
 (2026-10-20 확인: prod 14일간 글 추출 186번, 영상 0개). 그래서 "영상은 추천을 안 해준다".
 
 ## 주소가 만료된다
-API 가 주는 mp4 주소에는 서명(`_lsu_sa_`)이 붙고, 재생 정보 자체에 만료 시각(30분 뒤)이
-있다. 유저가 선택 화면에 오래 머물면 영상을 만들 때 주소가 죽어 있을 수 있다.
+API 가 주는 mp4 주소에는 서명(`_lsu_sa_` 또는 `__gda__`)이 붙고, 재생 정보 자체에 만료
+시각(30분 뒤)이 있다. 유저가 선택 화면에 오래 머물면 영상을 만들 때 주소가 죽어 있을 수 있다.
 그래서 주소 끝에 inkey 를 붙여(KEY_PARAM) 돌려주고, 영상을 만들 때 refresh() 로 새 주소를
 다시 받는다. 네이버 CDN 은 모르는 쿼리를 무시한다(2026-10-20 확인). inkey 는 글 HTML 에
 그대로 공개된 값이다.
@@ -26,7 +26,9 @@ import requests
 from bs4 import Comment
 
 PLAY_API = "https://apis.naver.com/rmcnmv/rmcnmv/vod/play/v2.0/{vid}"
-VOD_HOST_SUFFIX = "naver-vod.pstatic.net"
+# 국내에서 받으면 pstatic.net, AWS(Lambda)에서 받으면 akamaized.net 주소가 온다 (2026-10-20 확인).
+# akamaized 쪽은 주소에 만료 시각(__gda__=유닉스초_서명, 약 30분 뒤)이 박혀 있다.
+VOD_HOST_SUFFIXES = ("naver-vod.pstatic.net", "naver-vod.akamaized.net")
 KEY_PARAM = "avc_inkey"
 MAX_VIDEOS = 8            # 글 하나에서 가져올 영상 수 (API 호출 수 = 이 값)
 TIMEOUT_SECONDS = 5
@@ -129,7 +131,7 @@ def _with_key(url: str, inkey: str) -> str:
 
 def is_naver_video(url) -> bool:
     try:
-        return isinstance(url, str) and urlparse(url).netloc.endswith(VOD_HOST_SUFFIX)
+        return isinstance(url, str) and urlparse(url).netloc.endswith(VOD_HOST_SUFFIXES)
     except Exception:
         return False
 
