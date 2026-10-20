@@ -678,6 +678,14 @@
   var TRIAL_ID = "test";
   var TRIAL_PW = "trial1234";
 
+  // 블로거 아웃리치 (2026-10-20). 댓글로 **개인 계정**을 받은 블로거도 이 랜딩에 와서
+  // "무료로 먼저 써보기"를 누르면 위 공용 체험(test 서버, 워터마크, 공용 아이디)으로 갔다.
+  // 영상까지 만든 3명 중 2명이 그렇게 워터마크 영상을 받았다. 댓글 링크로 온 사람은
+  // prod 로 보내고, 공용 아이디 대신 "댓글의 계정으로 로그인" 을 안내한다.
+  // 이미 단 댓글의 링크(utm_campaign=blogger_outreach)를 그대로 살리려고 랜딩에서 가른다.
+  var PROD_URL = "https://prod.d12cmkqgpved3i.amplifyapp.com/login";
+  var CONTACT_EMAIL = "";   // 비워 두면 크몽만 안내한다
+
   // 들어온 UTM 을 그대로 이벤트에 실어 보낸다.
   // 크몽이 유입 출처를 안 알려주므로 "어느 채널이 사람을 데려왔나"는 여기서만 알 수 있다.
   var params = new URLSearchParams(location.search);
@@ -685,6 +693,7 @@
   ["utm_source","utm_medium","utm_campaign","utm_content"].forEach(function(k){
     if (params.get(k)) utm[k] = params.get(k);
   });
+  var isOutreach = utm.utm_campaign === "blogger_outreach";
 
   function track(name, extra){
     var payload = Object.assign({}, utm, extra || {});
@@ -696,6 +705,10 @@
   }
 
   track("page_view_landing");
+
+  // 댓글 링크로 온 블로거는 써보러 온 사람이다 — 버튼을 찾게 하지 않고 바로 안내를 띄운다.
+  // (GA4: 랜딩 평균 참여 21초. 둘러보다 나가기 전에 로그인 길을 보여준다)
+  if (isOutreach) setTimeout(function(){ openOutreachModal(); }, 600);
 
   // 버튼 하나가 두 개의 이벤트를 남긴다 (2026-08-30).
   //
@@ -745,7 +758,7 @@
       // 아이디를 몰라 그대로 이탈한다.
       if (isTrial) {
         e.preventDefault();
-        openTrialModal();
+        if (isOutreach) openOutreachModal(); else openTrialModal();
         return;
       }
 
@@ -754,6 +767,42 @@
       el.setAttribute("rel", "noopener");
     });
   });
+
+  // ── 블로거 전용 안내 팝업 (댓글 링크로 온 사람) ──────────────
+  // 계정은 댓글에 있으니 여기서는 보여주지 않는다. 대신 문의처를 크게 —
+  // 문의할 곳을 몰라 댓글에 대댓글로 묻는 분들이 있었다 (2026-10-20 PO).
+  function openOutreachModal(){
+    if (document.getElementById("trial-modal")) return;
+    var contact =
+      '<li>궁금한 점은 <a href="' + KMONG_URL + '" target="_blank" rel="noopener" class="tm-kmong"><b>크몽 메시지</b></a>' +
+      (CONTACT_EMAIL ? ' 또는 메일 <b>' + CONTACT_EMAIL + '</b>' : '') + '로 편하게 물어봐 주세요.</li>';
+    var wrap = document.createElement("div");
+    wrap.id = "trial-modal";
+    wrap.innerHTML =
+      '<div class="tm-back"></div>' +
+      '<div class="tm-box" role="dialog" aria-modal="true" aria-label="블로거 전용 계정">' +
+        '<h3>댓글로 받으신 계정으로 써보세요</h3>' +
+        '<p class="tm-sub">비밀 댓글에 적어 드린 아이디·비밀번호로 로그인하시면 돼요.</p>' +
+        '<ul class="tm-note">' +
+          '<li>워터마크 없이 만들어져서 <b>그대로 올리셔도 돼요.</b></li>' +
+          contact +
+        '</ul>' +
+        '<a class="btn btn-primary btn-block tm-go" href="' + PROD_URL + '" target="_blank" rel="noopener">로그인하러 가기</a>' +
+        '<button type="button" class="tm-close">닫기</button>' +
+      '</div>';
+    document.body.appendChild(wrap);
+
+    wrap.addEventListener("click", function(ev){
+      var t = ev.target;
+      if (t.classList.contains("tm-back") || t.classList.contains("tm-close")) { wrap.remove(); return; }
+      if (t.classList.contains("tm-go")) track("outreach_modal_go", utm);
+      if (t.closest && t.closest(".tm-kmong")) track("outreach_modal_kmong", utm);
+    });
+    document.addEventListener("keydown", function esc(ev){
+      if (ev.key === "Escape") { wrap.remove(); document.removeEventListener("keydown", esc); }
+    });
+    track("outreach_modal_open", utm);
+  }
 
   // ── 체험 계정 안내 팝업 ───────────────────────────────────
   // alert() 로는 복사가 안 되고 줄바꿈도 지저분하다. 복사 버튼이 있어야

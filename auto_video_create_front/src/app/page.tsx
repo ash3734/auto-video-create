@@ -13,6 +13,8 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate';
 import AuthGuard from "../components/AuthGuard";
 import { normalizeBlogUrl } from "./utils/blogUrl";
+// 공통 fetch — X-USER-ID 헤더 + 동시 GET 수 제한 (Lambda 동시 실행 한도 10)
+import { authFetch } from "./utils/apiFetch";
 import LogoutButton from "../components/LogoutButton";
 import ChangePasswordButton from "../components/ChangePasswordButton";
 import MyVideosButton from "../components/MyVideosButton";
@@ -120,15 +122,6 @@ const derr = (label: string, data?: unknown) => {
 
 const getProxiedImageUrl = (url: string) => `/api/image-proxy?url=${encodeURIComponent(url)}`;
 
-// 공통 fetch wrapper 함수 추가
-function authFetch(url: string, options: RequestInit = {}) {
-  const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
-  const headers = {
-    ...(options.headers || {}),
-    "X-USER-ID": userId ?? "",
-  };
-  return fetch(url, { ...options, headers });
-}
 
 export default function Home() {
   const [blogUrl, setBlogUrl] = useState("");
