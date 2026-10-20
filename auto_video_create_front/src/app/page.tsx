@@ -9,6 +9,8 @@ import Confetti from 'react-confetti';
 import CloseIcon from '@mui/icons-material/Close';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import EditIcon from '@mui/icons-material/Edit';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate';
 import AuthGuard from "../components/AuthGuard";
 import { normalizeBlogUrl } from "./utils/blogUrl";
 import LogoutButton from "../components/LogoutButton";
@@ -23,6 +25,7 @@ import { EffectOption } from "./components/EffectPicker";
 import { BookendOption } from "./components/BookendPicker";
 import { LayoutOption, PlaceInfo } from "./components/LayoutPicker";
 import PublishKit, { SeoCopy } from "./components/PublishKit";
+import MediaPickerDialog from "./components/MediaPickerDialog";
 
 interface MediaList {
   images: string[];
@@ -43,7 +46,8 @@ interface SectionMedia {
 }
 
 // VOC-2: extract-all 응답의 suggested_sections 원소 타입 (BE 계약)
-type SuggestedSection = { type: 'image'; url: string } | { type: 'default'; url: null };
+// 2026-10-20: 'video' 추가 — 서버가 블로그 영상도 추천한다. 이 타입을 모르면 추천 전체가 버려진다.
+type SuggestedSection = { type: 'image' | 'video'; url: string } | { type: 'default'; url: null };
 
 // VOC-2: BE 응답의 suggested_sections 를 방어적으로 파싱한다.
 // 형식이 계약과 조금이라도 다르면(구버전 BE 포함) null 을 반환해 기존 동작(빈 슬롯)으로 폴백한다.
@@ -53,8 +57,8 @@ function parseSuggestedSections(raw: unknown, expectedLength: number): Suggested
   for (const item of raw) {
     if (!item || typeof item !== "object") return null;
     const { type, url } = item as { type?: unknown; url?: unknown };
-    if (type === "image" && typeof url === "string" && url.length > 0) {
-      parsed.push({ type: "image", url });
+    if ((type === "image" || type === "video") && typeof url === "string" && url.length > 0) {
+      parsed.push({ type, url });
     } else if (type === "default" && (url === null || url === undefined)) {
       parsed.push({ type: "default", url: null });
     } else {
@@ -544,6 +548,21 @@ export default function Home() {
     setAutoFilledImageCount(prev => (prev > 0 ? prev - 1 : 0));
   };
 
+  // 장면 카드의 "바꾸기" → 그 장면에 넣을 사진·영상 고르기 (MediaPickerDialog).
+  // 다른 장면에 쓰인 걸 고르면 두 장면을 맞바꾼다 — 같은 사진이 두 번 들어가지 않게.
+  const [pickerSlot, setPickerSlot] = useState<number | null>(null);
+  const handlePickForSlot = (slot: number, type: 'image' | 'video', url: string) => {
+    setSectionMedia(prev => {
+      const updated = [...prev];
+      const from = updated.findIndex(m => m && m.url === url);
+      if (from === slot) return prev;
+      const before = updated[slot];
+      updated[slot] = { type, url };
+      if (from !== -1) updated[from] = before ?? null;
+      return updated;
+    });
+  };
+
   // 섹션 미디어 해제 핸들러 (스크립트별 미리보기에서 X 클릭)
   const handleSectionMediaDeselect = (idx: number) => {
     setSectionMedia(prev => {
@@ -635,8 +654,8 @@ export default function Home() {
           let imageCount = 0;
           suggested.forEach((item, i) => {
             if (i >= filled.length) return;
-            if (item.type === 'image') {
-              filled[i] = { type: 'image', url: item.url };
+            if (item.type === 'image' || item.type === 'video') {
+              filled[i] = { type: item.type, url: item.url };
               imageCount++;
             } else {
               filled[i] = { type: 'default', url: null, isDefaultBackground: true };
@@ -1186,7 +1205,7 @@ export default function Home() {
                     variant="body2"
                     sx={{ color: '#666', mb: 2, fontSize: 13 }}
                   >
-                    이미지를 선택해 주세요 — {sceneCount}개를 모두 고르면 숏폼 만들기가 활성화됩니다.
+                    장면마다 사진이나 영상을 하나씩 넣어 주세요 — {sceneCount}개를 모두 채우면 숏폼 만들기가 활성화됩니다.
                   </Typography>
                   {/* VOC-2: suggested_sections 로 자동 채워진 슬롯이 있을 때만 안내 */}
                   {autoFilledImageCount > 0 && (
@@ -1194,14 +1213,14 @@ export default function Home() {
                       variant="body2"
                       sx={{ color: '#666', mb: 0.5, fontSize: 13, wordBreak: 'keep-all' }}
                     >
-                      글 내용에 맞춰 이미지를 자동으로 넣어드렸어요.
+                      글 내용에 맞춰 사진·영상을 자동으로 넣어드렸어요. 장면마다 <b>바꾸기</b>를 누르면 다른 걸로 고를 수 있어요.
                     </Typography>
                   )}
                   <Typography
                     variant="body2"
                     sx={{ color: '#666', mb: 2, fontSize: 13, wordBreak: 'keep-all' }}
                   >
-                    오른쪽 이미지를 원하는 스크립트로 끌어다 놓아 보세요. 스크립트끼리 끌어서 순서도 바꿀 수 있어요.
+                    오른쪽 사진·영상을 장면으로 끌어다 놓아도 돼요. 장면끼리 끌어서 순서도 바꿀 수 있어요.
                   </Typography>
                 </Box>
                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 4, px: 4, py: 2, maxWidth: 1200, mx: 'auto', width: '100%' }}>
@@ -1330,12 +1349,29 @@ export default function Home() {
                                   style={{ width: '100%', height: 200, objectFit: 'contain', background: '#333', borderRadius: 8 }}
                                 />
                               ) : (
+                                // 영상에서는 소리를 끄고 자르지 않는다 (서버 scene_media.video_slot_variables)
                                 <video
                                   src={section.url as string}
-                                  style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 8 }}
+                                  muted
+                                  playsInline
+                                  style={{ width: '100%', height: 200, objectFit: 'contain', background: '#333', borderRadius: 8 }}
                                   controls
                                 />
                               )}
+                              <Button
+                                size="small"
+                                variant="contained"
+                                startIcon={<SwapHorizIcon />}
+                                onClick={() => setPickerSlot(idx)}
+                                sx={{
+                                  position: 'absolute', right: 8, bottom: section.type === 'video' ? 48 : 8,
+                                  bgcolor: 'rgba(255,255,255,0.95)', color: '#1a1a1a', fontWeight: 600,
+                                  boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+                                  '&:hover': { bgcolor: '#fff' },
+                                }}
+                              >
+                                바꾸기
+                              </Button>
                               <IconButton
                                 size="small"
                                 onClick={() => handleSectionMediaDeselect(idx)}
@@ -1351,9 +1387,20 @@ export default function Home() {
                               </IconButton>
                             </Box>
                           )}
+                          {!section && (
+                            <Button
+                              fullWidth
+                              variant="outlined"
+                              startIcon={<AddPhotoAlternateIcon />}
+                              onClick={() => setPickerSlot(idx)}
+                              sx={{ mt: 1, height: 96, borderStyle: 'dashed', borderRadius: 2 }}
+                            >
+                              사진·영상 고르기
+                            </Button>
+                          )}
                           {section?.type === 'default' && (
                             <Typography variant="body2" color="text.secondary" sx={{ mt: 1, wordBreak: 'keep-all' }}>
-                              AI가 만든 배경이에요. 마음에 안 들면 오른쪽에서 사진을 직접 고르세요.
+                              AI가 만든 배경이에요. 마음에 안 들면 <b>바꾸기</b>를 눌러 글의 사진·영상을 고르세요.
                             </Typography>
                           )}
                         </Paper>
@@ -1362,7 +1409,7 @@ export default function Home() {
                   </Paper>
                   {/* 오른쪽: 이미지/영상 선택 */}
                   <Paper elevation={3} sx={{ flex: 1, p: 4, borderRadius: 4, minWidth: 340, maxWidth: 600, bgcolor: '#fff', boxShadow: '0 4px 24px rgba(0,0,0,0.04)' }}>
-                    <Typography variant="h6" fontWeight={700} gutterBottom>이미지 선택</Typography>
+                    <Typography variant="h6" fontWeight={700} gutterBottom>사진</Typography>
                     <Box
                       sx={{
                         maxHeight: 400,
@@ -1420,7 +1467,10 @@ export default function Home() {
                         })}
                       </Box>
                     </Box>
-                    <Typography variant="h6" fontWeight={700} gutterBottom sx={{ mt: 4 }}>영상 선택</Typography>
+                    <Typography variant="h6" fontWeight={700} gutterBottom sx={{ mt: 4 }}>영상</Typography>
+                    {media.videos.length === 0 && (
+                      <Typography sx={{ fontSize: 13, color: '#999' }}>글에 영상이 없어요.</Typography>
+                    )}
                     <Box sx={{ maxHeight: 400, overflowY: 'scroll', pr: 1, mb: 2, scrollbarGutter: 'stable', '&::-webkit-scrollbar': { width: '10px', background: '#f2f4f8' }, '&::-webkit-scrollbar-thumb': { background: '#d1d5db', borderRadius: 8 }, '&::-webkit-scrollbar-corner': { background: '#f2f4f8' } }}>
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                         {media.videos.map((url) => {
@@ -1449,7 +1499,7 @@ export default function Home() {
                 {/* VOC-2: suggested_sections 로 자동 채워진 슬롯이 있을 때만 안내 */}
                 {autoFilledImageCount > 0 && (
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2, wordBreak: 'keep-all' }}>
-                    글 내용에 맞춰 이미지를 자동으로 넣어드렸어요. 눌러서 바꿀 수 있어요.
+                    글 내용에 맞춰 사진·영상을 자동으로 넣어드렸어요. 장면마다 <b>바꾸기</b>를 누르면 다른 걸로 고를 수 있어요.
                   </Typography>
                 )}
                 <TextField
@@ -1552,33 +1602,52 @@ export default function Home() {
                           </IconButton>
                         </Box>
                       )}
-                      {/* cycle-2: AI 기본 배경 슬롯은 모바일에서도 안내 카피 + 그라디언트 패널 표시 */}
-                      {section?.type === 'default' && (
-                        <>
-                          <Box sx={{ mt: 1, position: 'relative' }}>
-                            {section.url ? (
-                              <img
-                                src={section.url}
-                                alt={`스크립트 ${idx + 1} AI 배경`}
-                                style={{ width: '100%', height: 120, objectFit: 'contain', background: '#333', borderRadius: 8 }}
-                              />
-                            ) : (
-                              <Box sx={{
-                                width: '100%',
-                                height: 120,
-                                borderRadius: 2,
-                                background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: 1,
-                              }}>
-                                {aiBgLoading && <CircularProgress size={16} />}
-                                <Typography sx={{ fontSize: 12, color: '#7a8aa0' }}>
-                                  {aiBgLoading ? 'AI 배경 만드는 중' : '영상 만들 때 들어갑니다'}
-                                </Typography>
-                              </Box>
-                            )}
+                      {/* 모바일 장면 카드에도 넣은 사진·영상을 보여주고 바로 바꾸게 한다 (2026-10-20).
+                          그 전엔 AI 배경만 보이고, 고른 사진은 아래 갤러리의 "N번" 표시로만 알 수 있었다. */}
+                      {section ? (
+                        <Box sx={{ mt: 1, position: 'relative' }}>
+                          {section.type === 'image' ? (
+                            <img
+                              src={getProxiedImageUrl(section.url as string)}
+                              alt={`스크립트 ${idx + 1} 이미지`}
+                              onError={() => handleSectionImageError(idx)}
+                              onClick={() => setPickerSlot(idx)}
+                              style={{ width: '100%', height: 160, objectFit: 'contain', background: '#333', borderRadius: 8, display: 'block' }}
+                            />
+                          ) : section.type === 'video' ? (
+                            <video
+                              src={`${section.url}#t=0.1`}
+                              muted
+                              playsInline
+                              controls
+                              preload="metadata"
+                              style={{ width: '100%', height: 160, objectFit: 'contain', background: '#333', borderRadius: 8, display: 'block' }}
+                            />
+                          ) : section.url ? (
+                            <img
+                              src={section.url}
+                              alt={`스크립트 ${idx + 1} AI 배경`}
+                              onClick={() => setPickerSlot(idx)}
+                              style={{ width: '100%', height: 160, objectFit: 'contain', background: '#333', borderRadius: 8, display: 'block' }}
+                            />
+                          ) : (
+                            <Box sx={{
+                              width: '100%',
+                              height: 120,
+                              borderRadius: 2,
+                              background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 1,
+                            }}>
+                              {aiBgLoading && <CircularProgress size={16} />}
+                              <Typography sx={{ fontSize: 12, color: '#7a8aa0' }}>
+                                {aiBgLoading ? 'AI 배경 만드는 중' : '영상 만들 때 들어갑니다'}
+                              </Typography>
+                            </Box>
+                          )}
+                          {section.type !== 'image' && (
                             <Box sx={{
                               position: 'absolute',
                               top: 6,
@@ -1590,17 +1659,34 @@ export default function Home() {
                               px: 1,
                               py: 0.25,
                               borderRadius: 999,
-                            }}>AI 기본 배경</Box>
-                          </Box>
-                          <Typography variant="body2" color="text.secondary" sx={{ mt: 1, wordBreak: 'keep-all' }}>
-                            AI가 만든 배경이에요. 마음에 안 들면 아래에서 사진을 직접 고르세요.
-                          </Typography>
-                        </>
-                      )}
-                      {idx === scripts.length - 1 && (
-                        <Typography variant="body2" color="secondary" sx={{ mt: 1 }}>
-                          이 스크립트에는 영상을 선택해 주세요.
-                        </Typography>
+                              pointerEvents: 'none',
+                            }}>{section.type === 'video' ? '영상' : 'AI 기본 배경'}</Box>
+                          )}
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<SwapHorizIcon />}
+                            onClick={() => setPickerSlot(idx)}
+                            sx={{
+                              position: 'absolute', right: 6, top: 6,
+                              bgcolor: 'rgba(255,255,255,0.95)', color: '#1a1a1a', fontWeight: 600,
+                              boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+                              '&:hover': { bgcolor: '#fff' },
+                            }}
+                          >
+                            바꾸기
+                          </Button>
+                        </Box>
+                      ) : (
+                        <Button
+                          fullWidth
+                          variant="outlined"
+                          startIcon={<AddPhotoAlternateIcon />}
+                          onClick={() => setPickerSlot(idx)}
+                          sx={{ mt: 1, height: 72, borderStyle: 'dashed', borderRadius: 2 }}
+                        >
+                          사진·영상 고르기
+                        </Button>
                       )}
                     </Box>
                   );
@@ -1822,6 +1908,16 @@ export default function Home() {
         </Snackbar>
 
         {/* 이미지 확대 모달 */}
+        <MediaPickerDialog
+          slot={pickerSlot}
+          images={media?.images ?? []}
+          videos={media?.videos ?? []}
+          sections={sectionMedia}
+          imageSrc={getProxiedImageUrl}
+          onPick={handlePickForSlot}
+          onClose={() => setPickerSlot(null)}
+          fullScreen={!isPc}
+        />
         <Dialog open={!!zoomImg} onClose={() => setZoomImg(null)} maxWidth="md" PaperProps={{ sx: { borderRadius: 3, p: 2, bgcolor: '#fff' } }}>
           {zoomImg && (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 2 }}>

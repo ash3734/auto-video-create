@@ -136,7 +136,7 @@ def extra_modifications(layout_id, variables: dict, scene_count: int, context=No
 
     blur_fill : 장면 사진을 배경(bg{N})에도 한 번 더 깐다. 영상 장면은 배경을 끈다 —
                 영상을 두 번 디코딩하면 렌더가 느려지고, 어두운 바탕으로도 충분하다.
-    fullscreen: 사진을 화면 전체에 꽉 채운다 (fit=cover). 공통 코드는 사진 잘림을 막으려고
+    fullscreen: 사진·영상을 화면 전체에 꽉 채운다 (fit=cover). 공통 코드는 사진 잘림을 막으려고
                 fit=contain 을 넣으므로, 이 배치에서만 덮어쓴다 — 배치 설명에 잘린다고 적었다.
     sns_feed  : 프로필 이름을 @아이디 로.
     info_card : 가게 정보 카드. 셋 다 비면 카드를 숨긴다.
@@ -158,6 +158,8 @@ def extra_modifications(layout_id, variables: dict, scene_count: int, context=No
         for i in range(1, n + 1):
             if f"image{i}.source" in variables:
                 out[f"image{i}.fit"] = "cover"
+            if f"video{i}.source" in variables:
+                out[f"video{i}.fit"] = "cover"
     elif layout_id == "sns_feed":
         uid = str(context.get("user_id") or "").strip()
         out["profile_name.text"] = f"@{uid}" if uid else "@my_blog"

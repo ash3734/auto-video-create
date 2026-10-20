@@ -27,3 +27,19 @@ def image_slot_variables(slot: int, source: str) -> dict:
         f"image{slot}.visible": "true",
         f"video{slot}.visible": "false",
     }
+
+
+# 블로그 영상은 소리를 끈다 (2026-10-20). 나레이션이 장면의 목소리라, 영상 속 말소리·음악이
+# 겹치면 둘 다 안 들린다. 배경음악도 따로 깔린다.
+VIDEO_VOLUME = "0%"
+
+
+def video_slot_variables(slot: int, source: str) -> dict:
+    """영상 장면 하나의 변수. 사진처럼 자르지 않고 틀 안에 통째로 넣는다."""
+    return {
+        f"video{slot}.source": source,
+        f"video{slot}.fit": IMAGE_FIT,
+        f"video{slot}.volume": VIDEO_VOLUME,
+        f"video{slot}.visible": "true",
+        f"image{slot}.visible": "false",
+    }

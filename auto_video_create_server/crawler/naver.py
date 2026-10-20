@@ -4,6 +4,8 @@ from urllib.parse import urljoin
 import json
 from typing import List
 
+from . import naver_video
+
 
 def _normalize_image_url(base_url: str, candidate_url: str) -> str:
     """이미지 후보 URL을 절대경로로 정규화하고 사이즈 파라미터를 통일한다."""
@@ -117,8 +119,9 @@ def extract_blog_content_rich(url):
     """네이버 블로그 글에서 본문/이미지/비디오 + 이미지별 컨텍스트를 추출.
 
     VOC-2 (이미지 자동 매칭) 신규.
-    :return: (text, images, videos, image_infos)
+    :return: (text, images, videos, image_infos, video_infos)
              image_infos = [{"url", "caption", "context"}, ...] — images 와 같은 순서/길이
+             video_infos = [{"url", "caption", "context"}, ...] — videos 와 같은 순서/길이
     """
     resp = requests.get(url)
     resp.raise_for_status()
@@ -169,24 +172,23 @@ def extract_blog_content_rich(url):
             img_count += 1
             print(f"[이미지 {img_count}] {full_url}")
 
-    # 비디오 링크 추출
+    # 비디오 링크 추출 — 네이버 에디터 영상(vid/inkey)이 대부분이다 (crawler/naver_video.py).
+    # 예전 에디터의 <video> 태그도 그대로 받는다.
     videos = []
-    video_count = 0
+    video_infos = []
+    for info in naver_video.resolve_all(naver_video.find_modules(main_area)):
+        videos.append(info["url"])
+        video_infos.append({"url": info["url"], "caption": info["title"], "context": info["context"]})
     for video in main_area.find_all('video'):
-        src = video.get('src')
-        if src:
-            videos.append(urljoin(url, src))
-            video_count += 1
-            print(f"[비디오 {video_count}] {urljoin(url, src)}")
-        # <source src="..."> 구조도 지원
-        for source in video.find_all('source'):
-            src = source.get('src')
-            if src:
+        srcs = [video.get('src')] + [s.get('src') for s in video.find_all('source')]
+        for src in srcs:
+            if src and urljoin(url, src) not in videos:
                 videos.append(urljoin(url, src))
-                video_count += 1
-                print(f"[비디오 {video_count}] {urljoin(url, src)}")
+                video_infos.append({"url": urljoin(url, src), "caption": "", "context": ""})
+    for i, v in enumerate(videos, 1):
+        print(f"[비디오 {i}] {v[:120]}")
 
-    return text, images, videos, image_infos
+    return text, images, videos, image_infos, video_infos
 
 
 def extract_blog_content(url):
@@ -195,7 +197,7 @@ def extract_blog_content(url):
     (하위호환 시그니처 유지 — rich 버전 extract_blog_content_rich 위임)
     :return: (본문 텍스트, 이미지 URL 리스트, 비디오 URL 리스트)
     """
-    text, images, videos, _ = extract_blog_content_rich(url)
+    text, images, videos, _, _ = extract_blog_content_rich(url)
     return text, images, videos
 
 # 콘솔에서만 사용할 선택 함수 (API에서는 사용하지 않음)

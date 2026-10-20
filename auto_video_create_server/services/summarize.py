@@ -77,14 +77,15 @@ SHORTS_OUTPUT_SCHEMA_WITH_IMAGES = {
 IMAGE_MATCHING_ADDENDUM = """
 
 - 이미지 자동 매칭 (추가 작업):
-아래는 블로그 본문에서 추출한 이미지 목록이야. 번호는 1부터 시작해.
-각 스크립트 내용에 가장 잘 어울리는 이미지 번호를 각 스크립트의 "image_index" 로 함께 반환해줘.
+아래는 블로그 본문에서 추출한 사진·영상 목록이야. 번호는 1부터 시작해. "(영상)" 이 붙은 건 움직이는 영상이야.
+각 스크립트 내용에 가장 잘 어울리는 번호를 각 스크립트의 "image_index" 로 함께 반환해줘.
 규칙:
-1) 같은 번호를 두 번 이상 쓰지 마 (스크립트마다 서로 다른 이미지).
-2) 어울리는 이미지가 정말 없으면 null 을 넣어.
+1) 같은 번호를 두 번 이상 쓰지 마 (스크립트마다 서로 다른 사진·영상).
+2) 어울리는 게 정말 없으면 null 을 넣어.
 3) scripts 의 각 원소는 {{"script": "...", "image_index": 번호 또는 null}} 형태여야 해.
+4) 쇼츠는 움직이는 화면이 더 눈에 띄어. 영상이 있으면 내용이 맞는 장면에 꼭 넣어줘.
 
-이미지 목록:
+사진·영상 목록:
 {image_list}
 """
 
@@ -133,7 +134,8 @@ def _format_image_list_for_prompt(image_infos, limit=20):
     lines = []
     for i, info in enumerate(image_infos[:limit], start=1):
         desc = (info.get("caption") or "").strip() or (info.get("context") or "").strip() or "(설명 없음)"
-        lines.append(f"[{i}] {desc[:80]}")
+        tag = "(영상) " if info.get("kind") == "video" else ""
+        lines.append(f"[{i}] {tag}{desc[:80]}")
     return "\n".join(lines)
 
 def build_shorts_output_schema(scene_count: int, with_images: bool = False) -> dict:
@@ -433,7 +435,7 @@ def summarize_for_shorts_sets(text, category: str = "restaurant", image_infos=No
     Args:
         text: 블로그 본문
         category: 'restaurant' (맛집, 기존) 또는 'general' (일반 블로그)
-        image_infos: [{"url","caption","context"}, ...] 또는 None
+        image_infos: [{"url","caption","context", "kind"?}, ...] 또는 None — kind="video" 면 영상
         scene_count: 생성할 스크립트 개수 (기본 5 — 기존 동작)
     """
     template = RESTAURANT_PROMPT if category == "restaurant" else GENERAL_PROMPT
@@ -442,7 +444,8 @@ def summarize_for_shorts_sets(text, category: str = "restaurant", image_infos=No
     if image_infos:
         try:
             prompt += IMAGE_MATCHING_ADDENDUM.format(
-                image_list=_format_image_list_for_prompt(image_infos)
+                # 몇 개까지 보여줄지는 부르는 쪽(blog_shorts)이 정한다 — 사진 20 + 영상
+                image_list=_format_image_list_for_prompt(image_infos, limit=len(image_infos))
             )
             with_images = True
         except Exception as e:

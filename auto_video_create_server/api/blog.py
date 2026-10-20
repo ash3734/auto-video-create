@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from services.blog_shorts import extract_blog_content, get_blog_media_and_scripts
 from services.summarize import summarize_for_shorts_sets
+from crawler import naver_video
 from services.tts_typecast import (
     tts_with_typecast_multi,
     TypecastError,
@@ -11,7 +12,7 @@ from services.create_creatomate_video import create_creatomate_video, get_creato
 from services.account_service import get_user_if_active, check_user_credits, get_current_credits
 from services.ai_background import generate_backgrounds_parallel, FALLBACK_URL as DEFAULT_BG_FALLBACK_URL
 from services.image_mirror import maybe_mirror
-from services.scene_media import image_slot_variables
+from services.scene_media import image_slot_variables, video_slot_variables
 from services import render_store, render_files, webhooks
 from services.alerting import alert
 # cycle-3: 자막 스타일 편집 신규 서비스
@@ -535,9 +536,8 @@ def generate_video(request: Request, req: GenerateVideoRequest,
                 # 사진이 잘리지 않게 틀 안에 통째로 넣는다 (services/scene_media.py)
                 variables.update(image_slot_variables(i, image_src))
             elif section.type == "video":
-                variables[f"video{i}.source"] = section.url
-                variables[f"image{i}.visible"] = "false"
-                variables[f"video{i}.visible"] = "true"
+                # 네이버 영상 주소는 30분쯤 뒤 만료될 수 있어 새로 받는다 (crawler/naver_video.py)
+                variables.update(video_slot_variables(i, naver_video.refresh(section.url or "")))
             else:  # 'default' — AI 생성 배경 (이미지로 처리)
                 # 선택 화면에서 이미 만들어 둔 URL 이 오면 그걸 쓴다 (같은 캐시라 동일 이미지).
                 bg_url = section.url or ai_bg_urls.get(zero_idx, DEFAULT_BG_FALLBACK_URL)
