@@ -11,6 +11,13 @@ VOC-2 갱신 (이미지 자동 매칭):
 - summarize 피기백으로 스크립트별 image_index(1-based) 수신
 - suggested_sections 조립: LLM 매칭 → 위치 기반 폴백 → 부족分 default
   (자동 배정은 FE 의 default 제안일 뿐 — 유저가 수동으로 바꿀 수 있다)
+
+2026-10-20 (영상도 추천):
+- 크롤러가 네이버 본문 영상을 처음으로 가져온다 (crawler/naver_video.py). 그 전엔 영상이
+  0개라 추천될 수가 없었다.
+- AI 에게 주는 목록 = 사진(최대 PROMPT_IMAGE_LIMIT) + 영상. 번호는 이어서 매긴다.
+- 영상 우선: 장면의 절반까지는 영상 (video_target). AI 가 덜 골랐으면 본문에서 가까운 사진
+  칸을 영상으로 바꾼다 (_build_suggested_sections).
 """
 from crawler.dispatcher import extract_rich as dispatcher_extract_rich
 from crawler.dispatcher import UnsupportedPlatformError  # noqa: F401  (re-export)
@@ -41,20 +48,67 @@ def _normalize_image_indices(scripts, image_count):
     return indices
 
 
-def _build_suggested_sections(indices, images):
+PROMPT_IMAGE_LIMIT = 20
+
+
+def video_target(scene_count: int, video_count: int) -> int:
+    """영상으로 채울 장면 수 — 장면의 절반(올림)까지, 영상이 그보다 적으면 영상 수만큼.
+
+    PO (2026-10-20): "영상이 영상미가 더 좋으니 사진보다 우선순위를 높여 달라".
+    전부 영상으로 채우지 않는 건, 블로그 영상은 같은 장면을 길게 찍은 게 많아서다.
+    """
+    return min(video_count, (scene_count + 1) // 2)
+
+
+def _build_suggested_sections(indices, images, videos=(), offered_images=None, positions=None):
     """0-based 인덱스 리스트 → suggested_sections 조립.
 
-    - None 슬롯은 위치 기반 폴백: 아직 안 쓰인 이미지를 본문 등장 순서대로 배정.
-    - 이미지가 부족하면 {"type": "default", "url": None} (기존 AI 배경 슬롯 규칙).
+    indices 는 AI 에게 보여준 목록(사진 앞 offered_images 개 + 영상 전부) 기준 번호다.
+    offered_images 를 안 주면 사진 전부를 보여준 것으로 본다 (영상이 없던 시절과 같다).
+    positions: {url: 본문 순서} — 영상과 글에서 가장 가까운 사진을 찾을 때 쓴다.
+
+    1) AI 가 고른 대로.
+    2) 영상 우선 (video_target): AI 가 영상을 덜 골랐으면 남은 영상을 넣는다. 빈 칸(AI 가 못 고른
+       칸)이 먼저고, 없으면 **본문에서 그 영상과 가장 가까이 있던 사진**의 칸을 영상으로 바꾼다 —
+       같은 대목을 찍은 사진일 가능성이 높다. 본문 순서를 모르면 마지막 사진 칸.
+    3) 그래도 빈 칸은 위치 기반 폴백: 안 쓰인 사진을 본문 순서대로, 그다음 영상.
+    4) 그래도 모자라면 {"type": "default", "url": None} (기존 AI 배경 슬롯 규칙).
     """
-    used = {i for i in indices if i is not None}
-    remaining = [i for i in range(len(images)) if i not in used]
+    videos = list(videos)
+    positions = positions or {}
+    k = len(images) if offered_images is None else offered_images
+    offered = [("image", u) for u in images[:k]] + [("video", u) for u in videos]
+    picked = [offered[i] if i is not None and 0 <= i < len(offered) else None for i in indices]
+
+    need = video_target(len(picked), len(videos)) - sum(1 for m in picked if m and m[0] == "video")
+    spare = [("video", u) for u in videos if ("video", u) not in picked]
+    while need > 0 and spare:
+        video = spare.pop(0)
+        free = [i for i, m in enumerate(picked) if m is None]
+        photo_slots = [i for i, m in enumerate(picked) if m and m[0] == "image"]
+        if free:
+            slot = free[-1]
+        elif photo_slots:
+            vpos = positions.get(video[1])
+            known = [i for i in photo_slots if positions.get(picked[i][1]) is not None]
+            if vpos is not None and known:
+                slot = min(known, key=lambda i: abs(positions[picked[i][1]] - vpos))
+            else:
+                slot = photo_slots[-1]
+        else:
+            break
+        picked[slot] = video
+        need -= 1
+
+    used = {m for m in picked if m}
+    remaining = [m for m in [("image", u) for u in images] + [("video", u) for u in videos]
+                 if m not in used]
     sections = []
-    for idx in indices:
-        if idx is None and remaining:
-            idx = remaining.pop(0)
-        if idx is not None:
-            sections.append({"type": "image", "url": images[idx]})
+    for m in picked:
+        if m is None and remaining:
+            m = remaining.pop(0)
+        if m is not None:
+            sections.append({"type": m[0], "url": m[1]})
         else:
             sections.append({"type": "default", "url": None})
     return sections
@@ -66,10 +120,12 @@ def get_blog_media_and_scripts(blog_url: str, scene_count: int = 5) -> dict:
     scene_count: 유저가 고른 장면 수(4~8). 스크립트/슬롯 개수가 이 값을 따른다.
     """
     scene_count = normalize_scene_count(scene_count)
-    text, images, videos, platform, image_infos = dispatcher_extract_rich(blog_url)
+    text, images, videos, platform, image_infos, video_infos = dispatcher_extract_rich(blog_url)
     category = classify_blog(text)
+    shown_images = (image_infos or [])[:PROMPT_IMAGE_LIMIT]
+    media_infos = shown_images + [dict(v, kind="video") for v in (video_infos or [])]
     title, scripts, seo = summarize_for_shorts_sets(
-        text, category=category, image_infos=image_infos or None, scene_count=scene_count
+        text, category=category, image_infos=media_infos or None, scene_count=scene_count
     )
     # N개 슬롯 중 이미지+영상으로 채워지지 않는 슬롯 수
     default_slot_count = max(0, scene_count - (len(images) + len(videos)))
@@ -88,8 +144,11 @@ def get_blog_media_and_scripts(blog_url: str, scene_count: int = 5) -> dict:
     }
     # VOC-2: 자동 배정 제안. 실패해도 전체 응답은 정상 (필드 생략 → FE 가 기존 폴백).
     try:
-        indices = _normalize_image_indices(scripts, len(images))
-        result["suggested_sections"] = _build_suggested_sections(indices, images)
+        indices = _normalize_image_indices(scripts, len(media_infos))
+        positions = {i["url"]: i.get("pos") for i in (image_infos or []) + (video_infos or [])
+                     if i.get("pos") is not None}
+        result["suggested_sections"] = _build_suggested_sections(
+            indices, images, videos, offered_images=len(shown_images), positions=positions)
     except Exception as e:
         print(f"[blog_shorts] suggested_sections 조립 실패 — 필드 생략: {e}")
     return result

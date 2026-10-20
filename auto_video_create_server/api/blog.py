@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from services.blog_shorts import extract_blog_content, get_blog_media_and_scripts
 from services.summarize import summarize_for_shorts_sets
+from crawler import naver_video
 from services.tts_typecast import (
     tts_with_typecast_multi,
     TypecastError,
@@ -11,8 +12,8 @@ from services.create_creatomate_video import create_creatomate_video, get_creato
 from services.account_service import get_user_if_active, check_user_credits, get_current_credits
 from services.ai_background import generate_backgrounds_parallel, FALLBACK_URL as DEFAULT_BG_FALLBACK_URL
 from services.image_mirror import maybe_mirror
-from services.scene_media import image_slot_variables
-from services import render_store, webhooks
+from services.scene_media import image_slot_variables, video_slot_variables
+from services import render_store, render_files, webhooks
 from services.alerting import alert
 # cycle-3: 자막 스타일 편집 신규 서비스
 from services.font_service import get_korean_fonts, get_allowed_font_families
@@ -43,11 +44,17 @@ from services.speeds import available_speeds, normalize_speed, to_tempo
 from services.voices import available_voices, normalize_voice_id
 from services.voice_preview import get_preview_url
 from services import music
+from services import layouts
+from services import effects
+from services import bookends
+from services import sfx
+from services.place_info import extract_place
 from crawler.dispatcher import UnsupportedPlatformError
 from utils.s3_utils import load_json_from_s3
 import os
 from typing import Any, Dict, List, Optional, Literal
 import requests
+import time
 import traceback
 from urllib.parse import urlparse
 
@@ -213,6 +220,66 @@ def get_voices():
     return {"voices": available_voices()}
 
 
+@router.get("/effects")
+def get_effects():
+    """GET /api/blog/effects — 사진 움직임·장면 전환·효과음 선택지. is_default=true 가 지금까지의 동작이다."""
+    def rows(table, default):
+        return [{"id": k, "name": v["name"], "description": v["description"], "is_default": k == default}
+                for k, v in table.items()]
+    return {"motions": rows(effects.MOTIONS, effects.DEFAULT_MOTION),
+            "transitions": rows(effects.TRANSITIONS, effects.DEFAULT_TRANSITION),
+            "sounds": sfx.available_sounds()}
+
+
+class SfxPlanRequest(BaseModel):
+    scripts: List[str]
+
+
+@router.post("/sfx-plan")
+def sfx_plan(req: SfxPlanRequest, user=Depends(require_active_subscription)):
+    """POST /api/blog/sfx-plan — 대본을 보고 장면별 효과음 계획 (효과음 "자동"일 때).
+
+    영상 만들기 직전에 화면이 부른다. generate-video 안에서 부르지 않는 이유: 그 요청은
+    음성 생성까지 해서 API Gateway 29초에 이미 빠듯하다. 실패해도 기본 규칙 계획을 준다.
+    """
+    return {"plan": sfx.plan_sounds(req.scripts[:8])}
+
+
+class PlaceInfoRequest(BaseModel):
+    text: str           # extract-all 이 돌려준 블로그 본문
+
+
+@router.post("/place-info")
+def place_info(req: PlaceInfoRequest, user=Depends(require_active_subscription)):
+    """POST /api/blog/place-info — 맛집 정보카드에 넣을 가게 이름·위치·가격을 글에서 뽑는다.
+
+    유저가 정보카드 배치를 고를 때만 화면이 부른다. 글에 없는 값은 빈 칸 (지어내지 않음).
+    """
+    return {"place": extract_place(req.text)}
+
+
+@router.get("/bookends")
+def get_bookends():
+    """GET /api/blog/bookends — 첫 화면 문구·끝 화면 선택지. preview 는 화면에 미리 보여줄 문구."""
+    return {
+        "intros": [{"id": k, "name": v["name"], "description": v["description"],
+                    "is_default": k == bookends.DEFAULT_INTRO} for k, v in bookends.INTROS.items()],
+        "outros": [{"id": k, "name": v["name"], "description": v["description"], "preview": v["text"],
+                    "is_default": k == bookends.DEFAULT_OUTRO} for k, v in bookends.OUTROS.items()],
+        "max_text": bookends.MAX_TEXT,
+    }
+
+
+@router.get("/layouts")
+def get_layouts():
+    """GET /api/blog/layouts — 고를 수 있는 화면 배치. is_default=true 가 지금까지의 배치다."""
+    return {"layouts": [
+        {"id": k, "name": v["name"], "description": v["description"],
+         "preview_url": layouts.preview_url(k), "is_default": k == layouts.DEFAULT_LAYOUT}
+        for k, v in layouts.LAYOUTS.items()
+    ]}
+
+
 @router.get("/music")
 def get_music(user=Depends(require_active_subscription)):
     """GET /api/blog/music
@@ -366,6 +433,23 @@ class GenerateVideoRequest(BaseModel):
     # 배경음악 (2026-09-27). 미전송/무효 시 템플릿 기본 음악 그대로 — 기존 결과물 유지.
     # "none" 을 보내면 음악 없이 만든다. 목록은 GET /api/blog/music.
     bgm_id: Optional[str] = None
+    # 화면 배치 (2026-10-05). 미전송/무효 시 기본 배치(letterbox) — 기존 결과물 유지.
+    layout: Optional[str] = None
+    # 화면 효과 (2026-10-18). 미전송/무효 시 효과 없음 — 기존 결과물 유지.
+    motion: Optional[str] = None        # none | zoom
+    transition: Optional[str] = None    # none | fade | punch
+    # 첫 화면 문구·끝 화면 (2026-10-18). 미전송/무효 시 없음 — 기존 결과물 유지.
+    intro: Optional[str] = None         # none | title | custom
+    intro_text: Optional[str] = None    # intro=custom 일 때
+    outro: Optional[str] = None         # none | comment | follow | blog | custom
+    outro_text: Optional[str] = None    # outro=custom 일 때
+    # 효과음 (2026-10-18). 미전송/무효 시 없음 — 기존 결과물 유지.
+    sound: Optional[str] = None         # none | auto  (예전 화면은 소리 이름을 보낼 수 있다)
+    sfx_plan: Optional[List[Optional[str]]] = None   # sound=auto 일 때 POST /sfx-plan 이 준 계획
+    # 맛집 정보카드 배치의 카드 내용 (2026-10-18). 다른 배치에서는 쓰지 않는다.
+    place_name: Optional[str] = None
+    place_location: Optional[str] = None
+    place_price: Optional[str] = None
 
 class GenerateVideoResponse(BaseModel):
     status: str
@@ -452,9 +536,8 @@ def generate_video(request: Request, req: GenerateVideoRequest,
                 # 사진이 잘리지 않게 틀 안에 통째로 넣는다 (services/scene_media.py)
                 variables.update(image_slot_variables(i, image_src))
             elif section.type == "video":
-                variables[f"video{i}.source"] = section.url
-                variables[f"image{i}.visible"] = "false"
-                variables[f"video{i}.visible"] = "true"
+                # 네이버 영상 주소는 30분쯤 뒤 만료될 수 있어 새로 받는다 (crawler/naver_video.py)
+                variables.update(video_slot_variables(i, naver_video.refresh(section.url or "")))
             else:  # 'default' — AI 생성 배경 (이미지로 처리)
                 # 선택 화면에서 이미 만들어 둔 URL 이 오면 그걸 쓴다 (같은 캐시라 동일 이미지).
                 bg_url = section.url or ai_bg_urls.get(zero_idx, DEFAULT_BG_FALLBACK_URL)
@@ -491,6 +574,17 @@ def generate_video(request: Request, req: GenerateVideoRequest,
             scene_count=scene_count,
             webhook_url=webhooks.webhook_url(),
             metadata=user["id"],  # 웹훅에 그대로 실려 온다 (문자열만 허용)
+            layout=layouts.normalize_layout(req.layout),
+            motion=effects.normalize_motion(req.motion),
+            transition=effects.normalize_transition(req.transition),
+            intro=bookends.normalize_intro(req.intro),
+            intro_text=bookends.clean_text(req.intro_text),
+            outro=bookends.normalize_outro(req.outro),
+            outro_text=bookends.clean_text(req.outro_text),
+            sound=sfx.normalize_sound(req.sound),
+            sfx_plan=req.sfx_plan,
+            place=layouts.clean_place({"name": req.place_name, "location": req.place_location,
+                                       "price": req.place_price}),
             **variables
         )
         # Creatomate 응답 처리
@@ -581,6 +675,11 @@ def poll_video(render_id: str, user=Depends(require_active_subscription)):
     return data
 
 
+# 완료 웹훅 직후 재조회가 아직 끝나지 않았다고 답할 때 다시 물어볼 횟수·간격(초).
+WEBHOOK_REFETCH_TRIES = 3
+WEBHOOK_REFETCH_WAIT = 2
+
+
 @router.post("/creatomate-webhook")
 def creatomate_webhook(payload: Dict[str, Any], token: str = ""):
     """Creatomate 가 렌더 완료·실패를 알려주는 자리 (로그인 없이 외부에서 호출).
@@ -599,6 +698,14 @@ def creatomate_webhook(payload: Dict[str, Any], token: str = ""):
 
     try:
         data = _fetch_render(render_id)
+        # 완료 웹훅을 받은 직후 재조회하면 아직 "rendering" 이 올 때가 있다 (2026-10-05
+        # test 로그에서 확인 — 9/20 기록 2건이 "rendering" 으로 멈춘 원인). 그러면 결과도
+        # 못 남기고 S3 복사도 건너뛴다. 잠깐 기다렸다 몇 번 더 물어본다.
+        for _ in range(WEBHOOK_REFETCH_TRIES):
+            if data.get("status") in ("succeeded", "failed"):
+                break
+            time.sleep(WEBHOOK_REFETCH_WAIT)
+            data = _fetch_render(render_id)
     except Exception as e:
         # 재조회 실패로 웹훅을 잃지 않는다 — Creatomate 는 재시도할 수 있고,
         # 화면도 여전히 직접 상태를 물어볼 수 있다.
@@ -612,6 +719,14 @@ def creatomate_webhook(payload: Dict[str, Any], token: str = ""):
                                duration=data.get("duration"),
                                waited_seconds=round(waited) or None)
     print(f"[webhook] {render_id} status={status} 대기 {waited:.0f}초")
+
+    # Creatomate 는 결과를 30일만 보관한다 — "내가 만든 영상"이 깨지지 않게 지금 옮겨 둔다.
+    # 웹훅은 유저가 기다리는 경로가 아니라서 여기서 몇 초 쓰는 건 괜찮다. 실패하면
+    # 목록 조회 때 다시 시도된다 (my_renders).
+    if status == "succeeded":
+        files = render_files.mirror(render_id, data.get("url"))
+        if files:
+            render_store.update_result(render_id, status, **files)
 
     # 관리자 알림 — 실패했거나, 평소(20~30초)보다 크게 늦어진 건만.
     # 화면은 유저에게 "관리자가 확인해서 알려드린다"고 안내하므로 이 메일이 그 약속이다.
@@ -657,10 +772,117 @@ def ai_backgrounds(req: AiBackgroundRequest, user=Depends(require_active_subscri
     return {"backgrounds": {str(k): v for k, v in urls.items()}}
 
 
+# ── 내가 만든 영상 (백로그 4-1, 2026-10-05) ─────────────────────────────────
+
+MY_RENDERS_LIMIT = 30
+# 이보다 오래 "만드는 중"인 기록은 Creatomate 에 직접 물어본다. 평소 렌더는 20~30초다.
+# 웹훅이 오지 않았고 유저도 화면을 닫았으면, 이게 없을 때 기록은 영원히 "만드는 중"이다.
+# (2026-09-20 기록 2건이 실제로 그렇게 남아 있었다)
+STALE_SECONDS = 120
+# 한 번 조회에서 고칠 기록 수 상한. API Gateway 는 29초에 끊는다 — 오래 걸리는 일을
+# 한꺼번에 하지 않고, 남은 건 다음 조회 때 이어서 고친다.
+MAX_REPAIRS_PER_CALL = 3
+_FINAL = ("succeeded", "failed")
+_RETENTION_SECONDS = render_files.CREATOMATE_RETENTION_DAYS * 86400
+
+
+def _repair_records(records: list) -> None:
+    """목록을 보여주기 전에 고칠 수 있는 기록을 고친다 (제자리 수정).
+
+    1. 오래 "만드는 중"인 기록 → Creatomate 에 다시 물어 결과를 반영
+    2. 완성됐는데 아직 우리 S3 로 안 옮긴 영상 → 옮김 (웹훅에서 실패한 건의 안전망)
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    stale = [
+        r for r in records
+        if r.get("status") not in _FINAL
+        and STALE_SECONDS <= render_store.elapsed_seconds(r) < _RETENTION_SECONDS
+    ][:MAX_REPAIRS_PER_CALL]
+
+    def refresh(r):
+        try:
+            data = _fetch_render(r["render_id"])
+        except Exception as e:
+            print(f"[my_renders] 상태 재조회 실패 {r.get('render_id')}: {e}")
+            return
+        st = data.get("status") if isinstance(data, dict) else None
+        if st in _FINAL:
+            render_store.update_result(r["render_id"], st, url=data.get("url"),
+                                       duration=data.get("duration"))
+            r["status"] = st
+            r["url"] = data.get("url") or r.get("url")
+            r["duration"] = data.get("duration") or r.get("duration")
+
+    with ThreadPoolExecutor(max_workers=MAX_REPAIRS_PER_CALL) as ex:
+        list(ex.map(refresh, stale))
+
+    unmirrored = [
+        r for r in records
+        if r.get("status") == "succeeded" and r.get("url") and not r.get("video_key")
+        and render_store.elapsed_seconds(r) < _RETENTION_SECONDS
+    ][:MAX_REPAIRS_PER_CALL]
+
+    def copy(r):
+        files = render_files.mirror(r["render_id"], r["url"])
+        if files:
+            render_store.update_result(r["render_id"], "succeeded", **files)
+            r.update(files)
+
+    with ThreadPoolExecutor(max_workers=MAX_REPAIRS_PER_CALL) as ex:
+        list(ex.map(copy, unmirrored))
+
+
+def _render_view(r: dict) -> dict:
+    """화면에 줄 모양. 내부 키(S3 경로, user_id)는 내보내지 않는다.
+
+    state:
+      ready    재생·다운로드 가능
+      making   아직 만드는 중
+      failed   렌더 실패
+      expired  우리 S3 로 옮기기 전에 Creatomate 보관 기간(30일)이 지나 사라짐
+    """
+    age = render_store.elapsed_seconds(r)
+    view = {
+        "render_id": r.get("render_id"),
+        "title": r.get("title"),
+        "scene_count": r.get("scene_count"),
+        "duration": r.get("duration"),
+        "submitted_at": r.get("submitted_at"),
+        "state": "making",
+        "video_url": None,
+        "download_url": None,
+    }
+    status = r.get("status")
+    if status == "succeeded":
+        if r.get("video_key"):
+            view["state"] = "ready"
+            view["video_url"] = render_files.presign(r["video_key"])
+            view["download_url"] = render_files.presign(
+                r["video_key"], render_files.download_name(r.get("title"), r.get("submitted_at")))
+        elif r.get("url") and age < _RETENTION_SECONDS:
+            # 아직 못 옮겼지만 Creatomate 에 남아 있는 동안은 그 주소로 보여준다.
+            view["state"] = "ready"
+            view["video_url"] = view["download_url"] = r["url"]
+        else:
+            view["state"] = "expired"
+    elif status == "failed":
+        view["state"] = "failed"
+    elif age >= _RETENTION_SECONDS:
+        view["state"] = "expired"
+    return view
+
+
 @router.get("/my-renders")
 def my_renders(user=Depends(require_active_subscription)):
-    """내가 만든 영상 목록. 화면이 기다리다 놓친 결과를 다시 찾기 위한 것."""
-    return {"renders": render_store.list_for_user(user["id"])}
+    """GET /api/blog/my-renders — 내가 만든 영상 (최신 30편).
+
+    영상 주소는 1시간 뒤 만료되는 presigned URL 이다. 화면을 열 때마다 새로 받는다.
+    렌더 기록은 2026-09-20 부터 남기 시작했으므로 그 전 영상은 목록에 없다.
+    """
+    records = render_store.list_for_user(user["id"], limit=MY_RENDERS_LIMIT)
+    _repair_records(records)
+    return {"renders": [_render_view(r) for r in records]}
 
 @router.get("/credits")
 def get_user_credits(user=Depends(require_active_subscription)):

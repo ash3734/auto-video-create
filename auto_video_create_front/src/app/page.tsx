@@ -9,16 +9,23 @@ import Confetti from 'react-confetti';
 import CloseIcon from '@mui/icons-material/Close';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import EditIcon from '@mui/icons-material/Edit';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate';
 import AuthGuard from "../components/AuthGuard";
 import { normalizeBlogUrl } from "./utils/blogUrl";
 import LogoutButton from "../components/LogoutButton";
 import ChangePasswordButton from "../components/ChangePasswordButton";
+import MyVideosButton from "../components/MyVideosButton";
 import { SubtitleSettings } from "./components/SubtitleStyleEditor";
 import SettingsPanel from "./components/SettingsPanel";
 import { Voice } from "./components/VoicePicker";
 import { Speed } from "./components/SpeedPicker";
 import { MusicTrack, MusicConcept, BGM_TEMPLATE_DEFAULT } from "./components/MusicPicker";
+import { EffectOption } from "./components/EffectPicker";
+import { BookendOption } from "./components/BookendPicker";
+import { LayoutOption, PlaceInfo } from "./components/LayoutPicker";
 import PublishKit, { SeoCopy } from "./components/PublishKit";
+import MediaPickerDialog from "./components/MediaPickerDialog";
 
 interface MediaList {
   images: string[];
@@ -39,7 +46,8 @@ interface SectionMedia {
 }
 
 // VOC-2: extract-all 응답의 suggested_sections 원소 타입 (BE 계약)
-type SuggestedSection = { type: 'image'; url: string } | { type: 'default'; url: null };
+// 2026-10-20: 'video' 추가 — 서버가 블로그 영상도 추천한다. 이 타입을 모르면 추천 전체가 버려진다.
+type SuggestedSection = { type: 'image' | 'video'; url: string } | { type: 'default'; url: null };
 
 // VOC-2: BE 응답의 suggested_sections 를 방어적으로 파싱한다.
 // 형식이 계약과 조금이라도 다르면(구버전 BE 포함) null 을 반환해 기존 동작(빈 슬롯)으로 폴백한다.
@@ -49,8 +57,8 @@ function parseSuggestedSections(raw: unknown, expectedLength: number): Suggested
   for (const item of raw) {
     if (!item || typeof item !== "object") return null;
     const { type, url } = item as { type?: unknown; url?: unknown };
-    if (type === "image" && typeof url === "string" && url.length > 0) {
-      parsed.push({ type: "image", url });
+    if ((type === "image" || type === "video") && typeof url === "string" && url.length > 0) {
+      parsed.push({ type, url });
     } else if (type === "default" && (url === null || url === undefined)) {
       parsed.push({ type: "default", url: null });
     } else {
@@ -94,7 +102,7 @@ const RENDER_SLOW_NOTICE_MS = 2 * 60 * 1000;
 // 서버가 완료를 받으면 관리자에게 알림이 간다. 유저에게 실패라고 하면 다시 눌러
 // 같은 영상을 두 번 만들게 된다 (크레딧도 두 번 빠진다).
 const RENDER_TIMEOUT_MESSAGE =
-  "영상이 아직 만들어지고 있어요. 평소보다 오래 걸리는 상황이라 관리자에게 알림이 갔고, 확인 후 안내드릴게요. 다시 시도하면 크레딧이 한 번 더 사용되니 잠시만 기다려 주세요.";
+  "영상이 아직 만들어지고 있어요. 평소보다 오래 걸리는 상황이라 관리자에게도 알림이 갔어요. 완성되면 위의 ‘내 영상’에서 볼 수 있어요. 다시 시도하면 크레딧이 한 번 더 사용되니 잠시만 기다려 주세요.";
 
 // ── 브라우저 콘솔 디버그 로그 ──────────────────────────────────────────────
 // FE 오류 수집 도구(Sentry 등)가 없고 Amplify 에서도 클라이언트 로그를 볼 수 없어서,
@@ -168,6 +176,33 @@ export default function Home() {
   const [musicNoneId, setMusicNoneId] = useState<string>("none");
   const [bgmId, setBgmId] = useState<string>(BGM_TEMPLATE_DEFAULT);
 
+  // 화면 효과 (2026-10-18). 목록을 못 받으면 빈 배열 → UI 를 숨기고 아무것도 안 보낸다.
+  // 기본은 둘 다 "none" — BE 도 미전송이면 효과 없음이라 기존 결과물 그대로다.
+  // 화면 배치 (2026-10-18). 기본 "letterbox" — 안 건드리면 지금까지와 같은 배치다.
+  const [layoutOptions, setLayoutOptions] = useState<LayoutOption[]>([]);
+  const [layout, setLayout] = useState<string>("letterbox");
+  // 맛집 정보카드 배치용. 블로그 본문은 extract-all 응답에서 받아 두었다가, 그 배치를
+  // 고를 때 한 번 가게 정보를 뽑는 데 쓴다 (다른 배치에서는 호출하지 않는다).
+  const [blogText, setBlogText] = useState<string>("");
+  const [place, setPlace] = useState<PlaceInfo>({ name: "", location: "", price: "" });
+  const [placeLoading, setPlaceLoading] = useState(false);
+  const placeFetchedFor = useRef<string>("");
+  const [motionOptions, setMotionOptions] = useState<EffectOption[]>([]);
+  const [transitionOptions, setTransitionOptions] = useState<EffectOption[]>([]);
+  const [motion, setMotion] = useState<string>("none");
+  const [transition, setTransition] = useState<string>("none");
+  const [soundOptions, setSoundOptions] = useState<EffectOption[]>([]);
+  const [sound, setSound] = useState<string>("none");
+
+  // 첫 화면 문구 · 끝 화면 (2026-10-18). 기본 "none" — 안 건드리면 기존 결과물 그대로.
+  const [introOptions, setIntroOptions] = useState<BookendOption[]>([]);
+  const [outroOptions, setOutroOptions] = useState<BookendOption[]>([]);
+  const [bookendMaxText, setBookendMaxText] = useState<number>(40);
+  const [intro, setIntro] = useState<string>("none");
+  const [introText, setIntroText] = useState<string>("");
+  const [outro, setOutro] = useState<string>("none");
+  const [outroText, setOutroText] = useState<string>("");
+
   // 장면 수 선택 (4~8). 스크립트/이미지 슬롯 개수가 이 값을 따른다. 기본 5 = 기존 동작.
   const [sceneCount, setSceneCount] = useState<number>(5);
   const [availableSceneCounts, setAvailableSceneCounts] = useState<{ scene_count: number; available: boolean }[]>([]);
@@ -238,6 +273,84 @@ export default function Home() {
   }, []);
 
   useEffect(() => { void fetchMusic(); }, [fetchMusic]);
+
+  // 화면 효과 목록. 실패해도 영상 제작은 막지 않는다 — UI 만 숨긴다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch(`${API_BASE_URL}/api/blog/effects`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (Array.isArray(data?.motions)) setMotionOptions(data.motions);
+        if (Array.isArray(data?.transitions)) setTransitionOptions(data.transitions);
+        if (Array.isArray(data?.sounds)) setSoundOptions(data.sounds);
+      } catch (e) {
+        derr("화면 효과 목록 로드 실패 — 효과 없이 진행", { error: String(e) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // 화면 배치 목록. 실패하거나 하나뿐이면 선택 UI 를 숨긴다 — BE 가 기본 배치로 흐른다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch(`${API_BASE_URL}/api/blog/layouts`);
+        const data = await res.json();
+        if (cancelled || !Array.isArray(data?.layouts)) return;
+        setLayoutOptions(data.layouts);
+        const def = data.layouts.find((l: LayoutOption) => l.is_default);
+        if (def) setLayout(def.id);
+      } catch (e) {
+        derr("화면 배치 목록 로드 실패 — 기본 배치로 진행", { error: String(e) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const fetchPlace = useCallback(async () => {
+    if (!blogText.trim()) return;
+    setPlaceLoading(true);
+    try {
+      const res = await authFetch(`${API_BASE_URL}/api/blog/place-info`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: blogText }),
+      });
+      const data = await res.json();
+      if (data?.place) setPlace({ name: data.place.name || "", location: data.place.location || "", price: data.place.price || "" });
+      placeFetchedFor.current = blogText;
+    } catch (e) {
+      derr("가게 정보 가져오기 실패 — 직접 입력", { error: String(e) });
+    } finally {
+      setPlaceLoading(false);
+    }
+  }, [blogText]);
+
+  // 정보카드를 처음 고르면 한 번만 자동으로 채운다. 유저가 고친 값을 다시 덮어쓰지 않는다.
+  useEffect(() => {
+    if (layout === "info_card" && blogText && placeFetchedFor.current !== blogText) void fetchPlace();
+  }, [layout, blogText, fetchPlace]);
+
+  // 첫 화면·끝 화면 선택지. 실패해도 UI 만 숨긴다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch(`${API_BASE_URL}/api/blog/bookends`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (Array.isArray(data?.intros)) setIntroOptions(data.intros);
+        if (Array.isArray(data?.outros)) setOutroOptions(data.outros);
+        if (typeof data?.max_text === "number") setBookendMaxText(data.max_text);
+      } catch (e) {
+        derr("첫 화면·끝 화면 목록 로드 실패 — 없이 진행", { error: String(e) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // 배속 목록. 실패해도 영상 생성을 막지 않는다 — UI 만 숨기고 BE 기본값으로 흐른다.
   useEffect(() => {
@@ -435,6 +548,21 @@ export default function Home() {
     setAutoFilledImageCount(prev => (prev > 0 ? prev - 1 : 0));
   };
 
+  // 장면 카드의 "바꾸기" → 그 장면에 넣을 사진·영상 고르기 (MediaPickerDialog).
+  // 다른 장면에 쓰인 걸 고르면 두 장면을 맞바꾼다 — 같은 사진이 두 번 들어가지 않게.
+  const [pickerSlot, setPickerSlot] = useState<number | null>(null);
+  const handlePickForSlot = (slot: number, type: 'image' | 'video', url: string) => {
+    setSectionMedia(prev => {
+      const updated = [...prev];
+      const from = updated.findIndex(m => m && m.url === url);
+      if (from === slot) return prev;
+      const before = updated[slot];
+      updated[slot] = { type, url };
+      if (from !== -1) updated[from] = before ?? null;
+      return updated;
+    });
+  };
+
   // 섹션 미디어 해제 핸들러 (스크립트별 미리보기에서 X 클릭)
   const handleSectionMediaDeselect = (idx: number) => {
     setSectionMedia(prev => {
@@ -495,6 +623,10 @@ export default function Home() {
         const scriptList: string[] = (data.scripts || []).map((s: { script: string } | string) => typeof s === 'string' ? s : s.script);
         setScripts(scriptList);
         setTitle(data.title || "");
+        // 글이 바뀌면 이전 글의 가게 정보는 버린다
+        setBlogText(typeof data.text === "string" ? data.text : "");
+        setPlace({ name: "", location: "", price: "" });
+        placeFetchedFor.current = "";
         // 배포용 문구. 구버전 BE 나 생성 실패 시 필드가 없으므로 방어적으로 읽는다.
         const rawSeo = data.seo;
         if (rawSeo && typeof rawSeo === "object") {
@@ -522,8 +654,8 @@ export default function Home() {
           let imageCount = 0;
           suggested.forEach((item, i) => {
             if (i >= filled.length) return;
-            if (item.type === 'image') {
-              filled[i] = { type: 'image', url: item.url };
+            if (item.type === 'image' || item.type === 'video') {
+              filled[i] = { type: item.type, url: item.url };
               imageCount++;
             } else {
               filled[i] = { type: 'default', url: null, isDefaultBackground: true };
@@ -577,6 +709,29 @@ export default function Home() {
     setGenerateError(null);
     setGenerateSlow(false);
     setVideoUrl(null);
+    // 효과음 "자동"이면 영상 요청 직전에 AI 계획을 받는다 (10초 상한). generate-video 안에서
+    // 하지 않는 이유는 그 요청이 이미 API Gateway 29초에 빠듯해서다. 실패하면 계획 없이 보내고,
+    // 서버가 기본 규칙(장면마다 휙)으로 넣는다.
+    let sfxPlan: (string | null)[] | null = null;
+    if (sound === "auto") {
+      const planCtl = new AbortController();
+      const planTimer = setTimeout(() => planCtl.abort(), 10000);
+      try {
+        const r = await authFetch(`${API_BASE_URL}/api/blog/sfx-plan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scripts }),
+          signal: planCtl.signal,
+        });
+        const d = await r.json();
+        if (Array.isArray(d?.plan)) sfxPlan = d.plan;
+        dlog("효과음 계획", sfxPlan);
+      } catch (e) {
+        derr("효과음 계획 실패 — 서버 기본 규칙으로", { error: String(e) });
+      } finally {
+        clearTimeout(planTimer);
+      }
+    }
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180000); // 3분
     const startedAt = Date.now();
@@ -596,6 +751,18 @@ export default function Home() {
           ...(speedOptions.length > 0 ? { speed } : {}),
           // 빈 문자열(기본 음악)이면 보내지 않는다 — 템플릿 음악이 그대로 나간다
           ...(bgmId ? { bgm_id: bgmId } : {}),
+          // "none" 이면 보내지 않는다 — BE 기본값(효과 없음)과 같다
+          // 기본 배치면 보내지 않는다 — BE 기본값과 같다
+          ...(layoutOptions.some(l => l.id === layout && !l.is_default) ? { layout } : {}),
+          ...(layout === "info_card"
+            ? { place_name: place.name, place_location: place.location, place_price: place.price }
+            : {}),
+          ...(motion !== "none" ? { motion } : {}),
+          ...(transition !== "none" ? { transition } : {}),
+          ...(sound !== "none" ? { sound, ...(sfxPlan ? { sfx_plan: sfxPlan } : {}) } : {}),
+          // 첫 화면·끝 화면 — "none" 이면 보내지 않는다. 직접 입력일 때만 문구를 같이 보낸다.
+          ...(intro !== "none" ? { intro, ...(intro === "custom" ? { intro_text: introText } : {}) } : {}),
+          ...(outro !== "none" ? { outro, ...(outro === "custom" ? { outro_text: outroText } : {}) } : {}),
         }),
         signal: controller.signal,
       });
@@ -789,13 +956,13 @@ export default function Home() {
     <AuthGuard>
       <Box sx={{ minHeight: "100vh", bgcolor: "#fff", display: "flex", flexDirection: "column" }}>
         {/* 헤더 */}
-        <Box sx={{ width: "100%", height: 64, display: "flex", alignItems: "center", justifyContent: "space-between", px: 4, borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10 }}>
+        <Box sx={{ width: "100%", height: 64, display: "flex", alignItems: "center", justifyContent: "space-between", px: { xs: 1.5, sm: 4 }, borderBottom: "1px solid #eee", position: "sticky", top: 0, zIndex: 10, bgcolor: "#fff" }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <Link href="/" passHref legacyBehavior>
               <Box
                 component="a"
                 sx={{
-                  width: 120,
+                  width: { xs: 84, sm: 120 },
                   height: 48,
                   display: 'flex',
                   alignItems: 'center',
@@ -804,7 +971,7 @@ export default function Home() {
                   cursor: 'pointer',
                   textDecoration: 'none',
                   color: 'inherit',
-                  marginRight: 2 // theme.spacing(2) = 16px
+                  marginRight: { xs: 1, sm: 2 }
                 }}
                 onClick={e => { e.preventDefault(); window.location.href = '/'; }}
               >
@@ -819,9 +986,10 @@ export default function Home() {
               </Box>
             </Link>
           </Box>
-          <Box sx={{ display: "flex", gap: 1, alignItems: 'center' }}>
+          <Box sx={{ display: "flex", gap: { xs: 0.75, sm: 1 }, alignItems: 'center' }}>
             {isLoggedIn ? (
               <>
+                <MyVideosButton />
                 <ChangePasswordButton />
                 <LogoutButton />
               </>
@@ -979,6 +1147,13 @@ export default function Home() {
                 {/* 영상 설정 모음 (자막·음성·속도·배경음악 — 전부 접힘 기본) */}
                 <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto', px: 4, mt: 2 }}>
                   <SettingsPanel
+                    layouts={layoutOptions}
+                    layout={layout}
+                    onSelectLayout={setLayout}
+                    place={place}
+                    onPlaceChange={setPlace}
+                    onFetchPlace={() => void fetchPlace()}
+                    placeLoading={placeLoading}
                     onSubtitleSettingsChange={setSubtitleSettings}
                     voices={voices}
                     voiceId={voiceId}
@@ -1003,6 +1178,26 @@ export default function Home() {
                     bgmId={bgmId}
                     onSelectBgm={setBgmId}
                     onMusicExpired={fetchMusic}
+                    motions={motionOptions}
+                    transitions={transitionOptions}
+                    motion={motion}
+                    transition={transition}
+                    onSelectMotion={setMotion}
+                    onSelectTransition={setTransition}
+                    sounds={soundOptions}
+                    sound={sound}
+                    onSelectSound={setSound}
+                    intros={introOptions}
+                    outros={outroOptions}
+                    intro={intro}
+                    introText={introText}
+                    outro={outro}
+                    outroText={outroText}
+                    bookendMaxText={bookendMaxText}
+                    onIntro={setIntro}
+                    onIntroText={setIntroText}
+                    onOutro={setOutro}
+                    onOutroText={setOutroText}
                     disabled={loading}
                   />
                   {/* Row 경계 시선 유도 */}
@@ -1010,7 +1205,7 @@ export default function Home() {
                     variant="body2"
                     sx={{ color: '#666', mb: 2, fontSize: 13 }}
                   >
-                    이미지를 선택해 주세요 — {sceneCount}개를 모두 고르면 숏폼 만들기가 활성화됩니다.
+                    장면마다 사진이나 영상을 하나씩 넣어 주세요 — {sceneCount}개를 모두 채우면 숏폼 만들기가 활성화됩니다.
                   </Typography>
                   {/* VOC-2: suggested_sections 로 자동 채워진 슬롯이 있을 때만 안내 */}
                   {autoFilledImageCount > 0 && (
@@ -1018,14 +1213,14 @@ export default function Home() {
                       variant="body2"
                       sx={{ color: '#666', mb: 0.5, fontSize: 13, wordBreak: 'keep-all' }}
                     >
-                      글 내용에 맞춰 이미지를 자동으로 넣어드렸어요.
+                      글 내용에 맞춰 사진·영상을 자동으로 넣어드렸어요. 장면마다 <b>바꾸기</b>를 누르면 다른 걸로 고를 수 있어요.
                     </Typography>
                   )}
                   <Typography
                     variant="body2"
                     sx={{ color: '#666', mb: 2, fontSize: 13, wordBreak: 'keep-all' }}
                   >
-                    오른쪽 이미지를 원하는 스크립트로 끌어다 놓아 보세요. 스크립트끼리 끌어서 순서도 바꿀 수 있어요.
+                    오른쪽 사진·영상을 장면으로 끌어다 놓아도 돼요. 장면끼리 끌어서 순서도 바꿀 수 있어요.
                   </Typography>
                 </Box>
                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 4, px: 4, py: 2, maxWidth: 1200, mx: 'auto', width: '100%' }}>
@@ -1154,12 +1349,29 @@ export default function Home() {
                                   style={{ width: '100%', height: 200, objectFit: 'contain', background: '#333', borderRadius: 8 }}
                                 />
                               ) : (
+                                // 영상에서는 소리를 끄고 자르지 않는다 (서버 scene_media.video_slot_variables)
                                 <video
                                   src={section.url as string}
-                                  style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 8 }}
+                                  muted
+                                  playsInline
+                                  style={{ width: '100%', height: 200, objectFit: 'contain', background: '#333', borderRadius: 8 }}
                                   controls
                                 />
                               )}
+                              <Button
+                                size="small"
+                                variant="contained"
+                                startIcon={<SwapHorizIcon />}
+                                onClick={() => setPickerSlot(idx)}
+                                sx={{
+                                  position: 'absolute', right: 8, bottom: section.type === 'video' ? 48 : 8,
+                                  bgcolor: 'rgba(255,255,255,0.95)', color: '#1a1a1a', fontWeight: 600,
+                                  boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+                                  '&:hover': { bgcolor: '#fff' },
+                                }}
+                              >
+                                바꾸기
+                              </Button>
                               <IconButton
                                 size="small"
                                 onClick={() => handleSectionMediaDeselect(idx)}
@@ -1175,9 +1387,20 @@ export default function Home() {
                               </IconButton>
                             </Box>
                           )}
+                          {!section && (
+                            <Button
+                              fullWidth
+                              variant="outlined"
+                              startIcon={<AddPhotoAlternateIcon />}
+                              onClick={() => setPickerSlot(idx)}
+                              sx={{ mt: 1, height: 96, borderStyle: 'dashed', borderRadius: 2 }}
+                            >
+                              사진·영상 고르기
+                            </Button>
+                          )}
                           {section?.type === 'default' && (
                             <Typography variant="body2" color="text.secondary" sx={{ mt: 1, wordBreak: 'keep-all' }}>
-                              AI가 만든 배경이에요. 마음에 안 들면 오른쪽에서 사진을 직접 고르세요.
+                              AI가 만든 배경이에요. 마음에 안 들면 <b>바꾸기</b>를 눌러 글의 사진·영상을 고르세요.
                             </Typography>
                           )}
                         </Paper>
@@ -1186,7 +1409,7 @@ export default function Home() {
                   </Paper>
                   {/* 오른쪽: 이미지/영상 선택 */}
                   <Paper elevation={3} sx={{ flex: 1, p: 4, borderRadius: 4, minWidth: 340, maxWidth: 600, bgcolor: '#fff', boxShadow: '0 4px 24px rgba(0,0,0,0.04)' }}>
-                    <Typography variant="h6" fontWeight={700} gutterBottom>이미지 선택</Typography>
+                    <Typography variant="h6" fontWeight={700} gutterBottom>사진</Typography>
                     <Box
                       sx={{
                         maxHeight: 400,
@@ -1244,7 +1467,10 @@ export default function Home() {
                         })}
                       </Box>
                     </Box>
-                    <Typography variant="h6" fontWeight={700} gutterBottom sx={{ mt: 4 }}>영상 선택</Typography>
+                    <Typography variant="h6" fontWeight={700} gutterBottom sx={{ mt: 4 }}>영상</Typography>
+                    {media.videos.length === 0 && (
+                      <Typography sx={{ fontSize: 13, color: '#999' }}>글에 영상이 없어요.</Typography>
+                    )}
                     <Box sx={{ maxHeight: 400, overflowY: 'scroll', pr: 1, mb: 2, scrollbarGutter: 'stable', '&::-webkit-scrollbar': { width: '10px', background: '#f2f4f8' }, '&::-webkit-scrollbar-thumb': { background: '#d1d5db', borderRadius: 8 }, '&::-webkit-scrollbar-corner': { background: '#f2f4f8' } }}>
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                         {media.videos.map((url) => {
@@ -1273,7 +1499,7 @@ export default function Home() {
                 {/* VOC-2: suggested_sections 로 자동 채워진 슬롯이 있을 때만 안내 */}
                 {autoFilledImageCount > 0 && (
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2, wordBreak: 'keep-all' }}>
-                    글 내용에 맞춰 이미지를 자동으로 넣어드렸어요. 눌러서 바꿀 수 있어요.
+                    글 내용에 맞춰 사진·영상을 자동으로 넣어드렸어요. 장면마다 <b>바꾸기</b>를 누르면 다른 걸로 고를 수 있어요.
                   </Typography>
                 )}
                 <TextField
@@ -1291,6 +1517,13 @@ export default function Home() {
                     모바일이라 한쪽에만 넣으면 사실상 없는 기능이 된다. */}
                 <Box sx={{ mb: 2 }}>
                   <SettingsPanel
+                    layouts={layoutOptions}
+                    layout={layout}
+                    onSelectLayout={setLayout}
+                    place={place}
+                    onPlaceChange={setPlace}
+                    onFetchPlace={() => void fetchPlace()}
+                    placeLoading={placeLoading}
                     onSubtitleSettingsChange={setSubtitleSettings}
                     voices={voices}
                     voiceId={voiceId}
@@ -1315,6 +1548,26 @@ export default function Home() {
                     bgmId={bgmId}
                     onSelectBgm={setBgmId}
                     onMusicExpired={fetchMusic}
+                    motions={motionOptions}
+                    transitions={transitionOptions}
+                    motion={motion}
+                    transition={transition}
+                    onSelectMotion={setMotion}
+                    onSelectTransition={setTransition}
+                    sounds={soundOptions}
+                    sound={sound}
+                    onSelectSound={setSound}
+                    intros={introOptions}
+                    outros={outroOptions}
+                    intro={intro}
+                    introText={introText}
+                    outro={outro}
+                    outroText={outroText}
+                    bookendMaxText={bookendMaxText}
+                    onIntro={setIntro}
+                    onIntroText={setIntroText}
+                    onOutro={setOutro}
+                    onOutroText={setOutroText}
                     disabled={loading}
                   />
                 </Box>
@@ -1349,33 +1602,52 @@ export default function Home() {
                           </IconButton>
                         </Box>
                       )}
-                      {/* cycle-2: AI 기본 배경 슬롯은 모바일에서도 안내 카피 + 그라디언트 패널 표시 */}
-                      {section?.type === 'default' && (
-                        <>
-                          <Box sx={{ mt: 1, position: 'relative' }}>
-                            {section.url ? (
-                              <img
-                                src={section.url}
-                                alt={`스크립트 ${idx + 1} AI 배경`}
-                                style={{ width: '100%', height: 120, objectFit: 'contain', background: '#333', borderRadius: 8 }}
-                              />
-                            ) : (
-                              <Box sx={{
-                                width: '100%',
-                                height: 120,
-                                borderRadius: 2,
-                                background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: 1,
-                              }}>
-                                {aiBgLoading && <CircularProgress size={16} />}
-                                <Typography sx={{ fontSize: 12, color: '#7a8aa0' }}>
-                                  {aiBgLoading ? 'AI 배경 만드는 중' : '영상 만들 때 들어갑니다'}
-                                </Typography>
-                              </Box>
-                            )}
+                      {/* 모바일 장면 카드에도 넣은 사진·영상을 보여주고 바로 바꾸게 한다 (2026-10-20).
+                          그 전엔 AI 배경만 보이고, 고른 사진은 아래 갤러리의 "N번" 표시로만 알 수 있었다. */}
+                      {section ? (
+                        <Box sx={{ mt: 1, position: 'relative' }}>
+                          {section.type === 'image' ? (
+                            <img
+                              src={getProxiedImageUrl(section.url as string)}
+                              alt={`스크립트 ${idx + 1} 이미지`}
+                              onError={() => handleSectionImageError(idx)}
+                              onClick={() => setPickerSlot(idx)}
+                              style={{ width: '100%', height: 160, objectFit: 'contain', background: '#333', borderRadius: 8, display: 'block' }}
+                            />
+                          ) : section.type === 'video' ? (
+                            <video
+                              src={`${section.url}#t=0.1`}
+                              muted
+                              playsInline
+                              controls
+                              preload="metadata"
+                              style={{ width: '100%', height: 160, objectFit: 'contain', background: '#333', borderRadius: 8, display: 'block' }}
+                            />
+                          ) : section.url ? (
+                            <img
+                              src={section.url}
+                              alt={`스크립트 ${idx + 1} AI 배경`}
+                              onClick={() => setPickerSlot(idx)}
+                              style={{ width: '100%', height: 160, objectFit: 'contain', background: '#333', borderRadius: 8, display: 'block' }}
+                            />
+                          ) : (
+                            <Box sx={{
+                              width: '100%',
+                              height: 120,
+                              borderRadius: 2,
+                              background: 'linear-gradient(135deg, #e8f0fe 0%, #f3f4f6 100%)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 1,
+                            }}>
+                              {aiBgLoading && <CircularProgress size={16} />}
+                              <Typography sx={{ fontSize: 12, color: '#7a8aa0' }}>
+                                {aiBgLoading ? 'AI 배경 만드는 중' : '영상 만들 때 들어갑니다'}
+                              </Typography>
+                            </Box>
+                          )}
+                          {section.type !== 'image' && (
                             <Box sx={{
                               position: 'absolute',
                               top: 6,
@@ -1387,17 +1659,34 @@ export default function Home() {
                               px: 1,
                               py: 0.25,
                               borderRadius: 999,
-                            }}>AI 기본 배경</Box>
-                          </Box>
-                          <Typography variant="body2" color="text.secondary" sx={{ mt: 1, wordBreak: 'keep-all' }}>
-                            AI가 만든 배경이에요. 마음에 안 들면 아래에서 사진을 직접 고르세요.
-                          </Typography>
-                        </>
-                      )}
-                      {idx === scripts.length - 1 && (
-                        <Typography variant="body2" color="secondary" sx={{ mt: 1 }}>
-                          이 스크립트에는 영상을 선택해 주세요.
-                        </Typography>
+                              pointerEvents: 'none',
+                            }}>{section.type === 'video' ? '영상' : 'AI 기본 배경'}</Box>
+                          )}
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<SwapHorizIcon />}
+                            onClick={() => setPickerSlot(idx)}
+                            sx={{
+                              position: 'absolute', right: 6, top: 6,
+                              bgcolor: 'rgba(255,255,255,0.95)', color: '#1a1a1a', fontWeight: 600,
+                              boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+                              '&:hover': { bgcolor: '#fff' },
+                            }}
+                          >
+                            바꾸기
+                          </Button>
+                        </Box>
+                      ) : (
+                        <Button
+                          fullWidth
+                          variant="outlined"
+                          startIcon={<AddPhotoAlternateIcon />}
+                          onClick={() => setPickerSlot(idx)}
+                          sx={{ mt: 1, height: 72, borderStyle: 'dashed', borderRadius: 2 }}
+                        >
+                          사진·영상 고르기
+                        </Button>
                       )}
                     </Box>
                   );
@@ -1545,7 +1834,7 @@ export default function Home() {
                 기다리지 않고 이미지 선택으로 돌아가기
               </Button>
               <Typography align="center" sx={{ fontSize: 12, color: '#aaa', mt: 0.5, maxWidth: 360, lineHeight: 1.6 }}>
-                돌아가면 이 영상은 받아볼 수 없고, 사용한 크레딧도 돌아오지 않아요.
+                돌아가도 영상은 계속 만들어지고, 완성되면 위의 ‘내 영상’에서 볼 수 있어요. 사용한 크레딧은 돌아오지 않아요.
               </Typography>
             </Box>
           )}
@@ -1619,6 +1908,16 @@ export default function Home() {
         </Snackbar>
 
         {/* 이미지 확대 모달 */}
+        <MediaPickerDialog
+          slot={pickerSlot}
+          images={media?.images ?? []}
+          videos={media?.videos ?? []}
+          sections={sectionMedia}
+          imageSrc={getProxiedImageUrl}
+          onPick={handlePickForSlot}
+          onClose={() => setPickerSlot(null)}
+          fullScreen={!isPc}
+        />
         <Dialog open={!!zoomImg} onClose={() => setZoomImg(null)} maxWidth="md" PaperProps={{ sx: { borderRadius: 3, p: 2, bgcolor: '#fff' } }}>
           {zoomImg && (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 2 }}>

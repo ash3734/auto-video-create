@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * 영상 설정 모음 — 자막 / 음성 / 말하는 속도 / 배경음악 (2026-09-27).
+ * 영상 설정 모음 — 화면 배치 / 자막 / 음성 / 말하는 속도 / 화면 효과 / 배경음악 (2026-09-27, 효과 2026-10-18).
  *
  * ## 왜 모았나
  * 설정이 늘어나는 동안 자리를 그때그때 잡았다. 자막 스타일만 접히는 카드로 위에
@@ -29,8 +29,20 @@ import SubtitleStyleEditor, { SubtitleSettings } from './SubtitleStyleEditor';
 import VoicePicker, { Voice } from './VoicePicker';
 import SpeedPicker, { Speed } from './SpeedPicker';
 import MusicPicker, { MusicTrack, MusicConcept, BGM_TEMPLATE_DEFAULT } from './MusicPicker';
+import EffectPicker, { EffectOption } from './EffectPicker';
+import BookendPicker, { BookendOption } from './BookendPicker';
+import LayoutPicker, { LayoutOption, PlaceInfo } from './LayoutPicker';
 
 type Props = {
+  /** 화면 배치 */
+  layouts: LayoutOption[];
+  layout: string;
+  onSelectLayout: (id: string) => void;
+  place: PlaceInfo;
+  onPlaceChange: (p: PlaceInfo) => void;
+  onFetchPlace: () => void;
+  placeLoading: boolean;
+
   /** 자막 */
   onSubtitleSettingsChange: (s: SubtitleSettings) => void;
 
@@ -56,10 +68,41 @@ type Props = {
   onSelectBgm: (id: string) => void;
   onMusicExpired: () => Promise<MusicTrack[] | null>;
 
+  /** 화면 효과 */
+  motions: EffectOption[];
+  transitions: EffectOption[];
+  sounds: EffectOption[];
+  motion: string;
+  transition: string;
+  sound: string;
+  onSelectMotion: (id: string) => void;
+  onSelectTransition: (id: string) => void;
+  onSelectSound: (id: string) => void;
+
+  /** 첫 화면 문구 · 끝 화면 */
+  intros: BookendOption[];
+  outros: BookendOption[];
+  intro: string;
+  introText: string;
+  outro: string;
+  outroText: string;
+  bookendMaxText: number;
+  onIntro: (id: string) => void;
+  onIntroText: (t: string) => void;
+  onOutro: (id: string) => void;
+  onOutroText: (t: string) => void;
+
   disabled?: boolean;
 };
 
 export default function SettingsPanel({
+  layouts,
+  layout,
+  onSelectLayout,
+  place,
+  onPlaceChange,
+  onFetchPlace,
+  placeLoading,
   onSubtitleSettingsChange,
   voices,
   voiceId,
@@ -77,6 +120,26 @@ export default function SettingsPanel({
   bgmId,
   onSelectBgm,
   onMusicExpired,
+  motions,
+  transitions,
+  sounds,
+  motion,
+  transition,
+  sound,
+  onSelectMotion,
+  onSelectTransition,
+  onSelectSound,
+  intros,
+  outros,
+  intro,
+  introText,
+  outro,
+  outroText,
+  bookendMaxText,
+  onIntro,
+  onIntroText,
+  onOutro,
+  onOutroText,
   disabled = false,
 }: Props) {
   const voiceName = voices.find(v => v.voice_id === voiceId)?.name ?? '기본';
@@ -90,8 +153,52 @@ export default function SettingsPanel({
         ? '음악 없음'
         : (musicTracks.find(t => t.id === bgmId)?.title ?? '기본 음악');
 
+  // 화면 효과 요약. 둘 다 "없음"이면 한 칩으로 — "없음 · 없음"은 읽기 어색하다.
+  const motionName = motions.find(m => m.id === motion)?.name ?? '없음';
+  const transitionName = transitions.find(t => t.id === transition)?.name ?? '없음';
+  const soundName = sounds.find(o => o.id === sound)?.name ?? '없음';
+  const effectChips =
+    motion === 'none' && transition === 'none' && sound === 'none'
+      ? ['효과 없음']
+      : [
+          motion === 'none' ? '사진 고정' : motionName,
+          transition === 'none' ? '바로 전환' : `전환 ${transitionName}`,
+          ...(sound === 'none' ? [] : [`소리 ${soundName}`]),
+        ];
+
+  // 첫 화면·끝 화면 요약. "직접 입력"인데 비어 있으면 실제로 아무것도 안 붙으니 "없음"으로 보여준다.
+  const bookendChip = (opts: BookendOption[], id: string, text: string, prefix: string) => {
+    if (id === 'none' || (id === 'custom' && !text.trim())) return null;
+    return `${prefix} ${opts.find(o => o.id === id)?.name ?? ''}`.trim();
+  };
+  const bookendChips = [
+    bookendChip(intros, intro, introText, '첫'),
+    bookendChip(outros, outro, outroText, '끝'),
+  ].filter((x): x is string => !!x);
+
   return (
     <Box sx={{ width: '100%' }}>
+      {/* 화면 배치 — 영상의 생김새를 가장 크게 바꾸는 선택이라 맨 위 (백로그 2-1) */}
+      {layouts.length > 1 && (
+        <CollapsibleSection
+          title="화면 배치"
+          badge="선택 사항"
+          summary={<SummaryChip text={layouts.find(l => l.id === layout)?.name ?? '기본'} />}
+        >
+          <LayoutPicker
+            layouts={layouts}
+            selected={layout}
+            onSelect={onSelectLayout}
+            place={place}
+            onPlaceChange={onPlaceChange}
+            onFetchPlace={onFetchPlace}
+            placeLoading={placeLoading}
+            placeMax={30}
+            disabled={disabled}
+          />
+        </CollapsibleSection>
+      )}
+
       {/* 자막 — 이 카드는 자체 접힘 UI 를 갖고 있다 (헤더 모양이 같아 나란히 쌓인다) */}
       <SubtitleStyleEditor onSettingsChange={onSubtitleSettingsChange} />
 
@@ -134,6 +241,58 @@ export default function SettingsPanel({
             speeds={speeds}
             selected={speed}
             onSelect={onSelectSpeed}
+            disabled={disabled}
+          />
+        </CollapsibleSection>
+      )}
+
+      {/* 화면 효과 — 사진 움직임 · 장면 전환 (백로그 3-7) */}
+      {(motions.length > 0 || transitions.length > 0 || sounds.length > 0) && (
+        <CollapsibleSection
+          title="화면 효과"
+          badge="선택 사항"
+          summary={<>{effectChips.map(t => <SummaryChip key={t} text={t} />)}</>}
+        >
+          <EffectPicker
+            motions={motions}
+            transitions={transitions}
+            sounds={sounds}
+            motion={motion}
+            transition={transition}
+            sound={sound}
+            onSelectMotion={onSelectMotion}
+            onSelectTransition={onSelectTransition}
+            onSelectSound={onSelectSound}
+            disabled={disabled}
+          />
+        </CollapsibleSection>
+      )}
+
+      {/* 첫 화면 문구 · 끝 화면 (백로그 3-6) */}
+      {(intros.length > 0 || outros.length > 0) && (
+        <CollapsibleSection
+          title="첫 화면 · 끝 화면"
+          badge="선택 사항"
+          summary={
+            <>
+              {(bookendChips.length ? bookendChips : ['없음']).map(t => (
+                <SummaryChip key={t} text={t} />
+              ))}
+            </>
+          }
+        >
+          <BookendPicker
+            intros={intros}
+            outros={outros}
+            intro={intro}
+            introText={introText}
+            outro={outro}
+            outroText={outroText}
+            maxText={bookendMaxText}
+            onIntro={onIntro}
+            onIntroText={onIntroText}
+            onOutro={onOutro}
+            onOutroText={onOutroText}
             disabled={disabled}
           />
         </CollapsibleSection>
