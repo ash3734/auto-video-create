@@ -1,5 +1,5 @@
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 from urllib.parse import urljoin
 import json
 from typing import List
@@ -102,6 +102,9 @@ def _extract_caption_and_context(img_tag) -> tuple:
         parts = []
         total = 0
         for s in img_tag.find_all_next(string=True):
+            # 에디터 주석("SE-TEXT {")·데이터 스크립트는 글이 아니다 — 80자 단서를 잡아먹었다
+            if isinstance(s, Comment) or (s.parent is not None and s.parent.name == "script"):
+                continue
             t = s.strip()
             if not t:
                 continue
@@ -150,6 +153,9 @@ def extract_blog_content_rich(url):
     # https://postfiles.pstatic.net/MjAyNTA1MDlfMTYg/MDAxNzQ2NzkyNjgyNTc2.ier0FJ-ccb5aPRgLALg5MdbadK33W8m6cgh0jeoMIJQg.wZof1W8HIwiECHl_uHAURh0PmzUBzq3rrP7vOHLRdwQg.JPEG/IMG_2224.JPG?type=w966
     # https://postfiles.pstatic.net/MjAyNTA1MDlfMTYg/MDAxNzQ2NzkyNjgyNTc2.ier0FJ-ccb5aPRgLALg5MdbadK33W8m6cgh0jeoMIJQg.wZof1W8HIwiECHl_uHAURh0PmzUBzq3rrP7vOHLRdwQg.JPEG/IMG_2224.JPG?type=w80_blur
 
+    # 본문 안 순서 — 사진과 영상이 글에서 얼마나 가까운지 (영상 우선 배정, blog_shorts)
+    order = {id(t): i for i, t in enumerate(main_area.find_all(True))}
+
     # 이미지 링크 추출 (+ VOC-2: 이미지별 캡션/주변 텍스트)
     images = []
     image_infos = []
@@ -168,7 +174,8 @@ def extract_blog_content_rich(url):
                 caption, context = _extract_caption_and_context(img)
             seen_images.add(full_url)
             images.append(full_url)
-            image_infos.append({"url": full_url, "caption": caption, "context": context})
+            image_infos.append({"url": full_url, "caption": caption, "context": context,
+                                "pos": order.get(id(img))})
             img_count += 1
             print(f"[이미지 {img_count}] {full_url}")
 
@@ -176,15 +183,21 @@ def extract_blog_content_rich(url):
     # 예전 에디터의 <video> 태그도 그대로 받는다.
     videos = []
     video_infos = []
-    for info in naver_video.resolve_all(naver_video.find_modules(main_area)):
+    for info in naver_video.resolve_all(naver_video.find_modules(main_area, order)):
         videos.append(info["url"])
-        video_infos.append({"url": info["url"], "caption": info["title"], "context": info["context"]})
+        video_infos.append({"url": info["url"], "caption": info["title"], "context": info["context"],
+                            "pos": info["pos"]})
+    # <video> 태그 — 대부분 "움짤"(GIF 를 올리면 네이버가 mp4 로 바꿔 반복 재생, class=_gifmp4).
+    # 캡션이 없어서 앞뒤 글을 단서로 붙인다. 그게 없으면 AI 에게 "(설명 없음)" 으로만 보여
+    # 한 번도 골리지 않았다 (2026-10-20).
     for video in main_area.find_all('video'):
         srcs = [video.get('src')] + [s.get('src') for s in video.find_all('source')]
         for src in srcs:
             if src and urljoin(url, src) not in videos:
                 videos.append(urljoin(url, src))
-                video_infos.append({"url": urljoin(url, src), "caption": "", "context": ""})
+                video_infos.append({"url": urljoin(url, src), "caption": "",
+                                    "context": naver_video.context_around(video),
+                                    "pos": order.get(id(video))})
     for i, v in enumerate(videos, 1):
         print(f"[비디오 {i}] {v[:120]}")
 

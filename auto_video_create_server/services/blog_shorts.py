@@ -16,8 +16,8 @@ VOC-2 갱신 (이미지 자동 매칭):
 - 크롤러가 네이버 본문 영상을 처음으로 가져온다 (crawler/naver_video.py). 그 전엔 영상이
   0개라 추천될 수가 없었다.
 - AI 에게 주는 목록 = 사진(최대 PROMPT_IMAGE_LIMIT) + 영상. 번호는 이어서 매긴다.
-- AI 가 영상을 하나도 안 골랐으면, AI 가 고르지 않은 칸(위치 폴백·AI 배경) 하나에 첫 영상을
-  넣는다. AI 가 고른 사진은 건드리지 않는다.
+- 영상 우선: 장면의 절반까지는 영상 (video_target). AI 가 덜 골랐으면 본문에서 가까운 사진
+  칸을 영상으로 바꾼다 (_build_suggested_sections).
 """
 from crawler.dispatcher import extract_rich as dispatcher_extract_rich
 from crawler.dispatcher import UnsupportedPlatformError  # noqa: F401  (re-export)
@@ -51,32 +51,58 @@ def _normalize_image_indices(scripts, image_count):
 PROMPT_IMAGE_LIMIT = 20
 
 
-def _build_suggested_sections(indices, images, videos=(), offered_images=None):
+def video_target(scene_count: int, video_count: int) -> int:
+    """영상으로 채울 장면 수 — 장면의 절반(올림)까지, 영상이 그보다 적으면 영상 수만큼.
+
+    PO (2026-10-20): "영상이 영상미가 더 좋으니 사진보다 우선순위를 높여 달라".
+    전부 영상으로 채우지 않는 건, 블로그 영상은 같은 장면을 길게 찍은 게 많아서다.
+    """
+    return min(video_count, (scene_count + 1) // 2)
+
+
+def _build_suggested_sections(indices, images, videos=(), offered_images=None, positions=None):
     """0-based 인덱스 리스트 → suggested_sections 조립.
 
     indices 는 AI 에게 보여준 목록(사진 앞 offered_images 개 + 영상 전부) 기준 번호다.
     offered_images 를 안 주면 사진 전부를 보여준 것으로 본다 (영상이 없던 시절과 같다).
+    positions: {url: 본문 순서} — 영상과 글에서 가장 가까운 사진을 찾을 때 쓴다.
 
-    - None 슬롯은 위치 기반 폴백: 아직 안 쓰인 사진을 본문 순서대로, 그다음 영상.
-    - 그래도 모자라면 {"type": "default", "url": None} (기존 AI 배경 슬롯 규칙).
-    - 영상이 있는데 AI 가 하나도 안 골랐으면, AI 가 고르지 않은 칸 하나에 첫 영상.
+    1) AI 가 고른 대로.
+    2) 영상 우선 (video_target): AI 가 영상을 덜 골랐으면 남은 영상을 넣는다. 빈 칸(AI 가 못 고른
+       칸)이 먼저고, 없으면 **본문에서 그 영상과 가장 가까이 있던 사진**의 칸을 영상으로 바꾼다 —
+       같은 대목을 찍은 사진일 가능성이 높다. 본문 순서를 모르면 마지막 사진 칸.
+    3) 그래도 빈 칸은 위치 기반 폴백: 안 쓰인 사진을 본문 순서대로, 그다음 영상.
+    4) 그래도 모자라면 {"type": "default", "url": None} (기존 AI 배경 슬롯 규칙).
     """
     videos = list(videos)
+    positions = positions or {}
     k = len(images) if offered_images is None else offered_images
     offered = [("image", u) for u in images[:k]] + [("video", u) for u in videos]
     picked = [offered[i] if i is not None and 0 <= i < len(offered) else None for i in indices]
 
+    need = video_target(len(picked), len(videos)) - sum(1 for m in picked if m and m[0] == "video")
+    spare = [("video", u) for u in videos if ("video", u) not in picked]
+    while need > 0 and spare:
+        video = spare.pop(0)
+        free = [i for i, m in enumerate(picked) if m is None]
+        photo_slots = [i for i, m in enumerate(picked) if m and m[0] == "image"]
+        if free:
+            slot = free[-1]
+        elif photo_slots:
+            vpos = positions.get(video[1])
+            known = [i for i in photo_slots if positions.get(picked[i][1]) is not None]
+            if vpos is not None and known:
+                slot = min(known, key=lambda i: abs(positions[picked[i][1]] - vpos))
+            else:
+                slot = photo_slots[-1]
+        else:
+            break
+        picked[slot] = video
+        need -= 1
+
     used = {m for m in picked if m}
     remaining = [m for m in [("image", u) for u in images] + [("video", u) for u in videos]
                  if m not in used]
-    if videos and not any(m and m[0] == "video" for m in picked):
-        first_video = next((m for m in remaining if m[0] == "video"), None)
-        free = [i for i, m in enumerate(picked) if m is None]
-        if first_video and free:
-            # 맨 끝 빈 칸에 — 앞쪽 칸은 사진 순서대로 채워져 글 흐름을 따른다
-            picked[free[-1]] = first_video
-            remaining.remove(first_video)
-
     sections = []
     for m in picked:
         if m is None and remaining:
@@ -119,8 +145,10 @@ def get_blog_media_and_scripts(blog_url: str, scene_count: int = 5) -> dict:
     # VOC-2: 자동 배정 제안. 실패해도 전체 응답은 정상 (필드 생략 → FE 가 기존 폴백).
     try:
         indices = _normalize_image_indices(scripts, len(media_infos))
+        positions = {i["url"]: i.get("pos") for i in (image_infos or []) + (video_infos or [])
+                     if i.get("pos") is not None}
         result["suggested_sections"] = _build_suggested_sections(
-            indices, images, videos, offered_images=len(shown_images))
+            indices, images, videos, offered_images=len(shown_images), positions=positions)
     except Exception as e:
         print(f"[blog_shorts] suggested_sections 조립 실패 — 필드 생략: {e}")
     return result

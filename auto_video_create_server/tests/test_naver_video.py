@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup  # noqa: E402
 
 from crawler import naver_video  # noqa: E402
 from services import layouts  # noqa: E402
-from services.blog_shorts import _build_suggested_sections  # noqa: E402
+from services.blog_shorts import _build_suggested_sections, video_target  # noqa: E402
 from services.scene_media import video_slot_variables  # noqa: E402
 
 VID = "95ECF89F5E29B1758F027E6A37A484B8FDA6"
@@ -110,7 +110,7 @@ class TestSuggestedWithVideos(unittest.TestCase):
 
     def test_ai_picks_video_by_combined_number(self):
         # 목록: 사진 3장(0~2) 다음 영상(3, 4)
-        got = _build_suggested_sections([3, 0, 1], self.IMGS, self.VIDS)
+        got = _build_suggested_sections([3, 0, 1], self.IMGS, ["v0"])
         self.assertEqual(got[0], {"type": "video", "url": "v0"})
         self.assertEqual([g["url"] for g in got[1:]], ["i0", "i1"])
 
@@ -119,24 +119,58 @@ class TestSuggestedWithVideos(unittest.TestCase):
         got = _build_suggested_sections([2, None], self.IMGS, self.VIDS, offered_images=2)
         self.assertEqual(got[0], {"type": "video", "url": "v0"})
 
-    def test_video_added_to_unpicked_slot_when_ai_skips_videos(self):
-        got = _build_suggested_sections([0, None, 1], self.IMGS, self.VIDS)
+    def test_free_slot_gets_video_first(self):
+        # 장면 4개 → 영상 목표 2개. 빈 칸(AI 가 못 고른 칸)부터, 그다음 사진 칸
+        got = _build_suggested_sections([0, None, 1, 2], self.IMGS, self.VIDS)
         self.assertEqual(got[1], {"type": "video", "url": "v0"})
+        self.assertEqual(got[3], {"type": "video", "url": "v1"})   # 본문 순서 모르면 마지막 사진 칸
         self.assertEqual([got[0]["url"], got[2]["url"]], ["i0", "i1"])
 
-    def test_ai_picks_are_not_replaced(self):
-        got = _build_suggested_sections([0, 1, 2], self.IMGS, self.VIDS)
-        self.assertEqual([g["type"] for g in got], ["image"] * 3)
+    def test_replaces_photo_nearest_in_body(self):
+        # AI 가 사진만 골랐다 → 본문에서 영상(위치 50)과 가장 가까운 사진(i1, 위치 45)의 칸을 바꾼다
+        pos = {"i0": 10, "i1": 45, "i2": 90, "v0": 50}
+        got = _build_suggested_sections([0, 1, 2], self.IMGS, ["v0"], positions=pos)
+        self.assertEqual([g["url"] for g in got], ["i0", "v0", "i2"])
+
+    def test_half_of_scenes_at_most(self):
+        # 장면 5개 → 영상은 3개까지. AI 가 고른 사진 둘은 그대로
+        vids = ["v0", "v1", "v2", "v3"]
+        got = _build_suggested_sections([0, 1, None, None, None], self.IMGS, vids)
+        self.assertEqual(sum(g["type"] == "video" for g in got), 3)
+        self.assertEqual([got[0]["url"], got[1]["url"]], ["i0", "i1"])
+
+    def test_ai_video_picks_count_toward_target(self):
+        # AI 가 이미 영상 2개를 골랐으면(장면 3개 → 목표 2) 사진은 안 바꾼다
+        got = _build_suggested_sections([3, 0, 4], self.IMGS, self.VIDS)
+        self.assertEqual([g["url"] for g in got], ["v0", "i0", "v1"])
 
     def test_videos_fill_after_images_run_out(self):
         got = _build_suggested_sections([None] * 5, ["i0"], self.VIDS)
-        # 첫 영상은 맨 끝 빈 칸, 나머지는 사진 → 남은 영상 → AI 배경 순
-        self.assertEqual([g["url"] for g in got], ["i0", "v1", None, None, "v0"])
-        self.assertEqual(got[2]["type"], "default")
+        # 영상 둘은 뒤쪽 빈 칸부터, 사진은 앞에서부터, 나머지는 AI 배경
+        self.assertEqual([g["url"] for g in got], ["i0", None, None, "v1", "v0"])
+        self.assertEqual(got[1]["type"], "default")
 
     def test_without_videos_same_as_before(self):
         got = _build_suggested_sections([None, 0], ["i0", "i1"])
         self.assertEqual(got, [{"type": "image", "url": "i1"}, {"type": "image", "url": "i0"}])
+
+
+class TestVideoTarget(unittest.TestCase):
+    def test_half_rounded_up_capped_by_videos(self):
+        self.assertEqual([video_target(n, 9) for n in (4, 5, 8)], [2, 3, 4])
+        self.assertEqual(video_target(8, 1), 1)
+        self.assertEqual(video_target(5, 0), 0)
+
+
+class TestVideoContext(unittest.TestCase):
+    def test_text_before_and_after(self):
+        soup = BeautifulSoup(
+            "<div><p>칠리치즈 프라이즈를 주문했어요</p><!-- SE-TEXT { --><video src='a.mp4'></video>"
+            "<p>짜잔</p></div>", "html.parser")
+        ctx = naver_video.context_around(soup.find("video"))
+        self.assertIn("칠리치즈 프라이즈", ctx)
+        self.assertIn("짜잔", ctx)
+        self.assertNotIn("SE-TEXT", ctx)
 
 
 class TestVideoSlot(unittest.TestCase):

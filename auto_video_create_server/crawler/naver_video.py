@@ -38,8 +38,12 @@ PREFERRED_HEIGHT = 720
 _VID_IN_PATH = re.compile(r"/([0-9A-F]{36})/")
 
 
-def find_modules(main_area) -> List[dict]:
-    """본문에서 영상 칸 정보. [{"vid","inkey","title","thumbnail","context"}, ...] (본문 순서)."""
+def find_modules(main_area, order=None) -> List[dict]:
+    """본문에서 영상 칸 정보. [{"vid","inkey","title","thumbnail","context","pos"}, ...] (본문 순서).
+
+    order: {id(태그): 본문 순서} — 있으면 pos 를 채운다 (사진과 영상의 앞뒤 관계, blog_shorts).
+    """
+    order = order or {}
     out = []
     seen = set()
     for tag in main_area.find_all("script", class_="__se_module_data"):
@@ -61,28 +65,41 @@ def find_modules(main_area) -> List[dict]:
             "inkey": inkey,
             "title": str(meta.get("title") or "").strip()[:60],
             "thumbnail": data.get("thumbnail") or "",
-            "context": _context_after(tag),
+            "context": context_around(tag),
+            "pos": order.get(id(tag)),
         })
         if len(out) >= MAX_VIDEOS:
             break
     return out
 
 
-def _context_after(tag, limit: int = 80) -> str:
-    """영상 바로 뒤 본문 글 — 사진과 같은 방식(naver._extract_caption_and_context)."""
+def _texts(strings, limit: int) -> str:
+    parts, total = [], 0
+    for s in strings:
+        if isinstance(s, Comment) or (s.parent is not None and s.parent.name == "script"):
+            continue
+        t = s.strip()
+        if not t:
+            continue
+        parts.append(t)
+        total += len(t)
+        if total >= limit:
+            break
+    return parts
+
+
+def context_around(tag, limit: int = 80) -> str:
+    """영상 앞뒤 본문 글 — AI 가 영상 내용을 짐작할 단서.
+
+    사진은 뒤의 글만 보지만(naver._extract_caption_and_context), 영상은 설명(캡션)이 거의 없고
+    "칠리치즈 프라이즈를 주문했어요 → (움짤) → 짜잔~~" 처럼 **앞 글**이 영상을 설명하는
+    경우가 많다 (2026-10-20 muk_soul 글). 앞 절반 + 뒤 절반.
+    """
     try:
-        parts, total = [], 0
-        for s in tag.find_all_next(string=True):
-            if isinstance(s, Comment) or (s.parent is not None and s.parent.name == "script"):
-                continue
-            t = s.strip()
-            if not t:
-                continue
-            parts.append(t)
-            total += len(t)
-            if total >= limit:
-                break
-        return " ".join(parts)[:limit]
+        half = limit // 2
+        before = " ".join(reversed(_texts(tag.find_all_previous(string=True), half)))[-half:]
+        after = " ".join(_texts(tag.find_all_next(string=True), half))[:half]
+        return f"{before} / {after}".strip(" /")
     except Exception:
         return ""
 
