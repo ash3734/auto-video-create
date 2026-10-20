@@ -16,6 +16,7 @@ import {
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import FontPickerModal from "./FontPickerModal";
+import { authFetch } from "../utils/apiFetch";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -63,13 +64,6 @@ const SIZE_PX: Record<"S" | "M" | "L", { title: number; subtitle: number }> = {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 const TEMPLATES_URL = `${API_BASE_URL}/api/blog/subtitle-templates`;
 
-function authFetch(url: string, options: RequestInit = {}) {
-  const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
-  return fetch(url, {
-    ...options,
-    headers: { ...(options.headers || {}), "X-USER-ID": userId ?? "" },
-  });
-}
 
 // ── Helpers: normalize server payloads defensively ─────────────────────────
 
